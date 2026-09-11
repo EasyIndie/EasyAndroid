@@ -17,13 +17,22 @@
 #
 # 用法
 #   bash tools/tv-install.sh app/build/outputs/apk/debug/app-debug.apk
-#   LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>
+#   LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>   # 覆盖默认设备
+#
+# 设备地址默认从 tools/device.env 读(见 device.env.example)。
 #
 # 全程只用 adb + uiautomator 读界面文本,不用视觉模型。
 set -uo pipefail
-export PATH=/opt/android-sdk/platform-tools:/opt/android-sdk/build-tools/34.0.0:$PATH
 
-TV="${TV:-192.0.2.11:5555}"
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+# aapt2 用来从 APK 里读 label / package name
+for bt in "$ANDROID_HOME"/build-tools/*/; do
+  [ -x "$bt/aapt2" ] && export PATH="$bt:$PATH" && break
+done
+
+TV="${TV:-$TV_ADDR}"
 APK="${1:-}"
 [ -n "$APK" ] || { echo "用法: $0 <apk路径>" >&2; exit 2; }
 [ -f "$APK" ] || { echo "找不到 APK: $APK" >&2; exit 2; }

@@ -71,7 +71,7 @@ fun DeviceInspector() {
             }
             item {
                 Text(
-                    text = "TCL 电视 192.0.2.11   |   Pico 4 192.0.2.29   |   用遥控上下键切换焦点并按确认",
+                    text = "用遥控 / 手柄上下键切换焦点,按确认查看详情",
                     fontSize = 14.sp,
                     color = Color(0xFF8A93A5),
                     modifier = Modifier.padding(bottom = 14.dp)

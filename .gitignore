@@ -30,3 +30,7 @@ desktop.ini
 # Windows 版 platform-tools 只在「Pico 重启后走 USB 引导」时用得到,
 # 体积 20MB+ 且是上游产物,不入库。需要时跑 tools/fetch-platform-tools.sh
 tools/platform-tools/
+
+# ---- 本地私有配置 ----
+# 真实设备内网地址等,不入库。模板见 tools/device.env.example
+tools/device.env

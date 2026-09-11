@@ -15,6 +15,18 @@ bash tools/devices.sh
 对目录里的两台设备(电视 + Pico)逐个 `adb connect`,然后打印状态表。
 日常开工第一条命令。
 
+### `device-status.sh` — 设备状态一次性报告
+
+```bash
+bash tools/device-status.sh                          # 默认 TV
+bash tools/device-status.sh "$PICO_ADDR"             # 指定设备
+bash tools/device-status.sh "$TV_ADDR" com.example.dualdemo   # 顺带查某个包
+```
+
+一次输出:型号 / 系统 / ABI → 目标包是否安装及版本 → 当前前台 → 最近崩溃 → 当前界面全部文案。
+
+全部是纯文本,**不消耗多模态 token**。写自动化或排查问题时先跑这个。
+
 ### `tv-install.sh` — 装到 TCL 电视
 
 ```bash
@@ -59,6 +71,27 @@ bash tools/fetch-platform-tools.sh
 ---
 
 ## 前置条件
+
+### 设备地址配置
+
+脚本不硬编码任何设备地址。第一次用先建本地配置(已 gitignore):
+
+```bash
+cp tools/device.env.example tools/device.env
+# 编辑填入你的设备地址
+```
+
+| 变量 | 说明 |
+|---|---|
+| `TV_ADDR` | 电视 serial,如 `192.0.2.11:5555` |
+| `PICO_ADDR` | 第二台设备 |
+| `ANDROID_SDK_DIR` | SDK 位置,默认 `/opt/android-sdk` |
+| `WINADB` | Windows 版 adb 路径 |
+| `WINADB_PORT` | Windows 侧 adb server 端口,默认 `15037` |
+
+统一由 [`_common.sh`](_common.sh) 载入,所以换设备不用改代码。
+
+### 其他
 
 | | 要求 |
 |---|---|

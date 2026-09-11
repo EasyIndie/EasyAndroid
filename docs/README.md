@@ -24,5 +24,19 @@
 ## 写法约定
 
 - 命令默认在 WSL2 里执行
-- `$TV` = 电视 serial,`$PICO` = Pico serial
+- `$TV` / `$TV_ADDR` = 电视 serial,`$PICO_ADDR` = 第二台设备
 - 「✅ 已验证」= 真机跑通过;「⚠️ 推测」= 有依据但没实测
+
+## 关于设备地址
+
+文档里出现的 `192.0.2.x` 是 **RFC 5737 文档保留地址段**(TEST-NET-1),
+**不是真实地址**,仅用于让示例命令保持可读、可直接复制。
+
+真实地址放在 `tools/device.env`(已 gitignore),模板见 `tools/device.env.example`:
+
+```bash
+cp tools/device.env.example tools/device.env
+# 然后填入你的设备地址
+```
+
+脚本都从 `tools/_common.sh` 载入这个配置,所以换设备不用改代码。
