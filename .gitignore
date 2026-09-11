@@ -1,0 +1,32 @@
+# ---- Android / Gradle ----
+.gradle/
+.kotlin/
+build/
+local.properties
+.cxx/
+.externalNativeBuild/
+captures/
+*.iml
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.hprof
+
+# ---- IDE ----
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+._*
+
+# ---- 第三方二进制 ----
+# Windows 版 platform-tools 只在「Pico 重启后走 USB 引导」时用得到,
+# 体积 20MB+ 且是上游产物,不入库。需要时跑 tools/fetch-platform-tools.sh
+tools/platform-tools/
