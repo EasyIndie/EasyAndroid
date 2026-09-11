@@ -15,6 +15,24 @@ bash tools/devices.sh
 对目录里的两台设备(电视 + Pico)逐个 `adb connect`,然后打印状态表。
 日常开工第一条命令。
 
+### `new-app.sh` — 新建独立工程
+
+```bash
+bash tools/new-app.sh <AppName> <package.id>
+bash tools/new-app.sh MyPlayer com.example.myplayer
+```
+
+以 `apps/DualDemo` 为模板生成 `apps/<AppName>/`,并完成:
+
+- 替换包名(`namespace` / `applicationId` / 源码目录结构)
+- 设置 `rootProject.name` 和 `app_name`
+- 清掉构建产物与旧 `local.properties`
+- 根据 `$ANDROID_HOME` 重新生成 `local.properties`
+- 生成 README 骨架
+- 检查 `applicationId` 与已有工程是否冲突
+
+约定见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md)。
+
 ### `device-status.sh` — 设备状态一次性报告
 
 ```bash

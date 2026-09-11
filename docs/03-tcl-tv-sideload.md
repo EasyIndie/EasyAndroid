@@ -179,26 +179,77 @@ adb shell am start -n com.tcl.guard/.appmanager.activity.AppManagerActivity
 
 ---
 
+## ⚠️ 三个必须知道的机制
+
+这三条都是踩过才知道的,不搞清就无法自动化。
+
+### 1. 列表里的 `SDCARD` 其实是【可移动存储】,不是 `/sdcard`
+
+存储源页显示的是一一
+
+```
+SDCARD   可用57.83 GB/共58.27 GB
+```
+
+但电视的**内建存储只有 50 GB**(`/data` 是 `mmcblk0p38`,50G)。
+58.27 GB 对应的是插在电视上的 **U 盘**。也就是说这个源扫的是可移动卷。
+
+**所以 APK 要放到 `<U盘>/AndroidTV/`**,而不是 `adb push /sdcard/`。
+
+```
+adb push app-debug.apk /storage/<volId>/AndroidTV/
+```
+
+`<volId>` 用 `adb shell ls /storage` 看(排除 `emulated` 和 `self`)。
+`AndroidTV/` 这个目录名是 TCL 的约定,shell 对该目录可写。
+
+### 2. TGuard 会缓存扫描结果
+
+往 U 盘里新放一个 APK,**列表不会更新**。实测:
+
+| 操作 | 是否刷新列表 |
+|---|---|
+| 重新打开应用管理器(`am start -S`) | ❌ |
+| 退出存储源再进入 | ❌ |
+| `am broadcast MEDIA_SCANNER_SCAN_FILE`(文件已进 MediaStore) | ❌ |
+| 重启电视 | ✅ |
+| **`pm clear com.tcl.guard`** | ✅(秒级,比重启快)|
+
+需要刷新列表时用 `pm clear com.tcl.guard`。副作用是 TGuard 自己的设置会被重置
+(应用自动卸载、定期清理等)。
+
+### 3. 缓存以【文件路径】为键
+
+往同一个路径推不同的包,列表里会一直显示**旧的应用名和旧版本号**。
+
+所以文件名必须唯一,带上包名和版本:
+
+```
+<U盘>/AndroidTV/com.example.myapp-1.2.0.apk
+```
+
+反过来也有个坑:如果 U 盘上同时存在两个同名应用的不同版本(比如手工拷进去的旧副本),
+列表里就会出现**两个相同标签的条目**。只按标签匹配会选错,必须同时对比详情面板里的「版本号」。
+
+---
+
 ## 自动化脚本
 
 ```bash
-bash tools/tv-install.sh app/build/outputs/apk/debug/app-debug.apk
+bash tools/tv-install.sh apps/<Name>/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ```
-==> 目标: 双端演示  (com.example.dualdemo)  @ 192.0.2.11:5555
-==> 推送 APK 到 /sdcard
+==> 目标: ScaffoldCheck  (com.example.scaffoldcheck v0.1.1)  @ 192.0.2.11:5555
+==> 推送 APK 到 /storage/8465-1701/AndroidTV/com.example.scaffoldcheck-0.1.1.apk
 ==> 打开 安全卫士 / 应用管理器
-==> 切到「应用安装」
-==> 进入存储源并扫描
-==> 在列表里定位「双端演示」
-  焦点已落在「双端演示」
-==> 触发安装 + 过两道确认框
-  安装流程已结束
+   焦点已落在「ScaffoldCheck」 v0.1.1
 
 ==> 结果
   已安装
   primaryCpuAbi=armeabi-v7a
+  versionName=0.1.1
+  lastUpdateTime=2026-09-12 07:04:08
   installerPackageName=com.android.packageinstaller
 ```
 
@@ -206,24 +257,41 @@ bash tools/tv-install.sh app/build/outputs/apk/debug/app-debug.apk
 
 | 细节 | 原因 |
 |---|---|
-| 先 `KEYCODE_HOME` 再 `am start` | **电视会自动进屏保(DreamActivity)**,屏保期间 `am start` 什么反应都没有 |
-| `am start -S` 强停应用管理器 | 否则会复用上次残留的页面状态,导航起点不确定 |
-| 左侧栏导航 `LEFT` → `UP`×5 → `DOWN`×2 | `UP` 到顶会截断,所以先归顶再下移两位 |
-| **按应用标签匹配焦点项**,而不是盲按 | 列表里混着 `._xxx.apk`(**macOS 苹果资源叉文件**,只有 4KB,不是合法 APK),盲按会选中它并报「解析包时出现问题」 |
+| 推送到 `<U盘>/AndroidTV/`,文件名带包名+版本 | 见上面机制 1 和 3 |
+| 进列表前先 `WAKEUP` + `HOME`,并确认不在屏保 | **屏保期间 `am start` 返回成功但什么都不发生** |
+| 进列表前 `BACK` 清掉残留弹窗 | 上一次安装的「应用安装已完成」弹窗会留在屏幕上,把后续按键全带偏 |
+| `am start -S` 强停应用管理器 | 否则会复用上次残留的页面状态 |
+| 左侧栏 `LEFT` → `UP`×5 → `DOWN`×2 | `UP` 到顶会截断,所以先归顶再下移两位 |
+| **按标签 + 版本号双重匹配** | 列表里混着 `._xxx.apk`(macOS 苹果资源叉文件,4KB,不是合法 APK)和可能的同名旧副本 |
+| 装完校验 `versionName` | 防止匹配到陈旧条目后“看起来成功了” |
+| 版本不对时清缓存重试一次 | 见机制 2 |
+| 装完 `BACK` 关掉完成弹窗 | 否则影响下一次运行 |
 | 全程用 `uiautomator dump` 读文本 | 不用截图,不消耗多模态 token |
 
-### 焦点项标签怎么取
+### 怎么从 UI 树里取「当前焦点项」和「文件版本」
 
 列表项容器本身没有 `text`,应用名是它的子节点。所以要在 UI 树里找
 **bounds 落在 focused 节点内部的文本**,并排除日期和状态标记:
 
 ```python
-# 伪代码
+# 焦点项标签
 if focused_node_bounds contains (label_bounds):
     if not re.fullmatch(r'\d{4}\.\d{2}\.\d{2}', txt) and txt != '本机已安装':
         candidates.append(txt)
 label = candidates[0]
 ```
+
+右侧详情面板里是「版本号 → <值>」两个相邻节点,取 `版本号` 后面那个即可:
+
+```python
+for i, t in enumerate(texts):
+    if t.strip() in ('版本号', '版本') and i + 1 < len(texts):
+        version = texts[i + 1].strip()
+```
+
+> **一个复盘教训**:调试时我曾把新 APK 推到 U 盘上【已经被缓存的旧文件名】下做实验,
+> 结果留下了一个同名不同版本的文件,导致后面排查了很久“为什么总是装成旧版本”。
+> 调试用的临时文件要及时清掉,并且脚本要能容忍同名条目。
 
 ---
 
@@ -242,9 +310,9 @@ label = candidates[0]
 
 ### U 盘是 TCL 认可的侧载介质
 
-- 目录:`<U盘>/AndroidTV/`
-- 电视会在挂载时扫描;TGuard 的 `appmanager.receiver.UsbMountedReceiver` 处理卸载/拔出事件
-- 实测把 APK 直接 `adb push` 到 `/storage/<volId>/AndroidTV/` 也是可写的(shell 对该目录有权限)
+- 目录:`<U盘>/AndroidTV/`(细节见上面的机制 1)
+- 电视会在**挂载时**扫描;TGuard 的 `appmanager.receiver.UsbMountedReceiver` 处理卸载/拔出事件
+- 实测 `adb push` 到 `/storage/<volId>/AndroidTV/` 是可写的(shell 对该目录有权限)
 - 但**想通过 adb 模拟「插入」事件做不到**:`MEDIA_MOUNTED` 是保护广播,shell 发不了
 
 ### 残留改动

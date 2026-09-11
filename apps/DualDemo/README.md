@@ -1,5 +1,11 @@
 # DualDemo · 双端设备自检
 
+> **定位:测试验证工程。** 它不属于任何业务应用,作用是验证工具链和 ADB 链路。
+> **不要往这里加业务功能** —— 新应用请用 `bash tools/new-app.sh <AppName> <package.id>`
+> 在 `apps/` 下另建独立工程(见 [../../docs/06-app-conventions.md](../../docs/06-app-conventions.md))。
+>
+> 这个工程同时也被 `new-app.sh` 当作**脚手架模板**,改动它会影响所有新工程。
+
 一个 **APK 同时跑在 Android TV 和 Pico 4 上**的最小 Compose 工程。
 
 存在的目的:
@@ -7,6 +13,7 @@
 1. 验证「无 IDE 纯命令行」的完整闭环(构建 → 安装 → 启动 → 读 UI 树)
 2. 验证同一个 APK 能覆盖两台差异极大的设备(32 位 TV / 64 位 VR)
 3. 把设备真实规格直接渲染到屏幕上,换设备时一眼能看出差异
+4. 作为 `tools/new-app.sh` 的模板
 
 ---
 

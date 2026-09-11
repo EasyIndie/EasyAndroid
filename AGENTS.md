@@ -21,11 +21,28 @@
 
 ```
 docs/            知识沉淀(踩坑、结论、绕行方案)
-apps/<Name>/     可运行的 Android 工程
+apps/            可运行的 Android 工程(每个子目录是一个独立 Gradle 构建)
 tools/           设备连接 / 安装 / 引导脚本
   _common.sh             共用的配置载入逻辑(所有脚本 source 它)
   device.env.example     设备地址模板 → 复制成 device.env(不入库)
 ```
+
+### 新增应用必须遵守
+
+> **在 `apps/` 下新建独立工程目录,不要往已有工程里塞业务模块。**
+
+```bash
+bash tools/new-app.sh <AppName> <package.id>
+# 例: bash tools/new-app.sh MyPlayer com.example.myplayer
+```
+
+- 每个工程自带 `settings.gradle.kts` + `gradlew` + `gradle/wrapper/`,**仓库根目录没有** `settings.gradle.kts`
+- 工程之间**不共享代码**;要复用的放 `tools/` 或 `docs/`
+- `apps/DualDemo` 是**测试验证工程**,保持精简,**不要往里加业务功能**
+- `applicationId` 每个工程必须不同(否则装到同一台设备会互相覆盖)
+
+完整约定(目录清单、命名、版本组合、README 要求)见
+[docs/06-app-conventions.md](docs/06-app-conventions.md) —— **动手前先读它**。
 
 写文档前先看 [docs/README.md](docs/README.md) 的索引,不要重复已有内容。
 
@@ -77,6 +94,9 @@ TCL 在 system_server 里打了 `OverseasAppConfig` 补丁,**绕过了 AOSP 的 
 
 `tv-install.sh` 走的是 TGuard 的图形化安装器(`安全卫士 → 应用管理 → 应用安装`),
 用 `adb input keyevent` + `uiautomator dump` 模拟走完,不消耗多模态 token。
+
+它会自动把 APK 推到 **U 盘的 `AndroidTV/` 目录**(安装器只扫可移动存储,不扫 `/sdcard`),
+并在必要时清掉 TGuard 的扫描缓存。**前提是电视上插着一个可写的 U 盘。**
 
 完整分析(含所有失败尝试的清单)见 [docs/03-tcl-tv-sideload.md](docs/03-tcl-tv-sideload.md)。
 **改动这个脚本前先读那篇文档**,否则会重复踩已经排除过的坑。
@@ -215,19 +235,23 @@ git ls-files | grep -E 'device\.env$|tools/platform-tools/'
 
 ## 8. 扩展指引
 
-### 加一个新示例工程
+### 新建一个应用
 
-```
-apps/NewApp/
-├── README.md            说明它验证什么、怎么构建、怎么装
-├── settings.gradle.kts
-├── build.gradle.kts
-├── gradlew / gradle/wrapper/
-└── app/
+用脚手架,不要手工拷:
+
+```bash
+bash tools/new-app.sh <AppName> <package.id>
 ```
 
-要让一个 APK 同时支持 TV 和其他设备,注意 [apps/DualDemo/README.md](apps/DualDemo/README.md) 里那三个关键点
-(leanback 不设 required、注册两个 launcher category、banner 必须 320×180)。
+它会以 `DualDemo` 为模板生成 `apps/<AppName>/`,替换包名/应用名/工程名,并清掉构建产物。
+生成后记得:
+
+1. 写 `apps/<AppName>/README.md`(做什么、目标设备、构建/安装/验收、已知限制)
+2. 改 `app/src/main/res/values/strings.xml` 里的 `app_name`
+3. 确认 `applicationId` 与其它工程不重复
+4. 按第 7 节验证一遍完整闭环(构建 → 安装 → 验收)
+
+完整约定见 [docs/06-app-conventions.md](docs/06-app-conventions.md)。
 
 ### 加一篇文档
 

@@ -10,8 +10,9 @@ Android 开发实践沉淀。
 | 路径 | 内容 |
 |---|---|
 | [`docs/`](docs/) | 知识沉淀:环境搭建、ADB 技巧、厂商限制与绕行方案、踩坑速查 |
-| [`apps/`](apps/) | 可运行的示例工程 |
-| [`tools/`](tools/) | 设备连接 / 安装 / 引导脚本 |
+| [`apps/`](apps/) | 可运行的 Android 工程(**每个子目录是一个独立工程**) |
+| [`tools/`](tools/) | 设备连接 / 安装 / 引导 / 新建工程脚本 |
+| [`AGENTS.md`](AGENTS.md) | 给 AI 编码智能体的仓库说明与硬性约束 |
 
 ## 已沉淀的主题
 
@@ -22,9 +23,17 @@ Android 开发实践沉淀。
 
 ## 示例工程
 
-| 工程 | 说明 |
+| 工程 | 定位 |
 |---|---|
-| [`apps/DualDemo`](apps/DualDemo/) | 一个 APK 同时跑在 Android TV 和 Pico 4 上的最小 Compose 工程,内置设备自检页 |
+| [`apps/DualDemo`](apps/DualDemo/) | **测试验证工程**:一个 APK 同时跑在 Android TV 和 Pico 4 上的最小 Compose 工程,内置设备自检页 |
+
+> `apps/` 下每个子目录都是**独立 Gradle 构建**。新增应用请用脚手架:
+>
+> ```bash
+> bash tools/new-app.sh MyPlayer com.example.myplayer
+> ```
+>
+> 完整约定见 [`docs/06-app-conventions.md`](docs/06-app-conventions.md)。
 
 ## 快速开始
 
