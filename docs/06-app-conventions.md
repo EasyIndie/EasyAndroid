@@ -69,9 +69,70 @@ apps/<AppName>/
 > `applicationId` 冲突是很容易踩的坑:两个工程用了同一个 id,后装的会覆盖先装的,
 > 而且 `adb uninstall` 分不清是谁。新建工程时先确认一下。
 
+## 版本号
+
+**唯一来源是仓库根的 [`version.properties`](../version.properties)。**
+工程里不写版本号字面量 —— 连界面上显示的版本也走 `BuildConfig.VERSION_NAME`。
+
+```properties
+version=0.0.1
+```
+
+各工程的 `app/build.gradle.kts` 从 `rootDir` **往上找第一个** `version.properties`
+(不写死 `../..`,拆工程 / 挪目录都不会坏),然后:
+
+| 值 | 怎么来 |
+|---|---|
+| `versionName` | 直接取 `version` |
+| `versionCode` | `MAJOR*10000 + MINOR*100 + PATCH`,每段限 `0..99` |
+
+`versionCode` 是推导出来的,不是手写 —— 免得出现「改了 `versionName` 忘了改 `versionCode`」。
+Android 靠 `versionCode` 判断升级,漏改会导致新包装不上(或被当成同一版跳过)。
+
+### 格式:严格 SemVer
+
+只允许 `MAJOR.MINOR.PATCH`。**不支持** `-alpha.1` / `+build.7` 这类后缀 ——
+`versionCode` 由数值段推导,带后缀会让两个不同版本算出同一个 `versionCode`,
+`adb install -r` 会拒绝覆盖。预发布阶段就直接涨 `MINOR` / `PATCH`。
+
+写错了构建**直接失败**,并说明原因:
+
+```
+version=1.0.0-alpha.1 不是严格 SemVer(MAJOR.MINOR.PATCH),见 docs/06-app-conventions.md
+version=1.100.0 每段只能是 0..99(versionCode = MAJOR*10000 + MINOR*100 + PATCH)
+version=01.0.0 的段 '01' 不合法(SemVer 不允许空段或前导零)
+version=a.b.c 里有非数字段: a
+```
+
+### 改版本的流程
+
+```bash
+# 1. 只改唯一来源
+$EDITOR version.properties
+
+# 2. 构建 + 校验
+#    verify-all 会把 APK 里的 versionName 和 version.properties 对一遍,
+#    不一致就报错 —— 把「唯一来源」变成可执行约束,而不是只写在文档里
+bash tools/verify-all.sh
+
+# 3. 打 tag 并推送。tag 名 == version,不加 v 前缀
+#    这样任何时刻 `git checkout <tag>` 构出来的 APK 版本号都等于 tag 名
+bash tools/tag-release.sh 0.0.2
+```
+
+第一个版本是 **`0.0.1`**(已有 `git tag 0.0.1`)。`0.x` 表示对外行为还可能变。
+
+### 为什么放在仓库根,而不是每个工程一份
+
+`apps/` 下每个工程都是独立 Gradle 构建,各放一份更利于独立演进。
+但本仓库是**作为一个整体发**的(一个 tag、一套 `docs/`、一套 `tools/`),
+所以版本也统一成一个 —— 免得再出现「tag 是 `0.0.1`、APK 里却是 `0.1.0`」这种漂移。
+
+真需要让某个应用独立走版本线时,再把它拆成工程内一份,并在该工程 README 里写明。
+
 ## 版本组合
 
-保持全仓库一致,避免每个工程各自漂移:
+保持全仓库一致,避免每个工程各自漂移(这里是**工具链**版本,应用自己的版本号见上一节):
 
 | 组件 | 版本 |
 |---|---|
@@ -113,6 +174,9 @@ apps/<AppName>/
 2. **目标设备**是哪台(或哪几台)
 3. 怎么**构建**、怎么**安装**、怎么**验收**
 4. 有哪些**已知限制**
+
+如果该工程对版本号有特殊安排(比如拆了独立版本线),还要写明它跟
+`version.properties` 的关系。
 
 参考 [apps/DualDemo/README.md](../apps/DualDemo/README.md)。
 

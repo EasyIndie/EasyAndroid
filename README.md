@@ -35,6 +35,19 @@ Android 开发实践沉淀。
 >
 > 完整约定见 [`docs/06-app-conventions.md`](docs/06-app-conventions.md)。
 
+### 版本号
+
+**唯一来源是仓库根的 [`version.properties`](version.properties)**,工程里不写版本字面量。
+格式是严格 SemVer(`MAJOR.MINOR.PATCH`),第一个版本 `0.0.1`;`versionCode` 由它推导,
+tag 名也取它。
+
+```bash
+bash tools/tag-release.sh --bump patch   # 0.0.1 -> 0.0.2
+bash tools/tag-release.sh                # 校验 + 构建自检 + 打 tag + 推送
+```
+
+为什么、以及 `versionCode` 怎么算,见 [`docs/06`](docs/06-app-conventions.md#版本号)。
+
 ## 快速开始
 
 ```bash

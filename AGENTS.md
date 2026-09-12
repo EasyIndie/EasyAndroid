@@ -14,6 +14,10 @@
 3. **不要把真实内网 IP 写进任何被跟踪的文件**。文档里统一用 `192.0.2.x`(RFC 5737 文档保留段)。
 4. **不要跑 `adb install` 去装 TCL 电视** —— 必然失败,见第 3 节。
 5. **优先用文本手段验收 UI,不要截图** —— 见第 4 节。
+6. **不要在代码里写版本号字面量** —— 唯一来源是仓库根的 `version.properties`
+   (严格 SemVer,第一个版本 `0.0.1`)。`versionName` / `versionCode` / 界面上显示的版本
+   全部从它推导。改版本只改那一个文件,然后 `bash tools/tag-release.sh`。
+   见 [docs/06](docs/06-app-conventions.md) 的「版本号」一节。
 
 ---
 
@@ -41,7 +45,7 @@ bash tools/new-app.sh <AppName> <package.id>
 - `apps/DualDemo` 是**测试验证工程**,保持精简,**不要往里加业务功能**
 - `applicationId` 每个工程必须不同(否则装到同一台设备会互相覆盖)
 
-完整约定(目录清单、命名、版本组合、README 要求)见
+完整约定(目录清单、命名、**版本号与发版流程**、版本组合、README 要求)见
 [docs/06-app-conventions.md](docs/06-app-conventions.md) —— **动手前先读它**。
 
 写文档前先看 [docs/README.md](docs/README.md) 的索引,不要重复已有内容。
@@ -326,7 +330,8 @@ bash tools/new-app.sh <AppName> <package.id>
 1. 写 `apps/<AppName>/README.md`(做什么、目标设备、构建/安装/验收、已知限制)
 2. 改 `app/src/main/res/values/strings.xml` 里的 `app_name`
 3. 确认 `applicationId` 与其它工程不重复
-4. 按第 7 节验证一遍完整闭环(构建 → 安装 → 验收)
+4. 确认没在工程里写版本号字面量(版本唯一来源是仓库根的 `version.properties`)
+5. 按第 7 节验证一遍完整闭环(构建 → 安装 → 验收)
 
 完整约定见 [docs/06-app-conventions.md](docs/06-app-conventions.md)。
 

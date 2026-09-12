@@ -253,6 +253,10 @@ bash tools/tv-install.sh apps/<Name>/app/build/outputs/apk/debug/app-debug.apk
   installerPackageName=com.android.packageinstaller
 ```
 
+> 上面这段是当时的真实输出,所以里面的 `v0.1.1` 反映的是**当时**的命名习惯。
+> 现在版本号有统一约定(唯一来源 `version.properties`、从 `0.0.1` 起、严格 SemVer),
+> 当时那种 `0.1.1` 不会再出现了 —— 见 [06-app-conventions.md#版本号](06-app-conventions.md#版本号)。
+
 ### 脚本里几个必要的细节
 
 | 细节 | 原因 |

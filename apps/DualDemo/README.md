@@ -34,6 +34,20 @@ sdk.dir=/opt/android-sdk
 首次构建约 3 分钟。若遇到 TLS 握手失败见
 [../../docs/05-gotchas.md](../../docs/05-gotchas.md#gradle-并发拉依赖时报-tls-握手失败)。
 
+## 版本号
+
+`versionName` / `versionCode` **不在本工程里写**,而是从仓库根的
+[`version.properties`](../../version.properties) 推导(界面上的版本也用
+`BuildConfig.VERSION_NAME`,同样没有字面量):
+
+```properties
+version=0.0.1        # versionName=0.0.1  versionCode=1
+```
+
+改版本只改那一个文件,然后 `bash ../../tools/tag-release.sh`。完整约定(含为什么
+`versionCode` 要推导、为什么不支持 `-alpha.1` 后缀)见
+[../../docs/06-app-conventions.md](../../docs/06-app-conventions.md#版本号)。
+
 ## 安装
 
 ```bash
@@ -148,6 +162,10 @@ bash ../../tools/ui-dump.sh com.example.dualdemo --launch
 
 ## 已知限制
 
-- **Pico 上看不到界面效果**:截屏被 `FLAG_SECURE` 挡掉,`uiautomator` 也读不到 VR 面板里的 UI 树。
-  详见 [docs/04](../../docs/04-pico4-notes.md)。在 Pico 上验证 UI 只能靠日志或它的投屏功能。
+- **Pico 上看不到画面** —— 这是系统级限制,不是本工程的问题:
+  `screencap` 被 `FLAG_SECURE` 挡成纯白图,`uiautomator` 也只能读到 `com.pvr.vrshell` 的节点。
+  解法就是上面那套**自截图钩子**(`tools/ui-dump.sh`),它能拿到真实渲染的 PNG。
+  细节和替代方案见 [docs/04](../../docs/04-pico4-notes.md)、[docs/07](../../docs/07-debug-ui-capture.md)。
+- **电视上屏保会干扰自动化** —— 屏保期间 `am start` 返回成功但不生效;
+  偶发还会把之后的所有按键全吞掉。`tools/tv-install.sh` 已内置处理。见 [docs/03](../../docs/03-tcl-tv-sideload.md)。
 - 界面文案目前是硬编码中文,没有做 i18n。

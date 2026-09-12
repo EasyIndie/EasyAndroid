@@ -9,7 +9,7 @@
 | [03-tcl-tv-sideload.md](03-tcl-tv-sideload.md) | TCL 电视固件级侧载封锁(`OverseasAppConfig`)的分析与绕行方案;屏保「按键全被吞」、**电视上不能用截图判变化**、`input tap` 实测失效 |
 | [04-pico4-notes.md](04-pico4-notes.md) | Pico 4 开发约束:`FLAG_SECURE` 截屏限制、虚拟 display 机制、**输入必须定向注入 `-d <panelDisplayId>`**、**不戴头显 10 秒自动休眠**、2D 面板几何 |
 | [05-gotchas.md](05-gotchas.md) | 踩坑速查:adb shell 吞 stdin、Gradle 并发拉依赖 TLS 失败、drvfs 目录缓存损坏… |
-| [06-app-conventions.md](06-app-conventions.md) | **工程目录约定**:新增应用的结构、命名、版本组合、README 要求 |
+| [06-app-conventions.md](06-app-conventions.md) | **工程目录约定**:新增应用的结构、命名、**版本号唯一来源(`version.properties` + SemVer)与发版流程**、版本组合、README 要求 |
 | [07-debug-ui-capture.md](07-debug-ui-capture.md) | **应用自截图**:让 `FLAG_SECURE` 设备(Pico 4)也能被 `adb` 看见 |
 | [08-jvm-screenshot-testing.md](08-jvm-screenshot-testing.md) | **JVM 截图测试**:不碰设备看 UI,最快的迭代档位 |
 
