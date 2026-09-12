@@ -49,6 +49,16 @@ bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
 **Android 11+ 上 shell 读不了 `/sdcard/Android/data/`**,改用
 `adb exec-out run-as <pkg> cat files/ui-dump.png`。
 
+### `verify-all.sh` — 工具链自检
+
+```bash
+bash tools/verify-all.sh                # 环境 → 构建 → Pico → 电视 → 汇总
+bash tools/verify-all.sh --build-only   # 只验环境 + 构建(不需要设备)
+```
+
+换机器、升级 SDK 之后跑一次就知道有没有坏。设备不在线会自动跳过并标 SKIP,
+不算失败,所以 CI 上也能跑。
+
 ### `device-status.sh` — 设备状态一次性报告
 
 ```bash

@@ -163,6 +163,22 @@ bash tools/ui-dump.sh <applicationId> --launch
 > 有了它,Pico 变成「装得快(3 秒)+ 看得见」的迭代设备。
 > **高频改 UI 用 Pico + `ui-dump.sh`;电视一次装 60~80 秒,留给里程碑验收。**
 
+### 更快的一档:JVM 截图测试(不碰设备)
+
+改布局/颜色/文案这类改动,**先跑这个**,不要动设备:
+
+```bash
+cd apps/<Name> && ./gradlew testDebugUnitTest
+# → app/build/outputs/roborazzi/*.png
+```
+
+Robolectric + Roborazzi 在 JVM 上渲染 Compose,~20 秒出图。
+`@Config(qualifiers = ...)` 换屏幕规格(`w1280dp-h720dp-240dpi` 就是那台电视)。
+
+**⚠️ 它验不了 D-pad 焦点** —— Robolectric 下窗口没有焦点,`assertIsFocused()` 必然失败。
+焦点必须上真机验(`input keyevent` + `uiautomator dump`)。
+详见 [docs/08](docs/08-jvm-screenshot-testing.md)。
+
 ---
 
 ## 5. 交互:TV 没有触摸

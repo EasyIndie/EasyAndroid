@@ -11,6 +11,7 @@
 | [05-gotchas.md](05-gotchas.md) | 踩坑速查:adb shell 吞 stdin、Gradle 并发拉依赖 TLS 失败、drvfs 目录缓存损坏… |
 | [06-app-conventions.md](06-app-conventions.md) | **工程目录约定**:新增应用的结构、命名、版本组合、README 要求 |
 | [07-debug-ui-capture.md](07-debug-ui-capture.md) | **应用自截图**:让 `FLAG_SECURE` 设备(Pico 4)也能被 `adb` 看见 |
+| [08-jvm-screenshot-testing.md](08-jvm-screenshot-testing.md) | **JVM 截图测试**:不碰设备看 UI,最快的迭代档位 |
 
 ## 实测设备
 

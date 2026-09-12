@@ -42,6 +42,14 @@ jobs:
           path: apps/DualDemo/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
+      - name: 上传 JVM 截图(Robolectric + Roborazzi 渲染出来的界面)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: apps/DualDemo/app/build/outputs/roborazzi/*.png
+          if-no-files-found: ignore
+
       - name: 上传 lint 报告
         if: always()
         uses: actions/upload-artifact@v4
