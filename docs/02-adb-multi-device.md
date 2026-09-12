@@ -20,7 +20,7 @@
 | 存储 | 50 GB | 225 GB |
 | 屏幕 | 1920×1080 @240dpi → 逻辑 **1280×720 dp** | 4320×2160 @560dpi |
 | 刷新率 | 50 / 60 / 100 / 120 Hz | — |
-| HDR | 类型 [1,2,3,4](HDR10 / HLG / Dolby Vision / HDR10+) | — |
+| HDR | 类型 `1,2,3,4` 即 HDR10 / HLG / Dolby Vision / HDR10+ | — |
 | 平台标识 | `leanback_only` `television` `hdmi.cec` | `openxr_runtime` + Vulkan 1.1 |
 | shell 身份 | uid=2000,无 root | uid=2000,无 root |
 
