@@ -141,12 +141,35 @@ push_apk(){
   adb -s "$TV" push "$APK" "$APK_DIR/$name" </dev/null 2>&1 | tail -1
 }
 
+# ---- 屏保判断 ----
+is_dreaming(){ case "$(foreground)" in *Dream*) return 0 ;; *) return 1 ;; esac; }
+
+# 屏幕中心——兜底用的指针事件落点。wm size 可能同时报 Physical/Override 两行,取最后一行的。
+screen_center(){
+  local s; s="$(A wm size 2>/dev/null | tr -d '\r' \
+        | sed -n 's/.*size: *\([0-9]*\)x\([0-9]*\).*/\1 \2/p' | tail -1)"
+  [ -n "$s" ] || s="1920 1080"
+  echo $(( ${s% *} / 2 )) $(( ${s#* } / 2 ))
+}
+
 # ---- 界面状态复位 ----
 # 屏保会吞掉 am start;上一次的「应用安装已完成」弹窗会把后续按键全带偏。
 # BACK 是幂等的,直接按两次比 dump 一次判断更便宜。
 reset_ui_state(){
   keys "KEYCODE_WAKEUP KEYCODE_BACK KEYCODE_BACK KEYCODE_HOME" 1.2
-  case "$(foreground)" in *Dream*) keys "KEYCODE_WAKEUP" 0.8 ;; esac
+
+  # ⚠️ 兜底:实测撞到过一次「屏保把之后所有按键全吞掉」的状态 ——
+  # WAKEUP / BACK / HOME / DPAD_CENTER / POWER 连试 15 秒均无效,
+  # 但发一个【指针事件】立刻恢复。
+  # TCL 遥控走的是 IR 触控(gIrTouch_Mouse,Source 含 SOURCE_MOUSE|SOURCE_TOUCHPAD),
+  # 屏保只认指针。复现条件没定位到(静置 205 秒、长按 POWER 都没复现),
+  # 所以这段是防御性的:只在确实还是 Dream 时才发,避免误点界面。
+  # 它值一次偶发失败 —— 卡在那个状态时整个安装链路会失败(2026-09 实测过一次)。
+  if is_dreaming; then
+    A input tap $(screen_center) >/dev/null 2>&1
+    sleep 1.5
+    keys "KEYCODE_BACK KEYCODE_HOME" 1
+  fi
 }
 
 # ---- 打开「应用安装」页 ----
