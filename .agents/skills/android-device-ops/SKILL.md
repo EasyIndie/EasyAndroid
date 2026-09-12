@@ -58,7 +58,7 @@ adb -s "$DEV" shell dumpsys package <pkg> | grep installerPackageName
 |---|---|
 | `com.android.packageinstaller` | 图形化通道(TCL 上**可用**) |
 | `com.tcl.guard` / `com.tcl.appmarket2` | 厂商商店/TGuard |
-| 空 / `com.android.shell` | `adb install` |
+| 空 / `com.android.shell` | `adb install`(Pico 走这条,3 秒) |
 
 ## 4. 验收
 
@@ -80,6 +80,10 @@ adb -s "$DEV" shell input keyevent KEYCODE_HOME
 adb -s "$DEV" shell dumpsys activity activities | grep -m1 mResumedActivity
 #   前台是 ...DreamActivity 就是在屏保
 
+# 兵底:实测撞到过一种屏保把【所有按键】全吞掉的状态(连发 15 秒都没用)。
+# 这时只能发指针事件 —— TCL 遥控是 IR 触控,屏保只认指针。
+adb -s "$DEV" shell input tap 960 540      # 屏幕中心
+
 # 看崩溃
 adb -s "$DEV" logcat -d -t 300 | grep -iE 'FATAL|AndroidRuntime'
 
@@ -90,12 +94,38 @@ adb -s "$DEV" logcat -v time | grep -iE '<你的tag>|FATAL'
 **不要用截图验收。** 用 `uiautomator dump` 拿 UI 树 —— 信息量更大且零多模态成本。
 `device-status.sh` 最后一段就是干这个的。
 
-Pico 例外:`screencap` 被 `FLAG_SECURE` 挡住(纯白图),`uiautomator` 也读不到 VR 面板,
-只能靠日志打点或它自带的投屏。详见 `docs/04-pico4-notes.md`。
+⚠️ **电视上更要命的是「截图变了」根本不是证据**:TCL 桌面/设置里的时钟、天气、动效一直在跑,
+停在设置页 **4 秒不发任何输入**,两张 `screencap` 的 md5 就不同了。
+判断「输入生效没」要用 **UI 树的全量文案集合**(所有 `text`/`content-desc` 拼起来取 md5),
+不是截图,也不是只看前几条文案:
+
+```
+input tap 点「声音」       → 文案集合不变(❌ 没生效),但 PNG md5 变了
+DPAD_DOWN + CENTER 选它   → 文案集合变了(✅ 生效)
+```
+
+(`screencap` 在电视上还要 3 秒,比 `uiautomator dump` 的 2.1 秒更慢。)
+
+Pico 例外:`screencap` 被 `FLAG_SECURE` 挡住(纯白图),`uiautomator` 也读不到 VR 面板
+(dump 出来的 1799 字节其实是 `com.pvr.vrshell` 的,跟你的应用无关)。改用**应用自截图**:
+
+```bash
+bash tools/pico-panel.sh <pkg> awake    # 不戴头显 ~10 秒就休眠,先把应用拉起并顶住
+bash tools/ui-dump.sh <pkg>             # 1 秒拿到真实渲染的 PNG
+```
+
+⚠️ **自截图前提是应用处于 resumed**。如果报「没有处于 resumed 状态的 Activity」,
+九成是头显睡了,不是应用出了问题 —— 先 `awake`。
+详见 `docs/04-pico4-notes.md` / `docs/07-debug-ui-capture.md`。
 
 ## 5. 驱动 TV 界面
 
 TV 没有触摸,`input tap` 在很多 TCL 界面里**不生效**。用按键:
+
+> 实测得很彻底:TCL 桌面磁贴「我的应用」「设置」、设置左侧导航、设置里的
+> 「高级设置」按钮 —— 四处 `input tap` 均无反应,同位置 `DPAD + CENTER` 均生效。
+> 注意「高级设置」在 UI 树里标了 `clickable="true"` 却照样不行,所以
+> **不能靠 a11y 的 `clickable` 判断能不能 tap**。一律用按键。
 
 ```bash
 adb -s "$DEV" shell input keyevent KEYCODE_DPAD_DOWN
@@ -106,6 +136,29 @@ adb -s "$DEV" shell input keyevent KEYCODE_BACK
 导航策略:**不要靠固定次数的盲按**。每按一步就 `uiautomator dump` 一次,看 `focused="true"`
 落在哪个节点上,再决定下一步。参考 `tools/tv-install.sh` 里 `focused_label()` 的写法 ——
 它会取「bounds 落在 focused 节点内部的文本」作为当前项标签。
+
+### Pico 上不是这套:必须定向注入
+
+```bash
+bash tools/pico-panel.sh <pkg> awake                          # 顺带拉起应用
+bash tools/pico-panel.sh <pkg> key   KEYCODE_DPAD_DOWN
+bash tools/pico-panel.sh <pkg> key   KEYCODE_DPAD_DOWN KEYCODE_DPAD_CENTER   # 一次多个
+bash tools/pico-panel.sh <pkg> swipe 800 700 800 200 300      # 触摸注入有效
+```
+
+Pico 给**每个应用**建独立虚拟 display,裸 `input` 打到的是 display 0(`com.pvr.vrshell`),
+**不报错、不生效**。而且那个 displayId **每次启动应用都变**(实测见过 24/36/38/40/42/44/46/50),
+不能缓存。`pico-panel.sh` 每次现取,并在面板不是 `state ON` 时直接报错。
+
+送达怎么验证(Pico 上读不了 UI 树,只能靠图):
+
+```bash
+bash tools/ui-dump.sh <pkg> "$PICO_ADDR" /tmp/a.png
+bash tools/pico-panel.sh <pkg> key KEYCODE_DPAD_DOWN
+bash tools/ui-dump.sh <pkg> "$PICO_ADDR" /tmp/b.png
+md5sum /tmp/a.png /tmp/b.png     # 不一样 = 送达了
+adb -s "$PICO_ADDR" logcat -d | grep 'Dropping key targeting non-focused display'
+```
 
 ## 6. 写脚本时
 

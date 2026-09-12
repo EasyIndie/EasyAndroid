@@ -23,6 +23,12 @@
 | HDR | 类型 `1,2,3,4` 即 HDR10 / HLG / Dolby Vision / HDR10+ | — |
 | 平台标识 | `leanback_only` `television` `hdmi.cec` | `openxr_runtime` + Vulkan 1.1 |
 | shell 身份 | uid=2000,无 root | uid=2000,无 root |
+| `adb root` | ❌ production build | ❌ production build |
+| `adb reverse` | ✅ | ✅ |
+| `run-as <pkg>` | ✅ | ✅ |
+| **读界面** | `uiautomator dump` ✅ + `screencap` ✅ | 两个都❌ → **应用自截图**(`tools/ui-dump.sh`) |
+| **注入输入** | `adb shell input keyevent ...` **直接可用** | 必须 `input -d <panelDisplayId>`,且 id **每次启动都变** |
+| **防休眠** | 屏保 120 s 后触发;偶发「按键全被吞」→ 补 `input tap` | 不戴头显 ~10 s 休眠 → `pvr.factorytest.never.sleep 1` |
 
 复现这些数据的命令:
 

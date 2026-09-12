@@ -120,6 +120,17 @@ Pico 重启后无线 ADB 会失效(持久属性写不进去),需要:
 bash tools/pico-usb.sh    # 需要 USB 线插在 Windows 主机上
 ```
 
+**在 Pico 上干活前必须先记住这两条,否则所有命令都会「返回成功但什么都没发生」:**
+
+1. **不戴头显 ~10 秒就休眠**,应用会被 `onPause`,之后的 `am start` / 自截图全部静默失败
+   (自截图会报「没有处于 resumed 状态的 Activity」)。先跑
+   `bash tools/pico-panel.sh <pkg> awake`。
+2. **裸 `input keyevent` 到不了你的应用**。Pico 给每个应用建独立虚拟 display,
+   而 `input` 默认打到 display 0(`com.pvr.vrshell`)。必须定向注入:
+   `bash tools/pico-panel.sh <pkg> key KEYCODE_DPAD_DOWN`。
+
+完整原理见 [docs/04-pico4-notes.md](docs/04-pico4-notes.md)。
+
 ---
 
 ## 4. 验收:优先文本,别截图
@@ -140,6 +151,14 @@ adb -s "$TV_ADDR" logcat -d -t 300 | grep -iE 'FATAL|AndroidRuntime'
 
 `uiautomator` 的 XML 里有 `text` / `content-desc` / `bounds` / `focused` / `focusable` / `clickable`,
 够判断界面渲染对不对、焦点在哪。**对 TV 的 D-pad 焦点问题,这比截图还准。**
+
+⚠️ **电视上不要用截图判「输入生效没」。** TCL 桌面/设置里的时钟、天气、动效一直在跑 ——
+实测停在设置页**4 秒不发任何输入**,两张 `screencap` 的 md5 就不一样了(假阳性)。
+判断变化要用 **UI 树的全量文案集合**(把全部 `text`/`content-desc` 拼起来取 md5),
+不是截图,也不是只看前几条文案。
+
+> 两台设备的验收信号是**相反**的:电视上可靠的是文案集合(截图不可靠),
+> Pico 上只能靠自截图像素差(文案集合拿不到)。所以别写「通用」的验收逻辑。
 
 ### 什么时候截图也不行 —— 改用「应用自截图」
 
@@ -162,6 +181,8 @@ bash tools/ui-dump.sh <applicationId> --launch
 
 > 有了它,Pico 变成「装得快(3 秒)+ 看得见」的迭代设备。
 > **高频改 UI 用 Pico + `ui-dump.sh`;电视一次装 60~80 秒,留给里程碑验收。**
+> 但 Pico 上前提是**头显没睡**:先 `bash tools/pico-panel.sh <pkg> awake`,否则自截图必报
+> 「没有处于 resumed 状态的 Activity」。
 
 ### 更快的一档:JVM 截图测试(不碰设备)
 
@@ -197,6 +218,18 @@ adb -s "$TV_ADDR" shell input keyevent KEYCODE_HOME         # 3
 
 **`input tap` 在 TCL 的很多界面里不生效**(那些界面不是触摸式的),优先用按键。
 
+### ⚠️ Pico 不是这样:必须定向到应用自己的虚拟 display
+
+```bash
+bash tools/pico-panel.sh <pkg> awake                     # 先确保头显没睡
+bash tools/pico-panel.sh <pkg> key KEYCODE_DPAD_DOWN
+bash tools/pico-panel.sh <pkg> swipe 800 700 800 200 300 # 触摸注入可用
+```
+
+Pico 给每个应用建独立虚拟 display,裸 `input` 默认打到 display 0(**不是你的应用**),
+而且不报错。加了 `-d` 但 display id 是过期的同样不行 —— 日志里会有
+`Dropping key targeting non-focused display`。**不要缓存 display id,每次现取**。
+
 ### ⚠️ 电视会自动进屏保
 
 屏保期间 `am start` **返回成功但什么都不会发生**,日志里连 `ActivityTaskManager` 记录都没有。
@@ -208,6 +241,16 @@ adb -s "$TV_ADDR" shell input keyevent KEYCODE_HOME
 ```
 
 排查任何「`am start` 没反应」的问题,先查屏保。
+
+**两种形态**:常规屏保下上面这套能唤醒;但实测撞到过一种「屏保把之后**所有按键**全吞掉」
+的状态(WAKEUP/BACK/HOME/CENTER/POWER 连发 15 秒都没用)。这时唯一有效的是
+补一个**指针事件**—— TCL 遥控是 IR 触控,屏保只认指针:
+
+```bash
+adb -s "$TV_ADDR" shell input tap 960 540     # 屏幕中心
+```
+
+`tv-install.sh` 里已经内置了这个兜底。复现条件没定位到,当防御性代码看。
 
 ---
 

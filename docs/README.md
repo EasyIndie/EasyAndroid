@@ -5,9 +5,9 @@
 | 文档 | 主题 |
 |---|---|
 | [01-headless-android-build.md](01-headless-android-build.md) | 不装 Android Studio,纯命令行搭 Android 构建环境(WSL2 + JDK 17 + cmdline-tools + Gradle) |
-| [02-adb-multi-device.md](02-adb-multi-device.md) | ADB 多设备管理:WSL2 mirrored 网络的端口冲突、网络 ADB 持久性差异、USB→TCP 引导 |
-| [03-tcl-tv-sideload.md](03-tcl-tv-sideload.md) | TCL 电视固件级侧载封锁(`OverseasAppConfig`)的分析与绕行方案 |
-| [04-pico4-notes.md](04-pico4-notes.md) | Pico 4 开发约束:`FLAG_SECURE` 截屏限制、ABI、虚拟 display 机制 |
+| [02-adb-multi-device.md](02-adb-multi-device.md) | ADB 多设备管理:WSL2 mirrored 网络的端口冲突、网络 ADB 持久性差异、USB→TCP 引导、**双设备能力对照表** |
+| [03-tcl-tv-sideload.md](03-tcl-tv-sideload.md) | TCL 电视固件级侧载封锁(`OverseasAppConfig`)的分析与绕行方案;屏保「按键全被吞」、**电视上不能用截图判变化**、`input tap` 实测失效 |
+| [04-pico4-notes.md](04-pico4-notes.md) | Pico 4 开发约束:`FLAG_SECURE` 截屏限制、虚拟 display 机制、**输入必须定向注入 `-d <panelDisplayId>`**、**不戴头显 10 秒自动休眠**、2D 面板几何 |
 | [05-gotchas.md](05-gotchas.md) | 踩坑速查:adb shell 吞 stdin、Gradle 并发拉依赖 TLS 失败、drvfs 目录缓存损坏… |
 | [06-app-conventions.md](06-app-conventions.md) | **工程目录约定**:新增应用的结构、命名、版本组合、README 要求 |
 | [07-debug-ui-capture.md](07-debug-ui-capture.md) | **应用自截图**:让 `FLAG_SECURE` 设备(Pico 4)也能被 `adb` 看见 |

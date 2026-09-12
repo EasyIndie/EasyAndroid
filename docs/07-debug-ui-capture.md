@@ -10,8 +10,11 @@ adb shell screencap -d 17 -p             # → 0 字节
 # scrcpy 同理
 ```
 
-`uiautomator dump` 也读不到 VR 面板里的 UI 树(只有 1 个节点)。
+`uiautomator dump` 也读不到 VR 面板里的 UI 树(只有 1 个节点,而且是 `com.pvr.vrshell` 的)。
 于是 Pico 上做 UI 只能靠日志打点 —— 而有视觉模型时,看图远比读日志高效。
+
+> 另有一条同样容易误判的坑:**不戴头显 ~10 秒就会休眠**,应用被 `onPause`,
+> 自截图会报「没有处于 resumed 状态的 Activity」。见 [04](04-pico4-notes.md#不戴头显时会在-10-秒后自动休眠)。
 
 ## 解法:让应用截自己
 
@@ -124,8 +127,11 @@ $ bash tools/ui-dump.sh com.example.dualdemo --launch
 ==> 广播触发自截图
   Broadcast completed: result=0
   /tmp/ui-dump-com_example_dualdemo.png
-  1602x900, 102732 bytes
+  1600x900, 102732 bytes
 ```
+
+> 面板 display 是 1602x902,但 `decorView` 比它小 2px(window frame `[1,1][1601,901]`),
+> 所以抓出来是 1600x900。
 
 抓出来的图内容完整 —— 型号、API、ABI、屏幕密度、内存、存储全部可读,
 这些是之前 `screencap` / `uiautomator` 一条都拿不到的。
@@ -145,7 +151,7 @@ TCL 电视(Android 11)上同样可用,走 `run-as` 取图:
 | 限制 | 说明 |
 |---|---|
 | **只能抓 View 层级** | `SurfaceView` / `TextureView` / `VideoView` 是独立 surface,不走 `View.draw` 的软件绘制路径,截出来是黑的。**Compose 没问题**(它就是一个 `AndroidComposeView`) |
-| **应用必须在前台** | 后台时 View 不再重绘,抓到的是过期画面 |
+| **应用必须在前台** | 后台时 View 不再重绘,抓到的是过期画面。**Pico 上还额外要头显不处于休眠**,否则同样报这个错 —— 见 [04](04-pico4-notes.md#不戴头显时会在-10-秒后自动休眠) |
 | **多窗口/多 display 只抓当前 resumed 的那个** | 需要抓别的窗口得自己扩展 |
 | **需要 debug 构建** | 钩子在 `src/debug/`,release 里没有 |
 
@@ -157,9 +163,18 @@ TCL 电视(Android 11)上同样可用,走 `run-as` 取图:
 cd apps/<Name>
 ./gradlew assembleDebug                                  # 增量构建
 adb -s "$PICO_ADDR" install -r app/build/outputs/apk/debug/app-debug.apk   # 3 秒
-bash ../../tools/ui-dump.sh <applicationId> --launch     # 截图
+bash ../../tools/pico-panel.sh <applicationId> awake     # 拉起 + 解除自动休眠(必需)
+bash ../../tools/ui-dump.sh <applicationId>              # 1 秒出图
 # → 把 PNG 交给支持视觉的模型判断 UI 对不对
+
+# 要看交互(焦点、滑动),再加一步定向注入 + 对比图:
+bash ../../tools/pico-panel.sh <applicationId> key KEYCODE_DPAD_DOWN
+bash ../../tools/ui-dump.sh <applicationId> /tmp/b.png   # 和上一张比 md5
 ```
+
+> 第一步的 `awake` 不能省。头显不戴在头上时 ~10 秒就休眠,应用被 `onPause`,
+> 自截图会直接报「没有处于 resumed 状态的 Activity」。详见
+> [04](04-pico4-notes.md#不戴头显时会在-10-秒后自动休眠)。
 
 对比 TCL 电视那条路(见 [03](03-tcl-tv-sideload.md#安装耗时为什么快不起来)),
 一次安装要 60~80 秒。**建议:高频迭代用 Pico + 自截图,电视只在里程碑做验收。**

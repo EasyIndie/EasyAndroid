@@ -258,7 +258,7 @@ bash tools/tv-install.sh apps/<Name>/app/build/outputs/apk/debug/app-debug.apk
 | 细节 | 原因 |
 |---|---|
 | 推送到 `<U盘>/AndroidTV/`,文件名带包名+版本 | 见上面机制 1 和 3 |
-| 进列表前先 `WAKEUP` + `HOME`,并确认不在屏保 | **屏保期间 `am start` 返回成功但什么都不发生** |
+| 进列表前先 `WAKEUP` + `HOME`,并确认不在屏保 | **屏保期间 `am start` 返回成功但什么都不发生**,见下面「第二种形态」 |
 | 进列表前 `BACK` 清掉残留弹窗 | 上一次安装的「应用安装已完成」弹窗会留在屏幕上,把后续按键全带偏 |
 | `am start -S` 强停应用管理器 | 否则会复用上次残留的页面状态 |
 | 左侧栏 `LEFT` → `UP`×5 → `DOWN`×2 | `UP` 到顶会截断,所以先归顶再下移两位 |
@@ -267,6 +267,47 @@ bash tools/tv-install.sh apps/<Name>/app/build/outputs/apk/debug/app-debug.apk
 | 版本不对时清缓存重试一次 | 见机制 2 |
 | 装完 `BACK` 关掉完成弹窗 | 否则影响下一次运行 |
 | 全程用 `uiautomator dump` 读文本 | 不用截图,不消耗多模态 token |
+
+### 屏保还有第二种形态:按键完全被吞掉
+
+[AGENTS.md](../AGENTS.md) 里写的解法是「`WAKEUP` + `HOME`」,实测**大多数时候有效**,
+但撞到过一次例外 —— 值得记下来,因为它会让整个安装链路挂掉。
+
+**症状**:`mWakefulness=Dreaming`、焦点是 `com.tcl.appreciate.art/...DreamActivity`,
+此时 `KEYCODE_WAKEUP / BACK / HOME / DPAD_CENTER / POWER` 连发 15 秒**全部无效**,
+`am start` 依然静默失败,`uiautomator dump` 只能拿到屏保自身的节点(没有 `text`)——
+于是 `tv-install.sh` 的 `match_here()` 永远不匹配,报「安装失败」且「当前界面」为空。
+
+**解法:发一个指针事件。** 实测 `input tap <屏幕中心>` 立刻恢复:
+
+```
+起点                              wake=Dreaming   focus=...DreamActivity
+① WAKEUP BACK BACK HOME           wake=Dreaming   ← 无效
+② 只发 WAKEUP + 等 3s             wake=Dreaming   ← 无效
+③ 只发 HOME + 等 3s               wake=Dreaming   ← 无效
+④ DPAD_CENTER                     wake=Dreaming   ← 无效
+⑤ WAKEUP + HOME + 等 3s           wake=Dreaming   ← 无效
+   input tap 960 540              wake=Awake      focus=com.tcl.cyberui/... ← ✓
+```
+
+合理:这台电视的遥控走的是 **IR 触控**(`gIrTouch_Mouse`,Source 含
+`SOURCE_MOUSE|SOURCE_TOUCHPAD`),屏保只认指针,不认按键。
+`tv-install.sh` 的 `reset_ui_state()` 已加上这个兜底(只在确实还是 `Dream` 时才发,
+避免误点界面)。
+
+> **没能稳定复现**:静置到屏保 205 秒、长按 `POWER` 再进屏保,两种情况下按键都能唤醒。
+> 所以这是一段**防御性代码**,不是已知必现路径。备着是因为它值一次偶发失败。
+
+### 怎么判断「屏保是不是真的卡住了」
+
+```bash
+# 110ms,比 dump 便宜
+adb -s $TV shell dumpsys window | grep -m1 mCurrentFocus
+#   ... com.tcl.appreciate.art/android.service.dreams.DreamActivity   ← 在屏保
+```
+
+真正的屏保态和那个卡死态**看起来一样**(都是 `DreamActivity`),区别只是按键管不管用。
+所以脚本里的判断是「还是 Dream 就补一个指针事件」,而不是去区分两种状态。
 
 ### 怎么从 UI 树里取「当前焦点项」和「文件版本」
 
@@ -292,6 +333,63 @@ for i, t in enumerate(texts):
 > **一个复盘教训**:调试时我曾把新 APK 推到 U 盘上【已经被缓存的旧文件名】下做实验,
 > 结果留下了一个同名不同版本的文件,导致后面排查了很久“为什么总是装成旧版本”。
 > 调试用的临时文件要及时清掉,并且脚本要能容忍同名条目。
+
+---
+
+## 电视上「截图变了」不能当作「输入生效」的证据
+
+这条和 Pico 正好相反,跨设备写验收脚本时最容易搞错。
+
+**对照实验**:电视停在 TCL 设置页,4 秒内**不发任何输入**,连拍两张:
+
+```
+  t0: UI 22 条 | e12da521   PNG 01a35984 (1406534B)
+  t1: UI 22 条 | e12da521   PNG ac333c80 (1518940B)   ← md5 变了!
+```
+
+文案集合完全一致,但 PNG 变了 —— TCL 的桌面上有**时钟、天气、动效**在自己跑。
+所以「截图 md5 变了」在电视上是**假阳性**。
+
+改成用 **UI 树的全量文案集合**判定,就干净了。同一个操作用的两种判定对比:
+
+| 操作 | 全量文案集合 | PNG md5 | 真实结果 |
+|---|---|---|---|
+| `input tap` 点左侧导航「声音」 | **不变**(22 条 / e12da521) | 变了 | ❌ 没生效 |
+| `DPAD_DOWN` + `CENTER` 选「声音」 | **变了**(22 → 23 条 / 30b90e2e) | 变了 | ✅ 生效 |
+
+### 跨设备的验收信号是对称的
+
+| | TCL 电视 | Pico 4 |
+|---|---|---|
+| UI 树(`uiautomator dump`) | ✅ 可靠(但要拿**全量文案集合**,不是前几条) | ❌ 只能拿到 `com.pvr.vrshell` 的 |
+| 截图 | ✅ 能抓,但**不能用来判变化**(UI 自走) | 只能靠应用自截图,但像素差**可靠** |
+| 结论 | 判断输入用 **dump 文案集** | 判断输入用 **自截图像素差** |
+
+**所以不要写一套“通用”的验收逻辑。** 两台设备的信号是反的:
+电视上可靠的那个在 Pico 上拿不到,反之亦然。
+
+---
+
+## 触摸在电视上到底管不管用
+
+**结论:不要用 `input tap`,一律用 `input keyevent`。** 这是量化验证过的:
+
+| 测试点 | `input tap` | 说明 |
+|---|---|---|
+| TCL 桌面磁贴「我的应用」(203,539) | ❌ | 前台/文案集合均不变 |
+| TCL 桌面磁贴「设置」(180,860) | ❌ | 同上 |
+| TCL 设置左侧导航「声音」(152,196) | ❌ | 文案集合不变;按键则变 |
+| TCL 设置里的「高级设置」(408,376) | ❌ | 该节点在 UI 树里**标了 `clickable="true"`**,照样没反应 |
+
+最后一行值得留意:**不能靠 a11y 的 `clickable` 判断能不能 tap**。
+TCL 那些界面是按遥控焦点模型建的,`clickable` 标记和触摸响应不是一回事。
+
+反过来,指针链路本身是通的 —— 否则屏保也不会只认 `tap`。输入设备里有
+`gIrTouch_Mouse`(`SOURCE_MOUSE|SOURCE_TOUCHPAD`),这是 TCL 给 IR 遥控做的一套指针模拟。
+只是 TCL 自有界面不把 touch 当 click。
+
+> 用标准 AOSP 控件(如系统安装器的 AlertDialog 按钮)能不能 tap 没测(需要触发安装流程)。
+> 但本项目在电视上只驱动 TCL 自有界面 + 自己的应用,结论「一律用按键」已经够用。
 
 ---
 
@@ -336,18 +434,21 @@ adb -s $TV shell settings put global package_verifier_enable 1
 
 ## 安装耗时:为什么快不起来
 
-`adb install` 被固件封死,唯一通道是图形化安装器,所以**必然慢**。实测各操作开销:
+`adb install` 被固件封死,唯一通道是图形化安装器,所以**必然慢**。实测各操作开销
+(2026-09 复测,原值列在括号里):
 
 | 操作 | 耗时 | 说明 |
 |---|---|---|
-| `input keyevent` | **~0.9 s/次** | `input` 是 Java 程序,每次都要启动 ART 进程 |
-| `uiautomator dump` | **~2.5 s/次** | 读界面文本的唯一手段 |
-| `dumpsys` | ~0.12 s | 界面状态、包信息都用它 |
+| `input keyevent` | **1.0~1.1 s/次**(原 ~0.9) | `input` 是 Java 程序,每次都要启动 ART 进程 |
+| `uiautomator dump` | **2.1 s/次**(原 ~2.5) | 读界面文本的唯一手段 |
+| `exec-out screencap -p` | **2.9~3.3 s/次** | 比 dump 还慢,而且不能用来判变化(UI 自己在动) |
+| `dumpsys` | **0.11 s**(原 ~0.12) | 界面状态、包信息都用它 |
 | `pm clear com.tcl.guard` | ~0.2 s | 重建扫描缓存 |
 
 据此做的优化(相对最初的写法提速约一倍):
 
 - **按键批量发送**:`input keyevent 20 20 20 ...` 一次传一串,13 个键从 11.7 s 降到 ~1 s
+  (2026-09 复测:分 13 次 **12.29 s** vs 一次发 **1.01 s**,12 倍)
 - **状态判断改用 `dumpsys`**:不在 `uiautomator` 上花时间
 - **对话框盲过 + 事后校验**:两个确认框的默认焦点固定在「取消」,直接 `RIGHT`+`OK`,装完用 `versionName` 校验兜底,省掉两次 dump
 - **位置缓存**:列表顺序稳定,把上次找到的序号记在 `tools/.tv-pos-<pkg>`(不入库),下次一次批量按过去,省掉十几轮 dump

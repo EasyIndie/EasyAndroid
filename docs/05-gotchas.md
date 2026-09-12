@@ -179,7 +179,7 @@ adb shell dumpsys activity activities | grep -m1 mResumedActivity
 大小只有 4KB,不是合法 APK。
 
 **解法**:不要盲按。**按应用标签匹配焦点项**再确认。实现见
-[03-tcl-tv-sideload.md](03-tcl-tv-sideload.md#焦点项标签怎么取)。
+[03-tcl-tv-sideload.md](03-tcl-tv-sideload.md#怎么从-ui-树里取当前焦点项和文件版本)。
 
 ---
 
@@ -282,6 +282,116 @@ git update-index --chmod=+x apps/DualDemo/gradlew tools/*.sh
 
 > 这条是 CI 第一次跑就炸出来的:本地一切正常,Ubuntu runner 上直接
 > `Permission denied`。凡是新增 `.sh` 脚本或 wrapper,记得补一次 `--chmod=+x`。
+
+## Pico:不戴头显时会在 10 秒后自动休眠
+
+**症状**:上一秒 `am start` / 自截图都正常,下一秒 `tools/ui-dump.sh` 报
+`没有处于 resumed 状态的 Activity —— 应用在前台吗?`。或者按键「返回成功但没反应」。
+
+**原因**:接近传感器判定没戴 → `mWakefulness=Asleep`、内置屏幕和面板都 `state OFF`。
+和电视的屏保是**同一类问题的不同外衣**。
+
+**解法**:
+
+```bash
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell setprop pvr.factorytest.never.sleep 1     # 非持久,重启自动恢复,无副作用
+```
+
+`svc power stayon true` / `stay_on_while_plugged_in=7` / `persist.pvr.sleep_by_static=0` **都没用**,已逐个实测排除。
+
+完整复现步骤见 [04-pico4-notes.md](04-pico4-notes.md#不戴头显时会在-10-秒后自动休眠)。
+
+---
+
+## Pico:裸 `input keyevent` 到不了你的应用,必须加 `-d`
+
+**症状**:`adb shell input keyevent KEYCODE_DPAD_DOWN` 不报错,界面也毫无反应。
+
+**原因**:Pico 给**每个应用**建独立虚拟 display,而 `input` 默认打到 display 0(`com.pvr.vrshell`)。
+而且那个 displayId **每次启动应用都变**,不能缓存。
+
+**确认**:
+
+```bash
+adb shell logcat -d | grep 'Dropping key targeting non-focused display'
+#   W WindowManager: Dropping key targeting non-focused display #24 keyCode=KEYCODE_DPAD_DOWN
+```
+
+**解法**:先现取 displayId,再定向注入。用脚本:
+
+```bash
+bash tools/pico-panel.sh <pkg> awake
+bash tools/pico-panel.sh <pkg> key KEYCODE_DPAD_DOWN
+```
+
+原理和取 id 的两种写法见 [04-pico4-notes.md](04-pico4-notes.md#输入必须定向到应用自己的虚拟-display)。
+
+---
+
+## 电视屏保:偶发「所有按键全被吞掉」,要发指针事件
+
+**症状**:`mWakefulness=Dreaming`、焦点是 `com.tcl.appreciate.art/...DreamActivity`。
+`KEYCODE_WAKEUP / BACK / HOME / DPAD_CENTER / POWER` 连发 15 秒**全部无效**,
+`am start` 依然静默失败,`uiautomator dump` 只能拿到屏保自身那些没 `text` 的节点。
+→ `tv-install.sh` 的列表匹配永远不中,报「安装失败」且「当前界面」为空。
+
+**解法**:补一个**指针事件**(TCL 的遥控是 IR 触控,屏保只认指针,不认按键):
+
+```bash
+adb -s $TV shell input tap 960 540      # 960 540 = wm size 的一半
+```
+
+`tv-install.sh` 的 `reset_ui_state()` 已加上这个兜底(只在确实还是 Dream 时才发)。
+
+> 更常见的屏保态下 `WAKEUP` + `HOME` 是**能**唤醒的 —— 静置到屏保 205 秒、
+> 长按 `POWER` 再进屏保都复现不出那个卡死态,所以这是防御性代码。
+> 完整记录见 [03-tcl-tv-sideload.md](03-tcl-tv-sideload.md#屏保还有第二种形态按键完全被吞掉)。
+
+---
+
+## 电视上「截图变了」不能当作「输入生效」的证据
+
+**症状**:用 `screencap` 前后对比来验证按键/点击是否生效,发现**每次都“生效”**。
+
+**原因**:TCL 桌面/设置里有时钟、天气、动效在自己跑。
+实测停在设置页 **4 秒不发任何输入**,两张截图 md5 就不一样:
+
+```
+t0: UI 22 条 | e12da521   PNG 01a35984 (1406534B)
+t1: UI 22 条 | e12da521   PNG ac333c80 (1518940B)   ← 无输入,md5 也变
+```
+
+**解法**:电视上判断「输入生效没」用 **UI 树的全量文案集合**(不是前几条),
+不要用截图。
+
+```bash
+adb -s $DEV shell uiautomator dump /sdcard/x.xml
+adb -s $DEV pull /sdcard/x.xml /tmp/x.xml
+# 把全部 text/content-desc 拼成一个字符串取 md5,前后对比
+```
+
+| 操作 | 全量文案集合 | PNG md5 | 真实结果 |
+|---|---|---|---|
+| `input tap` 点「声音」 | **不变** | 变了 | ❌ 没生效 |
+| `DPAD_DOWN` + `CENTER` | **变了** | 变了 | ✅ 生效 |
+
+⚠️ **和 Pico 正好相反**:Pico 上文案集合拿不到(只能拿到 `com.pvr.vrshell` 的),
+**只能**靠自截图的像素差。所以不要写一套「通用」的验收逻辑 —— 两台设备的信号是反的。
+详见 [03](03-tcl-tv-sideload.md#电视上截图变了不能当作输入生效的证据)。
+
+---
+
+## 电视上的 `input tap` 基本不生效,一律用 `input keyevent`
+
+实测(全量文案集合判定):TCL 桌面磁贴「我的应用」「设置」、设置左侧导航「声音」、
+设置里的「高级设置」按钮 —— **四处 `input tap` 均无反应**,同位置用 `DPAD + CENTER` 均生效。
+
+注意「高级设置」在 UI 树里**标了 `clickable="true"`**,照样没反应 ——
+**不能靠 a11y 的 `clickable` 判断能不能 tap**。
+
+> 但指针链路本身是通的:输入设备里有 `gIrTouch_Mouse`(IR 触控),
+> 屏保就只认指针事件。只是 TCL 自有界面不把 touch 当 click。
 
 ## 无线设备"睡醒后连不上"—— 要先 disconnect
 
