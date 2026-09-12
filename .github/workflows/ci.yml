@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 只跑不需要真机的那部分。
+# 安装到 TCL 电视 / Pico 依赖内网设备,不可能在 CI 上跑 ——
+# 那部分靠本地的 tools/verify-all.sh。
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # GitHub 的 ubuntu runner 自带 Android SDK,ANDROID_HOME 已设好,
+      # 所以不需要 local.properties(它本来也不入库)。
+      - name: 环境自检
+        run: bash tools/verify-all.sh --build-only
+
+      - name: 构建 + lint + 单测
+        working-directory: apps/DualDemo
+        run: |
+          ./gradlew assembleDebug assembleRelease lint testDebugUnitTest \
+            --no-daemon --console=plain --max-workers=2
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DualDemo-apk
+          path: apps/DualDemo/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: 上传 lint 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: apps/DualDemo/app/build/reports/lint-results-*.html
+          if-no-files-found: ignore
