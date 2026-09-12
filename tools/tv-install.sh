@@ -1,271 +1,254 @@
 #!/usr/bin/env bash
 #
-# 把 APK 装到 TCL 电视上
+# 把 APK 装到 TCL 电视上,并(默认)启动它
 #
-# 为什么需要这个脚本
-#   TCL 在当前固件的 system_server 里打了补丁(OverseasAppConfig),导致
-#   adb install / pm install / install-create --skip-verification 全部返回
-#   INSTALL_FAILED_VERIFICATION_FAILURE,关掉 AOSP 的 verifier 开关也没用。
+# ── 为什么不能用 adb install ──────────────────────────────────────────
+# TCL 在 system_server 里打了补丁(OverseasAppConfig),凡是带 INSTALL_FROM_ADB
+# 的安装一律被拒。以下全部试过,全部无效:
+#   · adb install / pm install / install-create --skip-verification
+#   · appops set com.android.shell REQUEST_INSTALL_PACKAGES allow
+#   · settings put global verifier_verify_adb_installs 0 / package_verifier_enable 0
+#   · 用 content:// URI 拉起系统安装器(InstallStart 只认 content,不接受 file)
+#   · 卸载后安装、重启后安装、--no-streaming、-i 伪造商店身份
+# 唯一可用通道是 TGuard 的图形化安装器(installer 记成 com.android.packageinstaller)。
+# 完整排查见 docs/03-tcl-tv-sideload.md
 #
-#   唯一可用通道是 TGuard 的图形化安装器:
-#     安全卫士 → 应用管理 → 应用安装 → 选 APK → 系统安装器确认
-#   走这条路 installer 会记成 com.android.packageinstaller,是 TCL 认可的。
-#
-# 两个必须知道的机制(踩过才知道)
-#   1. 安装器里的存储源叫 "SDCARD",但它扫的是【可移动存储】= 插着的 U 盘,
-#      不是 /sdcard(内建存储)。所以要推到 <U盘>/AndroidTV/。
-#   2. TGuard 会把扫描结果缓存下来,只在【U 盘重新挂载】或【重启】时才重建。
-#      实测 pm clear com.tcl.guard 也能触发重建,比重启快得多。
-#      另外缓存以【文件路径】为键,所以文件名要唯一(带包名+版本)。
+# ── 性能 ────────────────────────────────────────────────────────────
+# 实测几个关键开销,脚本已据此优化:
+#   input keyevent   每次 ~0.9s(input 是 Java 程序,启动一次)  → 批量合并成一次调用
+#   uiautomator dump 每次 ~2.5s                                → 尽量少用,能省则省
+#   dumpsys          每次 ~0.12s                               → 用它代替 dump
+# 目标 60~70 秒。想更快只能换设备:Pico 接受普通 adb install,2~3 秒。
 #
 # 用法
-#   bash tools/tv-install.sh app/build/outputs/apk/debug/app-debug.apk
-#   LABEL=MyApp TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>
-#
-# 全程只用 adb + uiautomator 读界面文本,不用视觉模型。
+#   bash tools/tv-install.sh <apk>              # 安装 + 启动
+#   bash tools/tv-install.sh <apk> --no-launch
+#   LABEL=MyApp bash tools/tv-install.sh <apk>
 set -uo pipefail
 
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-# aapt2 用来从 APK 里读 label / package / version
+LAUNCH=1; ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --no-launch) LAUNCH=0 ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+APK="${ARGS[0]:-}"
+[ -n "$APK" ] || { echo "用法: $0 <apk路径> [--no-launch]" >&2; exit 2; }
+[ -f "$APK" ] || { echo "找不到 APK: $APK" >&2; exit 2; }
+
 for bt in "$ANDROID_HOME"/build-tools/*/; do
   [ -x "$bt/aapt2" ] && export PATH="$bt:$PATH" && break
 done
-
 TV="${TV:-$TV_ADDR}"
-APK="${1:-}"
-[ -n "$APK" ] || { echo "用法: $0 <apk路径>" >&2; exit 2; }
-[ -f "$APK" ] || { echo "找不到 APK: $APK" >&2; exit 2; }
-command -v aapt2 >/dev/null || echo "警告: 没找到 aapt2,标签匹配可能不准" >&2
 
 A(){ timeout 40 adb -s "$TV" shell "$@" </dev/null 2>&1; }
-key(){ A input keyevent "$1" >/dev/null; sleep "${2:-1}"; }
+# ⚠️ `input` 是 Java 程序,每次启动 ~0.9 秒。单发 13 个键要 11.7 秒,
+# 合成一次调用只要 ~1 秒,所以统一走 keys()(空格分隔的一串 keycode)。
+keys(){ A input keyevent $1 >/dev/null; sleep "${2:-0.3}"; }
+key_rep(){ local k="$1" n="$2" d="${3:-0.3}" i args=""
+  [ "$n" -gt 0 ] 2>/dev/null || return 0
+  for ((i=0;i<n;i++)); do args+="$k "; done
+  keys "$args" "$d"; }
 
-# ---- 读 APK 元信息 ----
+# ---- APK 元信息 ----
 badging(){ aapt2 dump badging "$APK" 2>/dev/null; }
 LABEL="${LABEL:-$(badging | sed -n "s/^application-label:'\(.*\)'/\1/p" | head -1)}"
 LABEL="${LABEL:-双端演示}"
 PKG="$(badging | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)"
 VER="$(badging | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+ACTIVITY="$(badging | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)"
 
 # ---- UI 读取 ----
 dumpui(){
   A uiautomator dump /sdcard/_ui.xml >/dev/null 2>&1
   timeout 30 adb -s "$TV" pull /sdcard/_ui.xml /tmp/_ui.xml </dev/null >/dev/null 2>&1
 }
-
-ui_text(){
+# 一次 dump 同时拿到「焦点项的标签」和「详情面板里的版本号」
+focus_info(){
   dumpui
-  python3 - <<'PY'
+  python3 - <<'PYEOF'
 import re
 try: s = open('/tmp/_ui.xml', encoding='utf-8').read()
-except Exception: raise SystemExit
-seen = []
-for x in re.findall(r'<node[^>]*>', s):
-    t = re.search(r'text="([^"]*)"', x)
-    if t and t.group(1) and t.group(1) not in seen:
-        seen.append(t.group(1))
-print(' / '.join(seen))
-PY
-}
-
-# 取「bounds 落在 focused 节点内部」的文本,排除日期/状态标记
-focused_label(){
-  dumpui
-  python3 - <<'PY'
-import re
-try: s = open('/tmp/_ui.xml', encoding='utf-8').read()
-except Exception: print(''); raise SystemExit
-fx = None; labels = []
+except Exception: print('|'); raise SystemExit
+fx = None; nodes = []
 for x in re.findall(r'<node[^>]*>', s):
     b = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', x)
     if not b: continue
     bb = tuple(map(int, b.groups()))
+    t = re.search(r'text="([^"]*)"', x)
     if re.search(r'focused="true"', x): fx = bb
-    t = re.search(r'text="([^"]*)"', x)
-    if t and t.group(1): labels.append((t.group(1), bb))
-if not fx: print(''); raise SystemExit
-x1, y1, x2, y2 = fx; cands = []
-for txt, (a1, b1, a2, b2) in labels:
-    if a1 >= x1 and a2 <= x2 and b1 >= y1 and b2 <= y2:
-        t = txt.strip()
-        if not t or re.fullmatch(r'\d{4}\.\d{2}\.\d{2}', t) or t == '本机已安装': continue
-        cands.append(t)
-print(cands[0] if cands else '')
-PY
-}
-
-wait_text(){ local pat="$1" t="${2:-20}" i
-  for ((i=0;i<t;i++)); do ui_text | grep -qE "$pat" && return 0; sleep 1; done
-  return 1; }
-
-# 详情面板里「版本号」后面那个文本(用来区分同名但版本不同的条目)
-detail_version(){
-  dumpui
-  python3 - <<'PY'
-import re
-try: s = open('/tmp/_ui.xml', encoding='utf-8').read()
-except Exception: print(''); raise SystemExit
-texts = []
-for x in re.findall(r'<node[^>]*>', s):
-    t = re.search(r'text="([^"]*)"', x)
-    if t and t.group(1): texts.append(t.group(1))
+    if t and t.group(1): nodes.append((t.group(1), bb))
+label = ''
+if fx:
+    x1, y1, x2, y2 = fx; cands = []
+    for txt, (a1, b1, a2, b2) in nodes:
+        if a1 >= x1 and a2 <= x2 and b1 >= y1 and b2 <= y2:
+            t = txt.strip()
+            if not t or re.fullmatch(r'\d{4}\.\d{2}\.\d{2}', t) or t == '本机已安装': continue
+            cands.append(t)
+    label = cands[0] if cands else ''
+texts = [t.strip() for t, _ in nodes]
+ver = ''
 for i, t in enumerate(texts):
-    if t.strip() in ('版本号', '版本') and i + 1 < len(texts):
-        print(texts[i + 1].strip()); raise SystemExit
-print('')
-PY
+    if t in ('版本号', '版本') and i + 1 < len(texts): ver = texts[i + 1]; break
+print(f'{label}|{ver}')
+PYEOF
+}
+ui_text(){
+  dumpui
+  python3 -c "
+import re
+try: s=open('/tmp/_ui.xml',encoding='utf-8').read()
+except Exception: raise SystemExit
+seen=[]
+for x in re.findall(r'<node[^>]*>',s):
+    t=re.search(r'text=\"([^\"]*)\"',x)
+    if t and t.group(1) and t.group(1) not in seen: seen.append(t.group(1))
+print(' / '.join(seen))
+"
 }
 
-# ---- 推送 APK 到 U 盘 ----
+# 界面状态用 dumpsys 判断(0.12s),不花 dump
+foreground(){ A dumpsys window windows 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' | sed 's/.*u0 //'; }
+installed_version(){ [ -n "$PKG" ] && A dumpsys package "$PKG" 2>/dev/null | sed -n 's/^ *versionName=//p' | head -1 | tr -d '\r'; }
+
+# ---- 把 APK 推到 U 盘 ----
+# 安装器的存储源叫 "SDCARD",但它扫的是【可移动存储】=U 盘,不是 /sdcard。
+# 缓存以文件路径为键,文件名要唯一(包名+版本+构建时间)。
 push_apk(){
-  VOL="$(A ls /storage | tr -d '\r' | grep -vxE 'emulated|self' | head -1)"
+  local VOL; VOL="$(A ls /storage | tr -d '\r' | grep -vxE 'emulated|self' | head -1)"
   if [ -z "$VOL" ]; then
-    echo "!! 电视上没找到可移动存储。TCL 的安装器只扫 U 盘,请插一个 U 盘。" >&2
-    exit 1
+    echo "!! 电视上没有可移动存储。TCL 的安装器只扫 U 盘,请插一个 U 盘。" >&2; exit 1
   fi
   APK_DIR="/storage/$VOL/AndroidTV"
   A "mkdir -p $APK_DIR" >/dev/null 2>&1
-
-  # 文件名唯一且带版本:缓存以路径为键,复用同名文件会显示旧包信息
-  local name="${PKG:-app}-${VER:-0}.apk"
+  local stamp; stamp="$(stat -c %Y "$APK" 2>/dev/null || date +%s)"
+  local name="${PKG:-app}-${VER:-0}-${stamp}.apk"
   A "rm -f $APK_DIR/${PKG:-app}-*.apk" >/dev/null 2>&1 || true
   echo "==> 推送 APK 到 $APK_DIR/$name"
   adb -s "$TV" push "$APK" "$APK_DIR/$name" </dev/null 2>&1 | tail -1
-  A "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://$APK_DIR/$name" >/dev/null 2>&1 || true
+}
+
+# ---- 界面状态复位 ----
+# 屏保会吞掉 am start;上一次的「应用安装已完成」弹窗会把后续按键全带偏。
+# BACK 是幂等的,直接按两次比 dump 一次判断更便宜。
+reset_ui_state(){
+  keys "KEYCODE_WAKEUP KEYCODE_BACK KEYCODE_BACK KEYCODE_HOME" 1.2
+  case "$(foreground)" in *Dream*) keys "KEYCODE_WAKEUP" 0.8 ;; esac
 }
 
 # ---- 打开「应用安装」页 ----
-# 先做状态清理: 屏保会吞掉 am start,残留弹窗会让后续按键全跑偏
-reset_ui_state(){
-  A input keyevent KEYCODE_WAKEUP >/dev/null; sleep 1
-  A input keyevent KEYCODE_HOME >/dev/null; sleep 3
-  # 还在屏保就再唤一次
-  if A dumpsys activity activities | grep -q DreamActivity; then
-    A input keyevent KEYCODE_WAKEUP >/dev/null; sleep 2
-  fi
-  # 清残留弹窗(上一次安装的「应用安装已完成」、错误提示框等)
-  local i
-  for i in 1 2 3; do
-    ui_text | grep -qE '立即体验|暂不体验|知道了|是否继续安装|要安装此应用吗' || break
-    A input keyevent KEYCODE_BACK >/dev/null; sleep 2
-  done
-}
-
 open_install_page(){
   reset_ui_state
   A am start -S -n com.tcl.guard/.appmanager.activity.AppManagerActivity >/dev/null
-  sleep 6
-  ui_text | grep -qE '应用管理|应用卸载|应用安装' || {
-    echo "   !! 应用管理器没打开" >&2; return 1; }
-
-  # 左侧栏: 应用管理 / 应用卸载 / 应用安装。UP 到顶会截断,所以先归顶再下移两位
-  key KEYCODE_DPAD_LEFT 2
-  for i in 1 2 3 4 5; do key KEYCODE_DPAD_UP 1; done
-  key KEYCODE_DPAD_DOWN 1
-  key KEYCODE_DPAD_DOWN 1
-  key KEYCODE_DPAD_CENTER 4
-
-  wait_text 'SDCARD|已完成扫描|确认键安装应用' 15 || {
-    echo "   !! 没进到「应用安装」页" >&2; return 1; }
-
-  key KEYCODE_DPAD_RIGHT 2       # 进入存储源
-  key KEYCODE_DPAD_CENTER 8
-  wait_text '确认键安装应用|已完成扫描' 30 || true
-  sleep 3
-  return 0
+  sleep 2
+  # 左侧栏: 应用管理 / 应用卸载 / 应用安装(UP 到顶会截断)
+  keys "KEYCODE_DPAD_LEFT KEYCODE_DPAD_UP KEYCODE_DPAD_UP KEYCODE_DPAD_DOWN KEYCODE_DPAD_DOWN KEYCODE_DPAD_CENTER" 1.2
+  # 进入存储源;焦点一进去就落在列表第一项
+  keys "KEYCODE_DPAD_RIGHT KEYCODE_DPAD_CENTER" 1.2
+  sleep 4              # 等扫描
 }
 
-# ---- 在列表里定位目标并安装 ----
-# 返回 0 = 成功, 1 = 列表里没有目标
-install_from_list(){
-  local cur="" dv="" found=0
-  for i in $(seq 1 20); do key KEYCODE_DPAD_UP 1; done    # 归顶
-  for i in $(seq 1 40); do
-    cur="$(focused_label)"
-    if [ "$cur" = "$LABEL" ]; then
-      dv="$(detail_version)"
-      # 列表里可能同时存在多个同名条目(U 盘上残留的旧副本),
-      # 必须按版本号挑出正确的那一个
-      if [ -z "$VER" ] || [ "$dv" = "$VER" ]; then found=1; break; fi
-      echo "   跳过同名但版本不符的条目 (v${dv:-?})"
-    fi
-    key KEYCODE_DPAD_DOWN 1
-  done
-  [ "$found" = 1 ] || return 1
-  echo "   焦点已落在「$LABEL」 v$VER"
-
-  key KEYCODE_DPAD_CENTER 6
-  # 两道确认框: ①「应用未被认证,是否继续安装?」 ②「要安装此应用吗?」
-  local r
-  for r in 1 2; do
-    if wait_text '是否继续安装|要安装此应用吗|是否安装' 20; then
-      key KEYCODE_DPAD_RIGHT 2
-      key KEYCODE_DPAD_CENTER 8
-    fi
-  done
-  wait_text '安装完成|立即体验|应用安装已完成' 25 || true
-  # 收尾: 关掉「应用安装已完成,是否立即体验?」弹窗,
-  # 否则它会留在屏幕上把下一次的导航全带偏
-  if wait_text '立即体验|暂不体验' 6; then
-    A input keyevent KEYCODE_BACK >/dev/null; sleep 2
+# ---- 在列表里定位目标 ----
+# 列表顺序稳定,会记住上次的序号(放 tools/.tv-pos-<pkg>,不入库),
+# 下次直接一次批量按到那个位置,省掉十几轮 dump(每轮 2.5 秒)。
+POS_FILE="$_TOOLS_DIR/.tv-pos-${PKG:-app}"
+match_here(){
+  local info label ver
+  info="$(focus_info)"
+  label="${info%%|*}"; ver="${info##*|}"
+  [ "$label" = "$LABEL" ] || return 1
+  if [ -n "$VER" ] && [ "$ver" != "$VER" ]; then
+    echo "   跳过同名旧版本 (v${ver:-?})"; return 1
   fi
+  echo "   焦点已落在「$label」 v$ver"
+  keys "KEYCODE_DPAD_CENTER" 0.4
   return 0
 }
-
-# ---- 已安装版本(用于校验,防止匹配到缓存里的陈旧条目)----
-installed_version(){
-  [ -n "$PKG" ] || { printf ''; return; }
-  A dumpsys package "$PKG" 2>/dev/null | sed -n 's/^ *versionName=//p' | head -1 | tr -d '\r'
-}
-
-# ---- 一次完整尝试 ----
-# 返回 0=已装目标版本  1=列表里没有  2=打不开界面  3=装到的是旧版本
-attempt_once(){
-  open_install_page || return 2
-  install_from_list || return 1
-  if [ -n "$VER" ]; then
-    local v; v="$(installed_version)"
-    [ "$v" = "$VER" ] || { echo "   装到的是 v${v:-?},不是目标 v$VER"; return 3; }
+locate_and_trigger(){
+  local i pos
+  keys "KEYCODE_DPAD_UP KEYCODE_DPAD_UP" 0.3     # 回到列表顶部
+  if [ -f "$POS_FILE" ]; then
+    pos="$(cat "$POS_FILE" 2>/dev/null)"
+    if [ -n "$pos" ] && [ "$pos" -gt 1 ] 2>/dev/null; then
+      key_rep KEYCODE_DPAD_DOWN "$((pos - 1))" 0.35
+      if match_here; then return 0; fi
+      echo "   位置缓存失效,从头扫"
+      key_rep KEYCODE_DPAD_UP "$pos" 0.35
+    fi
   fi
-  return 0
+  for i in $(seq 1 22); do
+    if match_here; then echo "$i" > "$POS_FILE" 2>/dev/null || true; return 0; fi
+    keys "KEYCODE_DPAD_DOWN" 0.3
+  done
+  return 1
 }
 
-# ---- 主流程 ----
+# ---- 盲过两道确认框 ----
+# 两个对话框的默认焦点都在「取消」,RIGHT 移到确认位再按 OK。
+# 不 dump 判断(每次 2.5s),装完用 versionName 校验兜底。
+pass_dialogs(){
+  sleep 1.8
+  keys "KEYCODE_DPAD_RIGHT KEYCODE_DPAD_CENTER" 2.5
+  keys "KEYCODE_DPAD_RIGHT KEYCODE_DPAD_CENTER" 3.5
+  keys "KEYCODE_BACK" 0.5          # 关掉「应用安装已完成,是否立即体验?」
+}
+
+# ================= 主流程 =================
+START=$(date +%s)
 echo "==> 目标: ${LABEL}  (${PKG:-未知包名} v${VER:-?})  @ $TV"
 push_apk
 
+# 文件名每次构建都不同 => TGuard 缓存里必然没有 => 先重建缓存,
+# 否则第一轮定位会白扫 20 多项(每项 2.5 秒)
+echo "==> 重建 TGuard 扫描缓存"
+A "pm clear com.tcl.guard" >/dev/null 2>&1
+sleep 1.5
+
 echo "==> 打开 安全卫士 / 应用管理器"
+open_install_page
+
+echo "==> 在列表里定位「$LABEL」"
+attempt_once(){
+  locate_and_trigger || return 1
+  pass_dialogs
+  sleep 0.8
+  if [ -n "$VER" ]; then
+    local v; v="$(installed_version)"
+    [ "$v" = "$VER" ] || { echo "   装到的是 v${v:-?},不是目标 v$VER"; return 2; }
+  fi
+  return 0
+}
+
 attempt_once; rc=$?
-
 if [ $rc -ne 0 ]; then
-  case $rc in
-    1) echo "   列表里没有它 —— TGuard 的扫描结果有缓存,清掉后重建" ;;
-    3) echo "   列表里是缓存中的旧条目 —— 清掉缓存后重建" ;;
-    2) exit 1 ;;
-  esac
-  # 清 TGuard 数据会重置它自己的设置(应用自动卸载、定期清理等),
-  # 但这是除「重插 U 盘」和「重启电视」之外唯一能重建扫描缓存的途径。
+  echo "   重来一次(重建缓存后位置会变)"
+  rm -f "$POS_FILE"
   A "pm clear com.tcl.guard" >/dev/null 2>&1
-  sleep 3
-
-  echo "==> 重试"
-  attempt_once; rc=$?
-  if [ $rc -ne 0 ]; then
-    echo "!! 重试仍失败 (rc=$rc)" >&2
-    echo "   当前焦点: $(focused_label)" >&2
-    echo "   界面: $(ui_text | cut -c1-200)" >&2
+  sleep 1.5
+  open_install_page
+  if ! attempt_once; then
+    echo "!! 安装失败" >&2
+    echo "   当前焦点: $(focus_info)" >&2
+    echo "   当前界面: $(ui_text | cut -c1-220)" >&2
     exit 1
   fi
 fi
 
 echo
-echo "==> 结果"
-if [ -n "$PKG" ] && A pm list packages | grep -q "package:$PKG"; then
-  echo "  已安装"
-  A dumpsys package "$PKG" 2>/dev/null \
-    | grep -E 'versionName|primaryCpuAbi|installerPackageName|lastUpdateTime' | sed 's/^ */  /'
-else
-  echo "  未安装"
+echo "==> 结果 (耗时 $(( $(date +%s) - START ))s)"
+A dumpsys package "$PKG" 2>/dev/null \
+  | grep -E 'versionName|primaryCpuAbi|installerPackageName|lastUpdateTime' | sed 's/^ */  /'
+
+if [ "$LAUNCH" = 1 ] && [ -n "$PKG" ] && [ -n "$ACTIVITY" ]; then
+  echo
+  echo "==> 启动"
+  A input keyevent KEYCODE_WAKEUP >/dev/null
+  A am start -W -n "$PKG/$ACTIVITY" 2>&1 | grep -E 'Status|Error' | sed 's/^ */  /'
+  sleep 2
+  echo "  前台: $(foreground)"
 fi

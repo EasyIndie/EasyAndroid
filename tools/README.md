@@ -56,6 +56,9 @@ LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>   # 手动�
 唯一可用通道是 TGuard 的图形化安装器。脚本用 `adb input keyevent` + `uiautomator dump`
 模拟走完那条路径,不消耗多模态 token。
 
+**耗时约 60~80 秒**(按键批量化 + 位置缓存后,比最初实现快一倍)。
+需要高频迭代时优先用 Pico —— 它接受普通 `adb install`,只要 2~3 秒。
+
 完整背景见 [../docs/03-tcl-tv-sideload.md](../docs/03-tcl-tv-sideload.md)。
 
 变量:

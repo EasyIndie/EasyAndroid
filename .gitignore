@@ -34,3 +34,6 @@ tools/platform-tools/
 # ---- 本地私有配置 ----
 # 真实设备内网地址等,不入库。模板见 tools/device.env.example
 tools/device.env
+
+# tv-install.sh 的列表位置缓存(本机状态)
+tools/.tv-pos-*

@@ -323,3 +323,35 @@ for i, t in enumerate(texts):
 adb -s $TV shell settings put global verifier_verify_adb_installs 1
 adb -s $TV shell settings put global package_verifier_enable 1
 ```
+
+---
+
+## 安装耗时:为什么快不起来
+
+`adb install` 被固件封死,唯一通道是图形化安装器,所以**必然慢**。实测各操作开销:
+
+| 操作 | 耗时 | 说明 |
+|---|---|---|
+| `input keyevent` | **~0.9 s/次** | `input` 是 Java 程序,每次都要启动 ART 进程 |
+| `uiautomator dump` | **~2.5 s/次** | 读界面文本的唯一手段 |
+| `dumpsys` | ~0.12 s | 界面状态、包信息都用它 |
+| `pm clear com.tcl.guard` | ~0.2 s | 重建扫描缓存 |
+
+据此做的优化(相对最初的写法提速约一倍):
+
+- **按键批量发送**:`input keyevent 20 20 20 ...` 一次传一串,13 个键从 11.7 s 降到 ~1 s
+- **状态判断改用 `dumpsys`**:不在 `uiautomator` 上花时间
+- **对话框盲过 + 事后校验**:两个确认框的默认焦点固定在「取消」,直接 `RIGHT`+`OK`,装完用 `versionName` 校验兜底,省掉两次 dump
+- **位置缓存**:列表顺序稳定,把上次找到的序号记在 `tools/.tv-pos-<pkg>`(不入库),下次一次批量按过去,省掉十几轮 dump
+
+结果:**首次 ~80 s,之后 ~60 s**。
+
+### 想更快,只能换设备
+
+- **Pico 4 接受普通 `adb install`,只要 2~3 秒。**
+- 但 Pico 的 `screencap` 被 `FLAG_SECURE` 挡掉、`uiautomator` 也读不到 VR 面板
+  (见 [04-pico4-notes.md](04-pico4-notes.md))。
+- 可行的做法是在**调试构建里加一个自截图钩子**:应用渲染自己的 View 层级到 PNG
+  (`View.draw(Canvas)` / `PixelCopy` 不受 `FLAG_SECURE` 影响,因为那是应用自己的 surface),
+  再用广播触发 + `adb pull`。这样 Pico 就变成「装得快 + 看得到」的迭代设备,
+  电视只在里程碑做验收。
