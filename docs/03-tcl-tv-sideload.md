@@ -315,14 +315,22 @@ for i, t in enumerate(texts):
 - 实测 `adb push` 到 `/storage/<volId>/AndroidTV/` 是可写的(shell 对该目录有权限)
 - 但**想通过 adb 模拟「插入」事件做不到**:`MEDIA_MOUNTED` 是保护广播,shell 发不了
 
-### 残留改动
+### 残留改动(已还原)
 
-排查过程中把电视的这两个设置改成了 0(**对设备的持久改动**,虽然实测无效):
+排查过程中试过把电视的这两个设置改成 0。**实测对 TCL 的拦截完全无效**
+(拦截发生在 `OverseasAppConfig` 里,不走 AOSP 这套 verifier 逻辑),
+所以排查结束后已经改回 1,把设备恢复原状:
 
 ```bash
 adb -s $TV shell settings put global verifier_verify_adb_installs 1
 adb -s $TV shell settings put global package_verifier_enable 1
 ```
+
+> 记在这里是为了说明"这两条路已经排除过了",不是建议你去设它们。
+>
+> 另外排查中多次执行过 `pm clear com.tcl.guard` 来重建扫描缓存,
+> 会重置 TGuard 自己的设置(应用自动卸载、定期清理等),这个没法还原,
+> 影响仅限于那个安全卫士应用自身的偏好项。
 
 ---
 

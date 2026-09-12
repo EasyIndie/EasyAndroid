@@ -295,7 +295,38 @@ bash tools/new-app.sh <AppName> <package.id>
 
 ---
 
-## 9. 环境速查
+## 9. 开工 / 收尾
+
+### 开工
+
+```bash
+git pull
+bash tools/devices.sh        # 两台都要是 device 才能继续
+```
+
+Pico 不在线通常是**休眠**了(它重启后无线调试会失效):让它亮一下,
+或者 `bash tools/pico-usb.sh`(需要 USB 线插在 Windows 主机上)。
+
+### 收尾
+
+```bash
+bash tools/verify-all.sh     # 环境 → 构建 → 双设备,确认工具链没坏
+```
+
+然后:
+
+1. 跑一遍第 7 节的泄漏自检(都应该零输出)
+2. **把这次踩到的坑补进文档** —— 新坑进 [docs/05](docs/05-gotchas.md),
+   agent 必须知道的约束进本文件。判断标准:**不知道会不会做错事 → 这里;
+   知道更省事 → docs/**。
+   这些经验一旦写下来就永久生效,不写就每次重新踩。
+3. 设备侧别留临时文件(推到 `/sdcard` 的 APK、下载目录里的测试文件)
+
+**不要顺手升级 Kotlin / AGP / Compose**。现在这套组合是在真机上验证过的,
+升级会连带 Compose 编译器、Compose BOM、tv-material 一起动,升完必须重新
+在设备上验证。真要升单独开一次,别夹在功能开发中间。
+
+## 10. 环境速查
 
 | 组件 | 版本 / 路径 |
 |---|---|
