@@ -54,6 +54,10 @@ done
 TV="${TV:-$TV_ADDR}"
 
 A(){ timeout 40 adb -s "$TV" shell "$@" </dev/null 2>&1; }
+
+# 收尾时把自己在设备上留的工作文件清掉 —— dumpui 会把 UI 树落在 /sdcard/_ui.xml,
+# 每条路径(含报错退出)都不应该把它留在电视上。
+trap 'A "rm -f /sdcard/_ui.xml" >/dev/null 2>&1' EXIT
 # ⚠️ `input` 是 Java 程序,每次启动 ~0.9 秒。单发 13 个键要 11.7 秒,
 # 合成一次调用只要 ~1 秒,所以统一走 keys()(空格分隔的一串 keycode)。
 keys(){ A input keyevent $1 >/dev/null; sleep "${2:-0.3}"; }
