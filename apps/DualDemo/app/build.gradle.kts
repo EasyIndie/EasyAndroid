@@ -1,7 +1,47 @@
+// ⚠️ 这两个 import 必须在 plugins {} 之前:否则 `java.io.File` / `java.util.Properties`
+// 里的 `java` 会被 Gradle 的 java 插件扩展(java { })遮蔽,报 Unresolved reference: io。
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 版本号:唯一来源是仓库根的 version.properties(见 docs/06-app-conventions.md)
+//
+// 本工程是独立 Gradle 构建(rootDir = apps/<Name>),所以从 rootDir 往上找第一个
+// version.properties,而不是写死 "../.." 这种层级 —— 拆工程、挪目录都不会坏。
+// ─────────────────────────────────────────────────────────────
+val appVersion: String = run {
+    var dir: File? = rootDir
+    while (dir != null && !File(dir, "version.properties").isFile) dir = dir.parentFile
+    val vf = File(dir ?: rootDir, "version.properties")
+    if (!vf.isFile) error("找不到 version.properties —— 它是本仓库版本号的唯一来源,应该在仓库根目录")
+    val props = Properties()
+    vf.inputStream().use { props.load(it) }
+    val v = props.getProperty("version")?.trim().orEmpty()
+    if (v.isEmpty()) error("${vf.path} 里缺少 version=<MAJOR.MINOR.PATCH>")
+    v
+}
+
+// SemVer -> versionCode:MAJOR*10000 + MINOR*100 + PATCH(每段 0..99)
+// Android 要求 versionCode 单调递增。由 SemVer 推导就不会出现「改了 versionName 忘记改 versionCode」。
+val appVersionCode: Int = run {
+    val parts = appVersion.split(".")
+    if (parts.size != 3) error("version=$appVersion 不是严格 SemVer(MAJOR.MINOR.PATCH),见 docs/06-app-conventions.md")
+    parts.forEach {
+        if (it.isEmpty() || (it.length > 1 && it.startsWith("0"))) {
+            error("version=$appVersion 的段 '$it' 不合法(SemVer 不允许空段或前导零)")
+        }
+    }
+    val nums = parts.map { p -> p.toIntOrNull() ?: error("version=$appVersion 里有非数字段: $p") }
+    require(nums.all { it in 0..99 }) {
+        "version=$appVersion 每段只能是 0..99(versionCode = MAJOR*10000 + MINOR*100 + PATCH)"
+    }
+    nums[0] * 10000 + nums[1] * 100 + nums[2]
 }
 
 android {
@@ -12,8 +52,8 @@ android {
         applicationId = "com.example.dualdemo"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersion
     }
 
     buildTypes {
@@ -37,6 +77,8 @@ android {
 
     buildFeatures {
         compose = true
+        // 界面上显示的版本号来自 BuildConfig.VERSION_NAME,不再硬编码字面量
+        buildConfig = true
     }
 
     // Robolectric 需要能读到编译后的资源,否则截图里没有主题/字体

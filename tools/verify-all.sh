@@ -84,6 +84,22 @@ step_build(){
   else
     skip "aapt2 校验钩子"
   fi
+
+  # 版本号唯一来源:装出来的 APK 里的 versionName 必须等于仓库根 version.properties 的 version。
+  # 这是把「唯一来源」变成可执行约束的一步 —— 光靠约定早晚会漂回去。
+  local vf="$REPO/version.properties" want got
+  want="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' "$vf" 2>/dev/null | tr -d '\r' | head -1)"
+  if [ -z "$want" ]; then
+    bad "读不到 $(basename "$vf") 里的 version=(版本号唯一来源,见 docs/06)"
+  elif [ -n "$bt" ] && [ -x "${bt}aapt2" ]; then
+    got="$("${bt}aapt2" dump badging "$apk" 2>/dev/null \
+          | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+    [ "$got" = "$want" ] \
+      && ok "版本号与 version.properties 一致 ($want)" \
+      || bad "版本号不一致:APK=$got  version.properties=$want"
+  else
+    skip "版本号一致性校验(缺 aapt2)"
+  fi
 }
 step_build
 

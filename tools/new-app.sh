@@ -118,6 +118,7 @@ cat > "$DEST/README.md" <<EOF
 | 包名 | \`$PKG\` |
 | 目标设备 | <!-- 电视 / Pico / 都要 --> |
 | minSdk / targetSdk | 29 / 34 |
+| 版本号 | 仓库根 \`version.properties\`(唯一来源,见 [docs/06](../../docs/06-app-conventions.md#版本号)) |
 
 ## 构建
 
@@ -155,3 +156,4 @@ echo "接下来:"
 echo "  1. 编辑 apps/$NAME/README.md(做什么 / 目标设备 / 已知限制)"
 echo "  2. 写业务代码: apps/$NAME/app/src/main/java/$(printf '%s' "$PKG" | tr '.' '/')/"
 echo "  3. 构建自检: cd apps/$NAME && ./gradlew assembleDebug"
+echo "  4. 改版本号只改仓库根的 version.properties(工程里不要写版本字面量)"

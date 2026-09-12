@@ -101,7 +101,7 @@ fun DeviceInspector() {
             }
             item {
                 Text(
-                    text = "共 ${facts.size} 项 · 构建 v0.1.0",
+                    text = "共 ${facts.size} 项 · 构建 v${BuildConfig.VERSION_NAME}",
                     fontSize = 13.sp,
                     color = Color(0xFF5A6478),
                     modifier = Modifier.padding(top = 12.dp)
