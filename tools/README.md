@@ -49,6 +49,24 @@ bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
 **Android 11+ 上 shell 读不了 `/sdcard/Android/data/`**,改用
 `adb exec-out run-as <pkg> cat files/ui-dump.png`。
 
+### `tag-release.sh` — 打发布 tag(tag 名 = version.properties 的 version)
+
+```bash
+bash tools/tag-release.sh --check          # 只校验,不改动任何东西(可放 CI)
+bash tools/tag-release.sh --bump patch     # 把 version 涨一格(major|minor|patch)
+bash tools/tag-release.sh                  # 校验 + 构建自检 + 打 tag + 推送
+```
+
+**为什么需要它**:本仓库出现过 tag=`0.0.1` 而 APK 里 `versionName=0.1.0` 的漂移。
+tag 名只能来自 [`version.properties`](../version.properties),脚本把这条约束变成机械检查:
+工作区是否干净、是否已推送、`apps/` 下有没有残留版本字面量,
+以及**构建出来的 APK 里的 `versionName` 是不是就是那个版本**(它内部会跑
+`verify-all.sh --build-only`)。
+
+默认会跑构建自检(约 1~2 分钟)。已经单独跑过 `verify-all.sh` 时用 `--no-verify` 跳过。
+
+完整约定见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md#版本号)。
+
 ### `verify-all.sh` — 工具链自检
 
 ```bash
