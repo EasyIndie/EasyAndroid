@@ -283,6 +283,27 @@ git update-index --chmod=+x apps/DualDemo/gradlew tools/*.sh
 > 这条是 CI 第一次跑就炸出来的:本地一切正常,Ubuntu runner 上直接
 > `Permission denied`。凡是新增 `.sh` 脚本或 wrapper,记得补一次 `--chmod=+x`。
 
+## 无线设备"睡醒后连不上"—— 要先 disconnect
+
+**症状**:设备明明在线(ping 得通、5555 端口也开着),但 `adb devices` 里没有它,
+或者状态是 `offline`。直接 `adb connect <addr>` 也没用。
+
+**原因**:设备休眠/断网时 adb 里会留下一条过期记录。这时单发 `adb connect`
+会被当成"已经连过了"而直接返回,状态并不会恢复正常。
+
+**解法**:先断再连。
+
+```bash
+adb disconnect 192.0.2.29:5555
+adb connect    192.0.2.29:5555
+```
+
+`tools/devices.sh` 已经这么做了 —— 状态不是 `device` 就先 disconnect 再 connect。
+设备"连不上"时先跑它,而不是自己手敲 `adb connect`。
+
+> 实测:Pico 4 休眠后就这样。ping 通、5555 开着,但 adb 那条记录是死的,
+> 走一次 disconnect + connect 立刻恢复。
+
 ## Android 11+ 上 shell 读不了 `/sdcard/Android/data/`
 
 **症状**:

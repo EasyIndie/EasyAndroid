@@ -105,7 +105,8 @@ step_pico(){
   else
     bad "Pico 安装"; return
   fi
-  if bash "$_TOOLS_DIR/ui-dump.sh" "$PKG" "$PICO_ADDR" /tmp/verify-pico.png >/tmp/verify-pico.log 2>&1; then
+  # 必须 --launch:装完应用不在前台,DebugHooks 拿不到 Activity,截不到图
+  if bash "$_TOOLS_DIR/ui-dump.sh" "$PKG" "$PICO_ADDR" /tmp/verify-pico.png --launch >/tmp/verify-pico.log 2>&1; then
     ok "Pico 启动 + 自截图 ($(grep -oE '[0-9]+x[0-9]+' /tmp/verify-pico.log | tail -1))"
   else
     bad "Pico 自截图(日志: /tmp/verify-pico.log)"
