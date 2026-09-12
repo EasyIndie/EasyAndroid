@@ -121,7 +121,9 @@ if [ "$VERIFY" = 1 ]; then
   echo "════════ 构建自检 ════════"
   echo "  (会跑 tools/verify-all.sh --build-only,约 1~2 分钟;用 --no-verify 跳过)"
   if bash "$_TOOLS_DIR/verify-all.sh" --build-only > /tmp/tag-release-verify.log 2>&1; then
-    grep -E '✅|❌|⏭️' /tmp/tag-release-verify.log | sed 's/^/  /'
+    # verify-all 会先把分步骤逐条打一遍、最后在汇总里再列一遍,
+    # 所以这里去重,否则屏幕上每条都是双份
+    grep -E '✅|❌|⏭️' /tmp/tag-release-verify.log | awk '!seen[$0]++' | sed 's/^/  /'
     grep -q '版本号与 version.properties 一致' /tmp/tag-release-verify.log \
       || die "verify-all 没跑到版本号校验,看 /tmp/tag-release-verify.log"
   else
