@@ -1,5 +1,6 @@
 package com.example.dualdemo.debug
 
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -23,8 +24,14 @@ import java.io.FileOutputStream
  * 触发方式
  *   adb shell am broadcast -a <applicationId>.DUMP_UI -p <applicationId>
  *
- * 产物
- *   /sdcard/Android/data/<applicationId>/files/ui-dump.png
+ * 产物(两个位置都写一份)
+ *   · /data/data/<applicationId>/files/ui-dump.png
+ *     —— 用 `adb exec-out run-as <applicationId> cat files/ui-dump.png` 取。
+ *        Android 11+ 上 shell 读不了 /sdcard/Android/data,所以这份是主力。
+ *   · /sdcard/Android/data/<applicationId>/files/ui-dump.png
+ *     —— Android 10 及更早可以直接 `adb pull`。
+ *
+ * 失败时会往上面第一个目录写 ui-dump.error,写清原因,方便排查。
  *
  * 已知限制
  *   · SurfaceView / TextureView / VideoView 这类**独立 surface** 的内容画不进来
@@ -36,7 +43,7 @@ class UiDumpReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val activity = DebugHooks.current
         if (activity == null) {
-            Log.w(TAG, "没有处于 resumed 状态的 Activity —— 应用在前台吗?")
+            fail(context, "没有处于 resumed 状态的 Activity —— 应用在前台吗?")
             return
         }
         val appContext = context.applicationContext
@@ -44,31 +51,60 @@ class UiDumpReceiver : BroadcastReceiver() {
         Handler(Looper.getMainLooper()).post { capture(activity, appContext) }
     }
 
-    private fun capture(activity: android.app.Activity, context: Context) {
-        val out = File(context.getExternalFilesDir(null) ?: context.filesDir, FILE_NAME)
+    private fun capture(activity: Activity, context: Context) {
         try {
             val root = activity.window.decorView
             if (root.width <= 0 || root.height <= 0) {
-                Log.w(TAG, "View 还没完成布局,跳过")
+                fail(context, "View 还没完成布局 (${root.width}x${root.height})")
                 return
             }
             val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
             // 软件绘制:不受 FLAG_SECURE 影响,因为这是我们自己的画布
             root.draw(Canvas(bitmap))
-            out.parentFile?.mkdirs()
-            FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+
+            val written = mutableListOf<String>()
+            internalFile(context).let { f ->
+                f.parentFile?.mkdirs()
+                FileOutputStream(f).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                written += f.absolutePath
+            }
+            // 外部目录是加分项:Android 10 及更早可以直接 adb pull,
+            // 新系统上 shell 读不了也不影响(内部那份才是主力)
+            runCatching {
+                context.getExternalFilesDir(null)?.let { dir ->
+                    val f = File(dir, FILE_NAME)
+                    f.parentFile?.mkdirs()
+                    FileOutputStream(f).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    written += f.absolutePath
+                }
+            }
             bitmap.recycle()
-            Log.i(TAG, "已写出 ${out.absolutePath} (${root.width}x${root.height})")
+            clearError(context)
+            Log.i(TAG, "已写出 ${root.width}x${root.height}: ${written.joinToString(", ")}")
         } catch (t: Throwable) {
+            fail(context, "截图失败: $t")
             Log.e(TAG, "截图失败", t)
         }
+    }
+
+    /** 写一个错误标记文件,便于 adb 侧排查"为什么没图" */
+    private fun fail(context: Context, message: String) {
+        Log.w(TAG, message)
+        runCatching { File(context.filesDir, ERROR_NAME).writeText(message + "\n") }
+    }
+
+    private fun clearError(context: Context) {
+        runCatching { File(context.filesDir, ERROR_NAME).delete() }
     }
 
     companion object {
         const val TAG = "UiDump"
         const val FILE_NAME = "ui-dump.png"
+        const val ERROR_NAME = "ui-dump.error"
 
         /** 广播 action 后缀,完整 action = "<applicationId>.DUMP_UI" */
         const val ACTION_SUFFIX = ".DUMP_UI"
+
+        fun internalFile(context: Context): File = File(context.filesDir, FILE_NAME)
     }
 }

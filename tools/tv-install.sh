@@ -21,20 +21,28 @@
 # 目标 60~70 秒。想更快只能换设备:Pico 接受普通 adb install,2~3 秒。
 #
 # 用法
-#   bash tools/tv-install.sh <apk>              # 安装 + 启动
-#   bash tools/tv-install.sh <apk> --no-launch
+#   bash tools/tv-install.sh <apk>                # 安装 + 启动 + 自截图
+#   bash tools/tv-install.sh <apk> --no-launch    # 只安装
+#   bash tools/tv-install.sh <apk> --no-shot      # 装完不截图
+#   bash tools/tv-install.sh <apk> --shot-out /tmp/x.png
 #   LABEL=MyApp bash tools/tv-install.sh <apk>
+#
+# 装完会调用 tools/ui-dump.sh 截一张真实渲染的图(需要 debug 构建里的钩子,
+# 见 docs/07-debug-ui-capture.md)。没有钩子时只提示,不影响安装结果。
 set -uo pipefail
 
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-LAUNCH=1; ARGS=()
-for a in "$@"; do
-  case "$a" in
+LAUNCH=1; SHOT=1; SHOT_OUT=""; ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
     --no-launch) LAUNCH=0 ;;
-    *) ARGS+=("$a") ;;
+    --no-shot)   SHOT=0 ;;
+    --shot-out)  shift; SHOT_OUT="${1:-}" ;;
+    *) ARGS+=("$1") ;;
   esac
+  shift
 done
 APK="${ARGS[0]:-}"
 [ -n "$APK" ] || { echo "用法: $0 <apk路径> [--no-launch]" >&2; exit 2; }
@@ -113,7 +121,7 @@ print(' / '.join(seen))
 }
 
 # 界面状态用 dumpsys 判断(0.12s),不花 dump
-foreground(){ A dumpsys window windows 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' | sed 's/.*u0 //'; }
+foreground(){ A dumpsys window 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' | sed 's/.*u0 //'; }
 installed_version(){ [ -n "$PKG" ] && A dumpsys package "$PKG" 2>/dev/null | sed -n 's/^ *versionName=//p' | head -1 | tr -d '\r'; }
 
 # ---- 把 APK 推到 U 盘 ----
@@ -251,4 +259,17 @@ if [ "$LAUNCH" = 1 ] && [ -n "$PKG" ] && [ -n "$ACTIVITY" ]; then
   A am start -W -n "$PKG/$ACTIVITY" 2>&1 | grep -E 'Status|Error' | sed 's/^ */  /'
   sleep 2
   echo "  前台: $(foreground)"
+
+  # 装完自动截一张真实渲染的图 —— 一次命令就同时拿到「装好了」和「长这样」。
+  # 复用 ui-dump.sh(单一实现),失败不影响安装结果:
+  # release 包里没有 debug 钩子,那是预期行为。
+  if [ "$SHOT" = 1 ]; then
+    echo
+    echo "==> 自截图"
+    : "${SHOT_OUT:=/tmp/ui-dump-$(printf '%s' "$PKG" | tr '.' '_').png}"
+    if ! bash "$_TOOLS_DIR/ui-dump.sh" "$PKG" "$TV" "$SHOT_OUT" 2>/tmp/_tvinstall_shot.err; then
+      echo "  (跳过 —— 多半是 release 包,没有 debug 自截图钩子;见 docs/07)" >&2
+      sed 's/^/    /' /tmp/_tvinstall_shot.err | head -6 >&2
+    fi
+  fi
 fi

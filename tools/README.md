@@ -45,6 +45,10 @@ bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
 要求应用集成了 debug 自截图钩子(`apps/DualDemo/app/src/debug/`),
 原理见 [../docs/07-debug-ui-capture.md](../docs/07-debug-ui-capture.md)。
 
+取图有两条路径,脚本自动选择:Android ≤10 直接 `adb pull` 外部目录;
+**Android 11+ 上 shell 读不了 `/sdcard/Android/data/`**,改用
+`adb exec-out run-as <pkg> cat files/ui-dump.png`。
+
 ### `device-status.sh` — 设备状态一次性报告
 
 ```bash
@@ -69,6 +73,9 @@ LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>   # 手动�
 模拟走完那条路径,不消耗多模态 token。
 
 **耗时约 60~80 秒**(按键批量化 + 位置缓存后,比最初实现快一倍)。
+装完会**自动启动并截一张图**(调 `ui-dump.sh`),所以一次命令就能同时确认
+「装好了」和「长这样」。用 `--no-shot` 关掉,`--shot-out <path>` 改输出路径。
+
 需要高频迭代时优先用 Pico —— 它接受普通 `adb install`,只要 2~3 秒。
 
 完整背景见 [../docs/03-tcl-tv-sideload.md](../docs/03-tcl-tv-sideload.md)。

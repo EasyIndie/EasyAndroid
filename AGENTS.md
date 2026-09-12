@@ -101,6 +101,9 @@ TCL 在 system_server 里打了 `OverseasAppConfig` 补丁,**绕过了 AOSP 的 
 > **耗时约 60~80 秒**,这是固件限制下的下限,不是脚本没优化。
 > 需要高频迭代时优先用 Pico(普通 `adb install`,2~3 秒),
 > 电视只在里程碑做验收。详见 [docs/03](docs/03-tcl-tv-sideload.md#安装耗时为什么快不起来)。
+>
+> 脚本装完会**自动启动并截一张图**(等价于 `tools/ui-dump.sh`),
+> 所以一次命令就能确认「装好了 + 长这样」。`--no-shot` 可关。
 
 完整分析(含所有失败尝试的清单)见 [docs/03-tcl-tv-sideload.md](docs/03-tcl-tv-sideload.md)。
 **改动这个脚本前先读那篇文档**,否则会重复踩已经排除过的坑。

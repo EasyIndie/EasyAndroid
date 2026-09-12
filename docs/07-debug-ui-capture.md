@@ -71,17 +71,32 @@ bash tools/ui-dump.sh com.example.dualdemo --launch
 3. 轮询等 PNG 落地(最多 10 秒)
 4. `adb pull` 回来,并打印分辨率
 
-产物在设备上的位置:
+产物会**在两个位置各写一份**:
 
 ```
-/sdcard/Android/data/<applicationId>/files/ui-dump.png
+/data/data/<applicationId>/files/ui-dump.png            ← 主力
+/sdcard/Android/data/<applicationId>/files/ui-dump.png  ← Android ≤10 可直接 pull
 ```
+
+**为什么要写两份:Android 11+ 上 shell 读不了 `/sdcard/Android/data/`**(scoped storage)。
+电视(Android 11)上 `adb shell ls /sdcard/Android/data/<pkg>/files/` 直接
+`Permission denied`,连 `run-as` 进去看也是拒绝的。所以主力取图方式是:
+
+```bash
+adb exec-out run-as <applicationId> cat files/ui-dump.png > out.png
+```
+
+`run-as` 对 debuggable(debug 构建)应用可用。`ui-dump.sh` 会自动先试外部目录、
+失败再走 `run-as`,你不用管用的是哪条。
+
+截图失败时应用还会往 `/data/data/<applicationId>/files/ui-dump.error`
+写一行原因(比如"没有处于 resumed 状态的 Activity"),`ui-dump.sh` 会把它读出来。
 
 手动触发也可以:
 
 ```bash
 adb shell am broadcast -a com.example.dualdemo.DUMP_UI -p com.example.dualdemo
-adb pull /sdcard/Android/data/com.example.dualdemo/files/ui-dump.png
+adb exec-out run-as com.example.dualdemo cat files/ui-dump.png > ui.png
 ```
 
 ## 只在 debug 构建里
@@ -114,6 +129,16 @@ $ bash tools/ui-dump.sh com.example.dualdemo --launch
 
 抓出来的图内容完整 —— 型号、API、ABI、屏幕密度、内存、存储全部可读,
 这些是之前 `screencap` / `uiautomator` 一条都拿不到的。
+
+TCL 电视(Android 11)上同样可用,走 `run-as` 取图:
+
+```
+==> 自截图
+  /tmp/ui-dump-com_example_dualdemo.png
+  1920x1080, 125297 bytes
+```
+
+`tv-install.sh` 已经把它接上了 —— 装完自动截一张,一次命令同时拿到「装好了」和「长这样」。
 
 ## 限制
 

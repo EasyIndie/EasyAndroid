@@ -33,7 +33,7 @@ done
 
 [ -n "$PKG" ] || { echo "用法: $0 <package.id> [设备serial] [输出路径] [--launch]" >&2; exit 2; }
 DEV="${DEV:-$PICO_ADDR}"
-OUT="${OUT:-/tmp/ui-dump-$(echo "$PKG" | tr '.' '_').png}"
+OUT="${OUT:-/tmp/ui-dump-$(printf '%s' "$PKG" | tr '.' '_').png}"
 
 A(){ timeout 40 adb -s "$DEV" shell "$@" </dev/null 2>&1; }
 
@@ -42,7 +42,8 @@ if ! adb devices | awk -v d="$DEV" '$1==d && $2=="device"' | grep -q .; then
   exit 1
 fi
 
-REMOTE="/sdcard/Android/data/$PKG/files/ui-dump.png"
+EXT_PNG="/sdcard/Android/data/$PKG/files/ui-dump.png"
+INT_REL="files/ui-dump.png"          # 相对应用私有目录,用 run-as 取
 
 if [ "$DO_LAUNCH" = 1 ]; then
   echo "==> 拉起应用"
@@ -51,34 +52,54 @@ if [ "$DO_LAUNCH" = 1 ]; then
   sleep 3
 fi
 
-# 清掉旧图,这样「文件出现」就等于「本次截图成功」
-A "rm -f $REMOTE" >/dev/null 2>&1
+# 清掉旧图与旧错误标记,这样「新文件出现」就等于「本次截图成功」
+A "rm -f $EXT_PNG" >/dev/null 2>&1
+A "run-as $PKG rm -f $INT_REL files/ui-dump.error" >/dev/null 2>&1
 
 echo "==> 广播触发自截图"
 A "am broadcast -a ${PKG}.DUMP_UI -p ${PKG}" 2>&1 | grep -E 'Broadcast|Error' | sed 's/^ */  /'
 
-# 等 PNG 落地
+# 等 PNG 落地。注意 Android 11+ 上 shell 读不了 /sdcard/Android/data/*,
+# 所以这里用两条判断:外部目录(旧系统)和 run-as 内部目录(新系统)。
+newer_exists(){
+  A "test -s $EXT_PNG && echo yes" 2>/dev/null | grep -q yes && return 0
+  A "run-as $PKG test -s $INT_REL && echo yes" 2>/dev/null | grep -q yes && return 0
+  return 1
+}
+
 ok=0
 for _ in $(seq 1 20); do
-  if A "test -s $REMOTE && echo yes" | grep -q yes; then ok=1; break; fi
+  if newer_exists; then ok=1; break; fi
   sleep 0.5
 done
 
 if [ "$ok" != 1 ]; then
-  echo "!! 没等到截图文件。可能原因:" >&2
-  echo "   · 应用不在前台(View 已停止重绘)" >&2
-  echo "   · 工程里没集成 debug 自截图钩子(见 docs/07)" >&2
-  echo "   · 装的是 release 包(钩子只在 debug 构建里)" >&2
-  A "logcat -d -t 60" 2>/dev/null | grep -iE 'UiDump|AndroidRuntime' | tail -6 >&2
+  echo "!! 没等到截图文件。原因:" >&2
+  err="$(A "run-as $PKG cat files/ui-dump.error 2>/dev/null" | head -3)"
+  if [ -n "$err" ]; then
+    echo "   应用报了: $err" >&2
+  else
+    echo "   · 广播没到接收器 —— 工程里没集成钩子?装的是 release 包?" >&2
+    echo "   · 应用不在前台(View 已停止重绘)" >&2
+    echo "   详解见 docs/07-debug-ui-capture.md" >&2
+  fi
+  A "logcat -d -t 80" 2>/dev/null | grep -iE 'UiDump|AndroidRuntime' | tail -6 >&2
   exit 1
 fi
 
 rm -f "$OUT"
-timeout 60 adb -s "$DEV" pull "$REMOTE" "$OUT" </dev/null >/dev/null 2>&1 || {
-  echo "!! 拉取失败: $REMOTE" >&2; exit 1; }
+# 先试外部目录(Android 10 及更早可以直接 pull)
+if ! timeout 60 adb -s "$DEV" pull "$EXT_PNG" "$OUT" </dev/null >/dev/null 2>&1; then
+  # Android 11+ 只能用 run-as 把内部那份流出来
+  if ! timeout 60 adb -s "$DEV" exec-out run-as "$PKG" cat "$INT_REL" > "$OUT" 2>/dev/null; then
+    echo "!! 取图失败" >&2; exit 1
+  fi
+fi
+
+[ -s "$OUT" ] || { echo "!! 取到的文件是空的" >&2; exit 1; }
 
 python3 - "$OUT" <<'PYEOF'
-import struct, sys, os
+import struct, sys
 p = sys.argv[1]
 d = open(p, 'rb').read()
 if d[:8] != b'\x89PNG\r\n\x1a\n':

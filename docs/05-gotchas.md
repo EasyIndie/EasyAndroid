@@ -250,6 +250,30 @@ java.lang.SecurityException: Permission Denial: starting Intent { ... }
 
 ---
 
+## Android 11+ 上 shell 读不了 `/sdcard/Android/data/`
+
+**症状**:
+
+```bash
+adb -s $TV shell ls /sdcard/Android/data/com.example.app/files/
+# ls: /sdcard/Android/data/com.example.app/files/: Permission denied
+```
+
+连 `run-as <pkg> ls /sdcard/Android/data/<pkg>/files/` 也是拒绝的。
+
+**原因**:scoped storage。Android 11 起应用专属外部目录不再对其他 uid 开放,
+`run-as` 虽然把 uid 切成了应用,但 SELinux 域是 `runas_app`,同样进不去。
+
+**解法**:让应用**同时写一份到内部私有目录**,用 `run-as` 读:
+
+```bash
+adb exec-out run-as <pkg> cat files/out.png > out.png
+```
+
+应用私有目录 `/data/data/<pkg>/files/` 走 `run-as` 是通的(debuggable 应用)。
+Pico 4 是 Android 10,外部目录可以直接 `adb pull`,所以两边行为不一样 ——
+写代码时两个位置都写一份最省事。
+
 ## 用 `content query` 反查设备上的文件
 
 排查时很有用的一招 —— 当 shell 不方便遍历目录时,通过 MediaStore 看文件:
