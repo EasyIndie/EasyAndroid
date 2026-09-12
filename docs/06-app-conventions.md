@@ -122,6 +122,43 @@ bash tools/tag-release.sh 0.0.2
 
 第一个版本是 **`0.0.1`**(已有 `git tag 0.0.1`)。`0.x` 表示对外行为还可能变。
 
+### 怎么验证版本号真的走的是这一个来源
+
+两层,第一层不需要设备:
+
+```bash
+# 1) 编译产物层 —— 比对 APK 里的 versionName 与 version.properties
+bash tools/verify-all.sh --build-only
+#   ✅ 版本号与 version.properties 一致 (0.0.1)
+```
+
+第二层要设备。**只有电视能这么验**(Pico 读不到 UI 树,见 [04](04-pico4-notes.md)):
+
+```bash
+bash tools/verify-all.sh                              # 装到电视并启动
+adb -s "$TV_ADDR" shell input keyevent 20 20 20 ...   # 滚到底
+#   ⚠️ 版本文案是列表最后一项,而 LazyColumn 只组合可见项 ——
+#     不滚到底,uiautomator 里根本读不到它
+adb -s "$TV_ADDR" shell uiautomator dump /sdcard/_vc.xml
+```
+
+实测结果(2026-09,电视 Android 11):
+
+```
+dumpsys package com.example.dualdemo
+  versionName=0.0.1
+  versionCode=1
+
+UI 树 → text="共 18 项 · 构建 v0.0.1"
+```
+
+一行文本同时证明了四件事:`version.properties` 被读到 → Gradle 写进了 `versionName` →
+`BuildConfig.VERSION_NAME` 编译正确 → 界面没有字面量。
+
+> 这个「最后一项要滚到底才读得到」的细节不只影响版本号。**LazyColumn / RecyclerView
+> 里不在视口内的项在 `uiautomator` 里是不存在的** —— 写 UI 断言前先确认目标项已经进入视口,
+> 否则会误判成「界面上没有这个元素」。
+
 ### 为什么放在仓库根,而不是每个工程一份
 
 `apps/` 下每个工程都是独立 Gradle 构建,各放一份更利于独立演进。

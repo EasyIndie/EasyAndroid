@@ -393,6 +393,33 @@ adb -s $DEV pull /sdcard/x.xml /tmp/x.xml
 > 但指针链路本身是通的:输入设备里有 `gIrTouch_Mouse`(IR 触控),
 > 屏保就只认指针事件。只是 TCL 自有界面不把 touch 当 click。
 
+## `uiautomator` 读不到不在视口里的列表项(LazyColumn / RecyclerView)
+
+**症状**:界面上明明有的文案,`uiautomator dump` 出来的 XML 里就是找不到。
+于是误以为「界面没渲染出来」或「这个元素不存在」,实际上它在屏幕下面。
+
+**原因**:`LazyColumn` / `RecyclerView` **只组合当前视口附近的项**。
+不在视口内的项压根没被创建,自然也不在无障碍节点树里 —— `uiautomator` 读的就是这棵树。
+
+**症状确认**:同一界面按几下 D-pad 再 dump,次数会变。实测 DualDemo:
+
+```
+初始        : 24 条文案
+按 25 次 ↓  : 25 条文案   ← 多出来的就是列表最后一项「共 18 项 · 构建 v0.0.1」
+```
+
+**解法**:先把目标项滚进视口,再 dump。批量按键一次发很快:
+
+```bash
+adb -s $DEV shell input keyevent 20 20 20 ... 20    # 20 = KEYCODE_DPAD_DOWN
+adb -s $DEV shell uiautomator dump /sdcard/x.xml
+```
+
+> 这也会影响「用全量文案集合判变化」的做法:如果前后滚动了列表,
+> 文案数量会变,那是**滚动**的功劳不是**输入生效**的功劳 —— 判断时要分清。
+
+---
+
 ## 无线设备"睡醒后连不上"—— 要先 disconnect
 
 **症状**:设备明明在线(ping 得通、5555 端口也开着),但 `adb devices` 里没有它,
