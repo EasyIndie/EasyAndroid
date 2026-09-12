@@ -250,6 +250,39 @@ java.lang.SecurityException: Permission Denial: starting Intent { ... }
 
 ---
 
+## 在 WSL 的 `/mnt/e` 上开发,文件可执行位会丢
+
+**症状**:本地 `./gradlew` 跑得好好的,推到 CI 就 `./gradlew: Permission denied`。
+
+**原因**:两层叠加。
+
+1. drvfs(`/mnt/e` 这种 Windows 盘挂载)**不支持 chmod** —— 所有文件都显示 `-rwxrwxrwx`,
+   `chmod +x` 是空操作。
+2. 所以仓库里设了 `git config core.filemode false`(否则 git 会把每个文件都当成
+   可执行,到处是噪音 diff)。但这样一来 **git 也永远不会检测到可执行位的变化**,
+   于是 `gradlew` 是以 `100644`(非可执行)被提交的。
+
+**症状确认**:
+
+```bash
+git ls-files -s | grep gradlew
+# 100644 apps/DualDemo/gradlew     ← 644 就是没有可执行位
+```
+
+**解法**:显式告诉 git 哪些文件要可执行,不依赖文件系统。
+
+```bash
+git update-index --chmod=+x apps/DualDemo/gradlew tools/*.sh
+```
+
+之后 `git ls-files -s` 应该显示 `100755`。
+
+**注意**:在 WSL 里 `ls -l` 看到的永远都是 `rwxrwxrwx`,不能作为判断依据 ——
+**只看 `git ls-files -s` 的模式位**。
+
+> 这条是 CI 第一次跑就炸出来的:本地一切正常,Ubuntu runner 上直接
+> `Permission denied`。凡是新增 `.sh` 脚本或 wrapper,记得补一次 `--chmod=+x`。
+
 ## Android 11+ 上 shell 读不了 `/sdcard/Android/data/`
 
 **症状**:
