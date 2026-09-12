@@ -138,16 +138,27 @@ adb -s "$TV_ADDR" logcat -d -t 300 | grep -iE 'FATAL|AndroidRuntime'
 `uiautomator` 的 XML 里有 `text` / `content-desc` / `bounds` / `focused` / `focusable` / `clickable`,
 够判断界面渲染对不对、焦点在哪。**对 TV 的 D-pad 焦点问题,这比截图还准。**
 
-### 什么时候截图也不行
+### 什么时候截图也不行 —— 改用「应用自截图」
 
-**Pico 上截屏被系统禁止**。PICO 给每个应用建独立虚拟 display 且全部带 `FLAG_SECURE`:
+**Pico 上 `screencap` 被系统禁止**。PICO 给每个应用建独立虚拟 display 且全部带 `FLAG_SECURE`:
 
 ```bash
 adb -s "$PICO_ADDR" exec-out screencap -p > shot.png
 # → 36 KB 的纯白图,没用。scrcpy 同理
 ```
 
-Pico 上只能靠日志打点或它自带的投屏。详见 [docs/04-pico4-notes.md](docs/04-pico4-notes.md)。
+**解法是让应用截自己**(`FLAG_SECURE` 只挡别的进程):
+
+```bash
+bash tools/ui-dump.sh <applicationId> --launch
+# → 拉回一张真实渲染的 PNG
+```
+
+钩子在 `apps/<Name>/app/src/debug/`,**只在 debug 构建里**。`tools/new-app.sh`
+生成的新工程自带。原理和限制见 [docs/07-debug-ui-capture.md](docs/07-debug-ui-capture.md)。
+
+> 有了它,Pico 变成「装得快(3 秒)+ 看得见」的迭代设备。
+> **高频改 UI 用 Pico + `ui-dump.sh`;电视一次装 60~80 秒,留给里程碑验收。**
 
 ---
 

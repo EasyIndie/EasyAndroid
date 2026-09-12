@@ -79,13 +79,16 @@ grep -rl "$TEMPLATE_PKG" "$DEST" 2>/dev/null | while read -r f; do
 done
 
 echo "==> 调整源码目录结构"
-OLD_DIR="$DEST/app/src/main/java/$(printf '%s' "$TEMPLATE_PKG" | tr '.' '/')"
-NEW_DIR="$DEST/app/src/main/java/$(printf '%s' "$PKG" | tr '.' '/')"
-if [ -d "$OLD_DIR" ]; then
-  mkdir -p "$(dirname "$NEW_DIR")"
-  mv "$OLD_DIR" "$NEW_DIR"
-  find "$DEST/app/src/main/java" -mindepth 1 -type d -empty -delete
-fi
+# 注意要覆盖所有 source set,不只是 src/main —— 模板的 debug 钩子在 src/debug/java 下
+OLD_REL="$(printf '%s' "$TEMPLATE_PKG" | tr '.' '/')"
+NEW_REL="$(printf '%s' "$PKG" | tr '.' '/')"
+for SRCROOT in "$DEST"/app/src/*/java; do
+  [ -d "$SRCROOT/$OLD_REL" ] || continue
+  mkdir -p "$(dirname "$SRCROOT/$NEW_REL")"
+  mv "$SRCROOT/$OLD_REL" "$SRCROOT/$NEW_REL"
+  find "$SRCROOT" -mindepth 1 -type d -empty -delete
+  echo "    ${SRCROOT#"$DEST"/} : $OLD_REL -> $NEW_REL"
+done
 
 echo "==> 设置 rootProject.name = $NAME"
 sed -i "s|^rootProject.name = .*|rootProject.name = \"$NAME\"|" "$DEST/settings.gradle.kts"

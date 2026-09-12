@@ -134,6 +134,18 @@ apps/DualDemo/
 
 ---
 
+## debug 自截图钩子
+
+`app/src/debug/` 下带了一套**只在 debug 构建里**生效的自截图钩子 ——
+它让 `screencap` 被 `FLAG_SECURE` 挡掉的设备(比如 Pico 4)也能被 `adb` 看见。
+
+```bash
+bash ../../tools/ui-dump.sh com.example.dualdemo --launch
+```
+
+这套钩子同时是 `tools/new-app.sh` 的模板,新工程会自带。原理见
+[../../docs/07-debug-ui-capture.md](../../docs/07-debug-ui-capture.md)。
+
 ## 已知限制
 
 - **Pico 上看不到界面效果**:截屏被 `FLAG_SECURE` 挡掉,`uiautomator` 也读不到 VR 面板里的 UI 树。

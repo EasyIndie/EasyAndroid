@@ -33,6 +33,18 @@ bash tools/new-app.sh MyPlayer com.example.myplayer
 
 约定见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md)。
 
+### `ui-dump.sh` — 触发应用自截图并拉回 PNG
+
+```bash
+bash tools/ui-dump.sh <applicationId>                # 默认设备 = PICO_ADDR
+bash tools/ui-dump.sh <applicationId> "$TV_ADDR"     # 指定设备
+bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
+```
+
+给 `FLAG_SECURE` 设备(如 Pico 4)用的 —— 那种设备 `screencap` 只能抓到纯白图。
+要求应用集成了 debug 自截图钩子(`apps/DualDemo/app/src/debug/`),
+原理见 [../docs/07-debug-ui-capture.md](../docs/07-debug-ui-capture.md)。
+
 ### `device-status.sh` — 设备状态一次性报告
 
 ```bash

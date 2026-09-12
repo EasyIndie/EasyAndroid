@@ -10,6 +10,7 @@
 | [04-pico4-notes.md](04-pico4-notes.md) | Pico 4 开发约束:`FLAG_SECURE` 截屏限制、ABI、虚拟 display 机制 |
 | [05-gotchas.md](05-gotchas.md) | 踩坑速查:adb shell 吞 stdin、Gradle 并发拉依赖 TLS 失败、drvfs 目录缓存损坏… |
 | [06-app-conventions.md](06-app-conventions.md) | **工程目录约定**:新增应用的结构、命名、版本组合、README 要求 |
+| [07-debug-ui-capture.md](07-debug-ui-capture.md) | **应用自截图**:让 `FLAG_SECURE` 设备(Pico 4)也能被 `adb` 看见 |
 
 ## 实测设备
 

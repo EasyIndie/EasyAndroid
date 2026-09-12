@@ -55,9 +55,9 @@ adb shell screencap -d 17 -p    # → 0 字节
 
 | 方案 | 说明 |
 |---|---|
-| **PICO 自带投屏** | 设备上有 `com.pvr.picocast` / `com.picovr.picostreamassistant`,投到浏览器/PC 看 |
-| **日志打点** | 在应用里自己把关键状态打进 logcat,纯文本验收 |
-| **算法侧验证** | 校验业务数据而不是像素 |
+| **应用自截图** ✅ 推荐 | 让应用画自己的 View 层级成 PNG,再用广播触发 + `adb pull`。**不受 `FLAG_SECURE` 影响**,见 [07-debug-ui-capture.md](07-debug-ui-capture.md) |
+| PICO 自带投屏 | 设备上有 `com.pvr.picocast` / `com.picovr.picostreamassistant`,投到浏览器/PC 看 |
+| 日志打点 | 在应用里自己把关键状态打进 logcat,纯文本验收 |
 
 > 对比:TCL 电视的 `screencap` **完全正常**。所以「截图给 AI 看」这条路在电视上可行,
 > 在 Pico 上不可行。跨设备做同一套 UI 时要注意这个不对称。
