@@ -71,6 +71,26 @@ bash tools/device-status.sh "$TV_ADDR" com.example.dualdemo   # 顺带查某个�
 
 全部是纯文本,**不消耗多模态 token**。写自动化或排查问题时先跑这个。
 
+### `pico-panel.sh` — 给 Pico 的 2D 面板定向注入按键/触摸
+
+```bash
+bash tools/pico-panel.sh <pkg> awake                  # 拉起应用 + 保持头显不睡
+bash tools/pico-panel.sh <pkg> display                # 只打印解析出的面板 displayId
+bash tools/pico-panel.sh <pkg> key   KEYCODE_DPAD_DOWN
+bash tools/pico-panel.sh <pkg> tap   800 300
+bash tools/pico-panel.sh <pkg> swipe 800 700 800 200 300
+```
+
+**为什么需要它**:Pico 给每个应用建一个独立虚拟 display,而 `adb shell input` 默认打到
+display 0(`com.pvr.vrshell`)—— 所以裸 `input keyevent` **到不了你的应用**,而且不报错。
+必须加 `-d <该应用的 displayId>`,那个 id 还**每次启动都变**。脚本负责现取 id、
+校验面板是不是 `state ON`(头显睡了会静默失败),并在失败时给出提示。
+
+原理与实测数据见 [../docs/04-pico4-notes.md](../docs/04-pico4-notes.md#输入必须定向到应用自己的虚拟-display)。
+
+> 验证有没有送达:**不要看命令是否报错**,要对比前后两张自截图。
+> 若被丢弃,`logcat` 里会有 `Dropping key targeting non-focused display`。
+
 ### `tv-install.sh` — 装到 TCL 电视
 
 ```bash
