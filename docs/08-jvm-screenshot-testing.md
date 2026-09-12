@@ -73,8 +73,10 @@ testImplementation("io.github.takahirom.roborazzi:roborazzi:1.30.0")
 testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.30.0")
 ```
 
-> 升级 Kotlin/Compose 之后可以同步升级 Roborazzi。升级链路见
-> [09-upgrading-the-stack.md](09-upgrading-the-stack.md)(待补)。
+> 升级 Kotlin/Compose **是另一件事,不能顺手做**:Compose 编译器版本跟着 Kotlin 走,
+> 而 Compose 运行时有版本下限检查,升 Kotlin 往往要连 Compose BOM、tv-material
+> 一起升,升完必须重新在真机上验证(那套验证现在是过的,别轻易打破)。
+> 真要升的话单独开一次,先升 Roborazzi。
 
 ### 2. `-P` 传的 Gradle 属性不会自动进测试 JVM
 
