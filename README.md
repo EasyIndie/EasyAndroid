@@ -64,7 +64,14 @@ adb -s 192.0.2.29:5555 install -r app/build/outputs/apk/debug/app-debug.apk  # P
 
 ## 环境假设
 
-脚本按 WSL2 (Ubuntu) + Linux 版 adb 编写。Windows 原生环境需要把 `tools/*.sh` 里的
-`/opt/android-sdk/platform-tools` 换成自己的 SDK 路径。
+**脚本已跨平台**(2026-09 起):Windows 原生(Git Bash)、WSL2、Linux 都能跑。
+adb、超时命令、临时目录、python 的平台差异统一在 `tools/_common.sh` 里抹平,
+平台速查表见 [`tools/README.md`](tools/README.md) 的「跨平台速记」。
 
-具体环境搭建步骤见 [`docs/01-headless-android-build.md`](docs/01-headless-android-build.md)。
+- **Windows 原生**:adb 自动解析到 `tools/platform-tools/adb.exe`;构建应用需要
+  自装 JDK 17 + Android SDK(脚本会探测 `%LOCALAPPDATA%\Android\Sdk`)。
+- **WSL2**:按 [docs/01](docs/01-headless-android-build.md) 搭 `/opt/android-sdk`;
+  USB 引导 Pico 仍走 Windows 侧 adb(WSL2 没有 USB 总线)。
+
+具体环境搭建步骤见 [`docs/01-headless-android-build.md`](docs/01-headless-android-build.md),
+Windows 侧的坑见 [`docs/05-gotchas.md`](docs/05-gotchas.md) 的第一节。

@@ -264,13 +264,38 @@ bash tools/tv-install.sh apps/<Name>/app/build/outputs/apk/debug/app-debug.apk
 | 推送到 `<U盘>/AndroidTV/`,文件名带包名+版本 | 见上面机制 1 和 3 |
 | 进列表前先 `WAKEUP` + `HOME`,并确认不在屏保 | **屏保期间 `am start` 返回成功但什么都不发生**,见下面「第二种形态」 |
 | 进列表前 `BACK` 清掉残留弹窗 | 上一次安装的「应用安装已完成」弹窗会留在屏幕上,把后续按键全带偏 |
-| `am start -S` 强停应用管理器 | 否则会复用上次残留的页面状态 |
-| 左侧栏 `LEFT` → `UP`×5 → `DOWN`×2 | `UP` 到顶会截断,所以先归顶再下移两位 |
-| **按标签 + 版本号双重匹配** | 列表里混着 `._xxx.apk`(macOS 苹果资源叉文件,4KB,不是合法 APK)和可能的同名旧副本 |
+| `am start` **不带 `-S`** | 2026-09-16 改:带 `-S` 强停会让 TGuard 重建 Activity → 列表**重新加载**(条目渐进入库、顺序漂移),定位必然撞上重载窗口(实测 3 轮×26 项全 miss);进程活着时重新 `am start`,列表和解析缓存都还在 |
+| 左侧栏 `LEFT` → `UP`×2 → `DOWN`×2 → `CENTER`,分批发 | `UP` 到顶会截断,所以先归顶再下移两位;一次 `input` 传 ≥4 个 keyevent 会**丢键**(7 连发只生效 2 发,≤3 发可靠) |
+| **按标签或文件名匹配 + 版本号校验** | 列表里混着 `._xxx.apk`(macOS 苹果资源叉文件,4KB,不是合法 APK)和可能的同名旧副本;TGuard **渐进解析**——条目先显示文件名,解析完才换成应用名,所以两种都得认 |
 | 装完校验 `versionName` | 防止匹配到陈旧条目后“看起来成功了” |
 | 版本不对时清缓存重试一次 | 见机制 2 |
 | 装完 `BACK` 关掉完成弹窗 | 否则影响下一次运行 |
 | 全程用 `uiautomator dump` 读文本 | 不用截图,不消耗多模态 token |
+| 定位前先等列表「稳定」再扫 | 连续两次 dump 的可见文本集合一致才算稳定;重扫只等待,**不要**重新进页(再 `am start` 又触发重载) |
+
+### Windows 复验新增的坑(2026-09-16)
+
+脚本在 Windows 原生(Git Bash)复验时又挖出四个坑,已全部修进 `tv-install.sh`:
+
+1. **adb.exe 不认 POSIX 路径**。`adb pull /sdcard/x /e/foo/bar` 会静默失败
+   (`No such file or directory`),而脚本以为 pull 成功 → 解析函数读不到文件 →
+   焦点标签恒为空 → 定位 52 连 miss。所有 adb 的**本机侧**路径必须过
+   `_common.sh` 的 `win_of`(POSIX→Windows);bash 自己的重定向( `> "$OUT"`)
+   反而要保持 POSIX,两者不能混。
+2. **焦点项标签要用 `selected="true"` 取**。TGuard 的列表有两种渲染态:
+   文本随选中卡片重排(卡片节点 focused=true、无 text、文本在卡片 bounds 内)和
+   文本留在列表原位(focused 在无 text 的卡片容器上)。两种态下**只有
+   `selected="true"` 的 TextView 始终是焦点项**,bounds 包含关系两种推断都会漏。
+   注意 selected 集合里混着「本机已安装」角标,要清洗后取第一个有效文本。
+3. **详情面板没解析出来时版本号显示 `/`,不是空串**。校验逻辑判空放行挡不住它,
+   会把目标条目误判成「同名旧版本」跳过。
+4. **aapt2 改为可选依赖**。Windows 机器未必装 Android SDK:没有 aapt2 时用环境变量
+   手动给元信息即可 —— `PKG=com.x.y VER=1.2.3 ACTIVITY=... bash tools/tv-install.sh <apk>`
+   (PKG 必须给;VER 缺省跳过装后校验,ACTIVITY 缺省装完不自动启动)。
+
+另外:USB 调试授权是**按 adb 主机密钥**记的 —— WSL2 和 Windows 的 adb 密钥是两套
+(`C:\Users\<user>\.android\adbkey` vs WSL 的 `~/.android/adbkey`),换主机环境第一次
+连要重新在电视上点一次「一律允许」,且安装流程一动 adbd 可能重新索要授权。
 
 ### 屏保还有第二种形态:按键完全被吞掉
 

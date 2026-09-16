@@ -9,8 +9,15 @@
 #   bash tools/new-app.sh MyPlayer com.example.myplayer
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$HERE/.." && pwd)"
+# 载入公共逻辑(平台探测 / SDK 解析 / re_escape / PY 等)。
+# ⚠️ 必须**早于**任何用到这些变量的代码 —— 后面替换包名那段就要用 $PY。
+# ⚠️ 用 BASH_SOURCE 而不是 $0 —— 被 `source` 加载时 $0 是调用方的名字,
+#    会解析出错误的仓库路径。
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$HERE/_common.sh"
+
+REPO="$_REPO_DIR"
 TEMPLATE="$REPO/apps/DualDemo"
 TEMPLATE_PKG="com.example.dualdemo"
 
@@ -69,14 +76,42 @@ rm -rf "$DEST/app/build" "$DEST/build" "$DEST/.gradle" "$DEST/.kotlin" \
 find "$DEST" -name '*.orig' -delete 2>/dev/null || true
 
 echo "==> 替换包名: $TEMPLATE_PKG → $PKG"
-# 点号在正则是通配符,转义一下
-esc() { printf '%s' "$1" | sed 's/[.[\*^$]/\\&/g'; }
-OLD_RE="$(esc "$TEMPLATE_PKG")"
-grep -rl "$TEMPLATE_PKG" "$DEST" 2>/dev/null | while read -r f; do
-  case "$f" in
-    *.kt|*.kts|*.xml|*.java|*.pro) sed -i "s/$OLD_RE/$(esc "$PKG")/g" "$f" ;;
-  esac
-done
+# ⚠️ 不要用 sed 做这件事。包名里的 `.` 会被当成正则通配符:
+#   · 匹配侧需要转义,但 sed 替换串里的 `&` 又代表「整个匹配」,
+#     两边的转义规则不同 —— 仓库里曾因此把 com.example.dualdemo
+#     替换成 com&example&dualdemo。
+# 换成 python 的 str.replace,是**纯字面量**替换,没有歧义。
+FILES="$(grep -rl "$TEMPLATE_PKG" "$DEST" 2>/dev/null || true)"
+if [ -z "$FILES" ]; then
+  echo "   (没有文件包含模板包名,跳过)"
+elif [ -n "$PY" ]; then
+  # ⚠️ Windows 原生 python 不认 Git Bash 的 /e/... 路径,列表里的每个路径
+  #    都要过 pyfile 转成 Windows 形式,否则 FileNotFoundError。
+  printf '%s\n' "$FILES" | while read -r f; do printf '%s\n' "$(pyfile "$f")"; done \
+    | "$PY" -c '
+import sys
+old, new = sys.argv[1], sys.argv[2]
+for line in sys.stdin:
+    p = line.rstrip("\n")
+    if not p: continue
+    try:
+        s = open(p, encoding="utf-8").read()
+    except (UnicodeDecodeError, OSError):
+        continue          # gradle-wrapper.jar / PNG 等二进制文件,跳过
+    if old in s:
+        open(p, "w", encoding="utf-8").write(s.replace(old, new))
+        print("   ", p)
+' "$TEMPLATE_PKG" "$PKG"
+else
+  # 没有 python 时退回 sed,但两边分别按各自规则转义
+  old_pat="$(re_escape "$TEMPLATE_PKG")"       # 匹配侧
+  new_rep="$(printf '%s' "$PKG" | sed 's/[\\&|]/\\&/g')"   # 替换侧:只转义 \ & 和分隔符
+  printf '%s\n' "$FILES" | while read -r f; do
+    case "$f" in
+      *.kt|*.kts|*.xml|*.java|*.pro) sed -i "s|$old_pat|$new_rep|g" "$f" ;;
+    esac
+  done
+fi
 
 echo "==> 调整源码目录结构"
 # 注意要覆盖所有 source set,不只是 src/main —— 模板的 debug 钩子在 src/debug/java 下
@@ -98,13 +133,32 @@ sed -i "s|<string name=\"app_name\">.*</string>|<string name=\"app_name\">$NAME<
   "$DEST/app/src/main/res/values/strings.xml"
 
 # ---- local.properties(机器相关,gitignore)----
-# shellcheck disable=SC1091
-. "$HERE/_common.sh"
-if [ -n "${ANDROID_HOME:-}" ]; then
-  printf 'sdk.dir=%s\n' "$ANDROID_HOME" > "$DEST/local.properties"
-  echo "==> 写入 local.properties: sdk.dir=$ANDROID_HOME"
+# (_common.sh 已在文件顶部加载)
+
+# Gradle 需要的是**本机路径**:
+#   · Windows 上必须写成 `C:\Users\x\AppData\Local\Android\Sdk` 或 `C:/...`,
+#     不能是 Git Bash 的 /c/Users/... —— Gradle 认不出来。
+#   · 而且反斜杠在 .properties 里是转义符,统一用正斜杠最稳。
+sdk_prop=""
+if [ -d "$ANDROID_HOME" ]; then
+  if [ "$IS_WINDOWS" = 1 ]; then
+    sdk_prop="$(win_of "$ANDROID_HOME" 2>/dev/null || printf '%s' "$ANDROID_HOME")"
+    sdk_prop="$(printf '%s' "$sdk_prop" | tr '\\' '/')"
+  else
+    sdk_prop="$ANDROID_HOME"
+  fi
 fi
 
+if [ -n "$sdk_prop" ]; then
+  printf 'sdk.dir=%s\n' "$sdk_prop" > "$DEST/local.properties"
+  echo "==> 写入 local.properties: sdk.dir=$sdk_prop"
+else
+  echo "!! 没找到 Android SDK,跳过 local.properties。" >&2
+  echo "   构建前请设 ANDROID_HOME,或手工在 $DEST/local.properties 里写 sdk.dir=" >&2
+fi
+
+# Windows 的 drvfs/NTFS 上 chmod 是空操作,报错忽略即可。
+# 真正保证可执行位的是 git 的 --chmod=+x(见 docs/05)。
 chmod +x "$DEST/gradlew" 2>/dev/null || true
 
 # ---- README 骨架 ----

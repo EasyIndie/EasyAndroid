@@ -26,7 +26,9 @@
 
 ## 写法约定
 
-- 命令默认在 WSL2 里执行
+- 命令在 WSL2 / Windows 原生(Git Bash)里都能执行;平台相关的差异
+  (adb 路径、timeout、临时目录、python)已由 `tools/_common.sh` 抹平,
+  新增的坑记在 [05-gotchas.md](05-gotchas.md#windows-原生git-bash跑脚本的四个坑)
 - `$TV` / `$TV_ADDR` = 电视 serial,`$PICO_ADDR` = 第二台设备
 - 「✅ 已验证」= 真机跑通过;「⚠️ 推测」= 有依据但没实测
 

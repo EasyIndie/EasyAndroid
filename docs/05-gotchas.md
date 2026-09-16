@@ -4,6 +4,59 @@
 
 ---
 
+## Windows 原生(Git Bash)跑脚本的四个坑
+
+仓库脚本已跨平台(2026-09 起),`tools/_common.sh` 统一抹平了这些差异。
+自己写新脚本时注意:
+
+### 1. `timeout` 不是 GNU 那个
+
+**症状**:`timeout 5 some-cmd` 报 `错误: 无效语法。默认选项不允许超过 '1' 次。`
+
+**原因**:Git Bash 的 PATH 里 `C:\Windows\system32` 排在前面,`timeout` 命中的是
+**Windows 自带的 timeout.exe**(语法是 `timeout /T 5`,而且它根本不是用来包命令的 ——
+它是「等待 N 秒」的工具)。
+
+**解法**:用 `_common.sh` 导出的 `run_timeout <秒> <命令>`。它只在确认拿到
+coreutils 版(`/usr/bin/timeout` 或 `--version` 输出 coreutils)时才真的加超时,
+否则退化为直接执行。
+
+### 2. Windows 原生 python 不认 Git Bash 路径
+
+**症状**:python 脚本报 `FileNotFoundError: '/e/EasyAndroid/...'`,
+但 `ls /e/EasyAndroid/...` 明明存在。
+
+**原因**:Git Bash 的 `/e/foo` 是 MSYS 虚拟路径,Windows 原生程序(python.exe、
+aapt2.exe…)收到这种字符串按相对路径解析,必然失败。
+
+**解法**:传给 python / 原生 exe 的路径一律过 `_common.sh` 的 `pyfile`(内部用
+`cygpath -w` 转成 `E:\foo` 形式)。反过来,从 Windows 程序拿到的路径(`C:\...`)
+在 bash 里用前先过 `posix_of`。
+
+### 3. `mktemp` 报 Permission denied
+
+**症状**:`mktemp` → `failed to create file via template '/tmp/tmp.XXXXXXXXXX'`。
+
+**原因**:mktemp 的默认模板写死 `/tmp`,而部分 Windows 环境(沙箱/受限账号)下
+`/tmp` 不可写。`TEMP` 变量指向的目录才是可写的。
+
+**解法**:用 `_common.sh` 的 `mktmp` / `mktmpd`(它们以 `$TMP` 为模板前缀;
+`$TMP` 的解析顺序是 `EASYANDROID_TMP` > 仓库 `.tmp/` > `$TEMP` > `/tmp`)。
+
+### 4. sed 替换串里的 `&`
+
+**症状**:想把 `com.example.dualdemo` 里的 `.` 转义,用了
+`sed 's/[.[\*^$]/\\&/g'`,结果得到 `com&example&dualdemo`。
+
+**原因**:sed 的**替换串**里 `&` 代表「整个匹配」,必须写成 `\&` 才是字面量。
+匹配侧和替换侧的转义规则不同,混用必翻车。
+
+**解法**:需要把字符串当正则用 → 用 `_common.sh` 的 `re_escape`(逐字符实现,
+无歧义);需要**纯字面量替换** → 根本别用 sed,用 python 的 `str.replace`
+(`new-app.sh` 里就是这么做的)。
+
+---
+
 ## adb shell 会吞掉后续命令的输出
 
 **症状**:脚本里连续写多条 `adb shell`,只有第一条有输出,后面全部消失;甚至 `echo` 都不打印。

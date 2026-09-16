@@ -49,7 +49,8 @@ semver_ok(){ [[ "$1" =~ $SEMVER_RE ]]; }
 read_version(){ sed -n 's/^version[[:space:]]*=[[:space:]]*//p' "$VF" 2>/dev/null | tr -d '\r' | head -1; }
 
 write_version(){ # $1 = 新版本;只替换 version= 那一行,其余原样保留
-  local tmp; tmp="$(mktemp)"
+  local tmp; tmp="$(mktmp)"
+  [ -n "$tmp" ] || die "建不了临时文件($TMP 不可写)"
   sed "s|^version[[:space:]]*=.*|version=$1|" "$VF" > "$tmp" && mv "$tmp" "$VF"
 }
 
@@ -120,15 +121,16 @@ if [ "$VERIFY" = 1 ]; then
   echo
   echo "════════ 构建自检 ════════"
   echo "  (会跑 tools/verify-all.sh --build-only,约 1~2 分钟;用 --no-verify 跳过)"
-  if bash "$_TOOLS_DIR/verify-all.sh" --build-only > /tmp/tag-release-verify.log 2>&1; then
+  VLOG="$TMP/tag-release-verify.log"
+  if bash "$_TOOLS_DIR/verify-all.sh" --build-only > "$VLOG" 2>&1; then
     # verify-all 会先把分步骤逐条打一遍、最后在汇总里再列一遍,
     # 所以这里去重,否则屏幕上每条都是双份
-    grep -E '✅|❌|⏭️' /tmp/tag-release-verify.log | awk '!seen[$0]++' | sed 's/^/  /'
-    grep -q '版本号与 version.properties 一致' /tmp/tag-release-verify.log \
-      || die "verify-all 没跑到版本号校验,看 /tmp/tag-release-verify.log"
+    grep -E '✅|❌|⏭️' "$VLOG" | awk '!seen[$0]++' | sed 's/^/  /'
+    grep -q '版本号与 version.properties 一致' "$VLOG" \
+      || die "verify-all 没跑到版本号校验,看 $VLOG"
   else
-    grep -E '✅|❌' /tmp/tag-release-verify.log | tail -20 | sed 's/^/  /' >&2
-    die "构建自检没过,不打 tag(日志 /tmp/tag-release-verify.log)"
+    grep -E '✅|❌' "$VLOG" | tail -20 | sed 's/^/  /' >&2
+    die "构建自检没过,不打 tag(日志 $VLOG)"
   fi
 fi
 

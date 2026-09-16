@@ -37,3 +37,10 @@ tools/device.env
 
 # tv-install.sh 的列表位置缓存(本机状态)
 tools/.tv-pos-*
+
+# 脚本临时目录(_common.sh 的默认 TMP;自截图、构建日志等落在这里)
+.tmp/
+
+# ---- 本地智能体数据(WorkBuddy) ----
+# 工作日志 / 记忆等本机数据,且可能含真实设备地址,不入库
+.workbuddy/

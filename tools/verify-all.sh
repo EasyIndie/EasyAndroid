@@ -24,7 +24,7 @@ set -uo pipefail
 BUILD_ONLY=0
 [ "${1:-}" = "--build-only" ] && BUILD_ONLY=1
 
-REPO="$(cd "$_TOOLS_DIR/.." && pwd)"
+REPO="$_REPO_DIR"
 APP_DIR="$REPO/apps/DualDemo"
 PKG="com.example.dualdemo"
 
@@ -34,8 +34,10 @@ ok(){   RESULTS+=("PASS  $1"); PASS=$((PASS+1)); printf '  ✅ %s\n' "$1"; }
 bad(){  RESULTS+=("FAIL  $1"); FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
 skip(){ RESULTS+=("SKIP  $1"); SKIP=$((SKIP+1)); printf '  ⏭️  %s\n' "$1"; }
 
-online(){ adb devices 2>/dev/null | awk -v d="$1" '$1==d && $2=="device"' | grep -q .; }
+online(){ adb_online "$1"; }
 
+echo "==> 平台 $PLATFORM"
+echo
 echo "════════════════ 1/4 环境 ════════════════"
 step_env(){
   if command -v java >/dev/null && java -version 2>&1 | grep -q '"17'; then
@@ -45,41 +47,54 @@ step_env(){
   fi
   [ -d "$ANDROID_HOME/platform-tools" ] \
     && ok "Android SDK platform-tools ($ANDROID_HOME)" \
-    || bad "找不到 $ANDROID_HOME/platform-tools"
+    || bad "找不到 $ANDROID_HOME/platform-tools(设 ANDROID_HOME 或 ANDROID_SDK_DIR 指过去)"
   [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ] \
+    || [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" ] \
     && ok "cmdline-tools" || bad "cmdline-tools 缺失"
-  ls "$ANDROID_HOME"/build-tools/*/aapt2 >/dev/null 2>&1 \
-    && ok "build-tools + aapt2" || bad "build-tools 缺失"
-  [ -x "$APP_DIR/gradlew" ] && ok "gradlew" || bad "找不到 $APP_DIR/gradlew"
-  command -v python3 >/dev/null && ok "python3(脚本用来解析 UI 树)" || bad "python3 缺失"
+  # build-tools 里可能是 aapt2 或 aapt2.exe
+  if ls "$ANDROID_HOME"/build-tools/*/aapt2 "$ANDROID_HOME"/build-tools/*/aapt2.exe >/dev/null 2>&1; then
+    ok "build-tools + aapt2"
+  else
+    bad "build-tools 缺失"
+  fi
+  [ -x "$APP_DIR/gradlew" ] || [ -f "$APP_DIR/gradlew" ] \
+    && ok "gradlew" || bad "找不到 $APP_DIR/gradlew"
+  [ -n "$PY" ] && ok "$PY(脚本用来解析 UI 树)" || bad "python3 缺失"
+  # Android 11+ 上 shell 读不了 /sdcard/Android/data,取图靠 run-as;这里只做存在性提示
   [ -f "$_TOOLS_DIR/device.env" ] \
     && ok "tools/device.env" \
     || skip "tools/device.env 未创建(设备地址会用示例值)"
-  adb start-server >/dev/null 2>&1
-  adb devices >/dev/null 2>&1 && ok "adb 可用" || bad "adb 不可用"
+  [ -n "$ADB" ] && ok "adb 可用($ADB)" || bad "adb 不可用"
+  ok "临时目录 $TMP"
 }
 step_env
 
 echo
 echo "════════════════ 2/4 构建 ════════════════"
 step_build(){
+  local log="$TMP/verify-build.log"
   ( cd "$APP_DIR" && ./gradlew assembleDebug --no-daemon --console=plain --max-workers=2 ) \
-    > /tmp/verify-build.log 2>&1
+    > "$log" 2>&1
   if [ $? -eq 0 ]; then
     ok "assembleDebug"
   else
-    bad "assembleDebug(日志: /tmp/verify-build.log)"
-    tail -20 /tmp/verify-build.log | sed 's/^/       /'
+    bad "assembleDebug(日志: $log)"
+    tail -20 "$log" | sed 's/^/       /'
     return 1
   fi
   local apk="$APP_DIR/app/build/outputs/apk/debug/app-debug.apk"
-  [ -f "$apk" ] && ok "APK 产出 ($(stat -c%s "$apk") bytes)" || bad "APK 没产出"
+  [ -f "$apk" ] && ok "APK 产出 ($(file_size "$apk") bytes)" || bad "APK 没产出"
 
   # debug 包里必须有自截图钩子,release 包里必须没有
-  local bt; bt="$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | head -1)"
-  if [ -n "$bt" ] && [ -x "${bt}aapt2" ]; then
+  local bt="" aapt2=""
+  for d in "$ANDROID_HOME"/build-tools/*/; do
+    for cand in "${d}aapt2" "${d}aapt2.exe"; do
+      [ -x "$cand" ] && { bt="$d"; aapt2="$cand"; break 2; }
+    done
+  done
+  if [ -n "$aapt2" ]; then
     local n
-    n="$("${bt}aapt2" dump xmltree --file AndroidManifest.xml "$apk" 2>/dev/null | grep -c UiDumpReceiver)"
+    n="$("$aapt2" dump xmltree --file AndroidManifest.xml "$apk" 2>/dev/null | grep -c UiDumpReceiver)"
     [ "$n" -ge 1 ] && ok "debug 包含自截图钩子" || bad "debug 包里没有自截图钩子"
   else
     skip "aapt2 校验钩子"
@@ -91,8 +106,8 @@ step_build(){
   want="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' "$vf" 2>/dev/null | tr -d '\r' | head -1)"
   if [ -z "$want" ]; then
     bad "读不到 $(basename "$vf") 里的 version=(版本号唯一来源,见 docs/06)"
-  elif [ -n "$bt" ] && [ -x "${bt}aapt2" ]; then
-    got="$("${bt}aapt2" dump badging "$apk" 2>/dev/null \
+  elif [ -n "$aapt2" ]; then
+    got="$("$aapt2" dump badging "$apk" 2>/dev/null \
           | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)"
     [ "$got" = "$want" ] \
       && ok "版本号与 version.properties 一致 ($want)" \
@@ -115,18 +130,19 @@ step_pico(){
     skip "Pico 不在线($PICO_ADDR)—— 重启后跑 tools/pico-usb.sh"
     return
   fi
-  if timeout 240 adb -s "$PICO_ADDR" install -r -t \
-       "$APP_DIR/app/build/outputs/apk/debug/app-debug.apk" </dev/null 2>&1 | grep -q Success; then
+  local apk="$APP_DIR/app/build/outputs/apk/debug/app-debug.apk"
+  if run_timeout 240 "$ADB" -s "$PICO_ADDR" install -r -t "$apk" </dev/null 2>&1 | grep -q Success; then
     ok "Pico 安装"
   else
     bad "Pico 安装"; return
   fi
   # 必须 --launch:装完应用不在前台,DebugHooks 拿不到 Activity,截不到图
-  if bash "$_TOOLS_DIR/ui-dump.sh" "$PKG" "$PICO_ADDR" /tmp/verify-pico.png --launch >/tmp/verify-pico.log 2>&1; then
-    ok "Pico 启动 + 自截图 ($(grep -oE '[0-9]+x[0-9]+' /tmp/verify-pico.log | tail -1))"
+  local log="$TMP/verify-pico.log" png="$TMP/verify-pico.png"
+  if bash "$_TOOLS_DIR/ui-dump.sh" "$PKG" "$PICO_ADDR" "$png" --launch >"$log" 2>&1; then
+    ok "Pico 启动 + 自截图 ($(grep -oE '[0-9]+x[0-9]+' "$log" | tail -1))"
   else
-    bad "Pico 自截图(日志: /tmp/verify-pico.log)"
-    tail -6 /tmp/verify-pico.log | sed 's/^/       /'
+    bad "Pico 自截图(日志: $log)"
+    tail -6 "$log" | sed 's/^/       /'
   fi
 }
 step_pico
@@ -138,13 +154,14 @@ step_tv(){
     skip "电视不在线($TV_ADDR)"
     return
   fi
+  local log="$TMP/verify-tv.log"
   if bash "$_TOOLS_DIR/tv-install.sh" \
        "$APP_DIR/app/build/outputs/apk/debug/app-debug.apk" \
-       --shot-out /tmp/verify-tv.png >/tmp/verify-tv.log 2>&1; then
-    ok "电视 安装 + 启动 + 自截图 ($(grep -oE '[0-9]+x[0-9]+' /tmp/verify-tv.log | tail -1))"
+       --shot-out "$TMP/verify-tv.png" >"$log" 2>&1; then
+    ok "电视 安装 + 启动 + 自截图 ($(grep -oE '[0-9]+x[0-9]+' "$log" | tail -1))"
   else
-    bad "电视安装链路(日志: /tmp/verify-tv.log)"
-    grep -E '!!|失败' /tmp/verify-tv.log | head -4 | sed 's/^/       /'
+    bad "电视安装链路(日志: $log)"
+    grep -E '!!|失败' "$log" | head -4 | sed 's/^/       /'
   fi
 }
 step_tv

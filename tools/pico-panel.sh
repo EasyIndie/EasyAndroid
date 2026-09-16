@@ -25,9 +25,11 @@
 #
 # 验收
 #   注入是否真的送达,用「自截图前后对比」判断,不要靠感觉:
-#     bash tools/ui-dump.sh <pkg> "$PICO_ADDR" /tmp/a.png
+#     bash tools/ui-dump.sh <pkg> "$PICO_ADDR" a.png
 #     bash tools/pico-panel.sh <pkg> --awake key KEYCODE_DPAD_DOWN
-#     bash tools/ui-dump.sh <pkg> "$PICO_ADDR" /tmp/b.png
+#     bash tools/ui-dump.sh <pkg> "$PICO_ADDR" b.png
+#
+# 跨平台:Windows 原生 / WSL2 / Linux 均可,差异见 tools/_common.sh 顶部。
 set -uo pipefail
 
 # shellcheck disable=SC1091
@@ -59,26 +61,44 @@ for a in "$@"; do
   esac
 done
 [ -n "$PKG" ] && [ -n "$CMD" ] || usage
+[ -n "$ADB" ] || { echo "!! 找不到可用的 adb(见 tools/README.md)" >&2; exit 1; }
 
-A(){ timeout 60 adb -s "$DEV" shell "$@" </dev/null 2>&1 | tr -d '\r'; }
+A(){ run_timeout 60 "$ADB" -s "$DEV" shell "$@" </dev/null 2>&1 | tr -d '\r'; }
 
-if ! adb devices | awk -v d="$DEV" '$1==d && $2=="device"' | grep -q .; then
+if ! adb_online "$DEV"; then
   echo "设备 $DEV 未连接。先跑: bash tools/devices.sh" >&2
   exit 1
 fi
 
-# 唯一权威来源:dumpsys display 的 mViewports,形如
+# 把包名转成 grep -E 里的字面量(包名里的 `.` 是正则通配符)
+PKG_RE="$(re_escape "$PKG")"
+
+# displayId 的唯一权威来源是 dumpsys display 的 mViewports,形如
 #   DisplayViewport{type=VIRTUAL, valid=true, displayId=46,
 #     uniqueId='virtual:com.picovr.systemext,1000,NS_APP[<pkg>],0', ...}
-# 同一个包可能有多条(如 settings 有 ,0 和 ,1),取最后一条 = 最新建的。
+#
+# ⚠️ 三个坑:
+#   1. 被杀掉的进程会留下**幽灵 display**:老的 NS_APP[同包名] 条目还在列表里,
+#      但它的 DisplayDeviceInfo 是 state OFF。所以取 id 时要挑 **valid=true** 的那条。
+#   2. 同一个包可能有多条(如 settings 有 ,0 和 ,1),取最后一条 = 最新建的。
+#   3. 别用 `\x27` 之类的转义写引号 —— 在 Windows 的 adb shell 里不生效,
+#      用 `.` 匹配引号字符即可。
 display_id(){
-  A "dumpsys display" \
-    | grep -oE "displayId=[0-9]+, uniqueId='virtual:[^']*NS_APP\[$PKG\]," \
-    | sed 's/^displayId=//' | cut -d, -f1 | tail -1
+  # 优先 valid=true;没有就退回最后一条
+  local d
+  d="$(A "dumpsys display" \
+       | grep -oE "valid=true, displayId=[0-9]+, uniqueId=.virtual:[^']*NS_APP\[$PKG_RE\]," \
+       | grep -oE 'displayId=[0-9]+' | cut -d= -f2 | tail -1)"
+  if [ -z "$d" ]; then
+    d="$(A "dumpsys display" \
+         | grep -oE "displayId=[0-9]+, uniqueId=.virtual:[^']*NS_APP\[$PKG_RE\]," \
+         | grep -oE 'displayId=[0-9]+' | cut -d= -f2 | tail -1)"
+  fi
+  printf '%s' "$d"
 }
 
 panel_state(){
-  A "dumpsys display" | grep "DisplayDeviceInfo{\"NS_APP\[$PKG\]\"" \
+  A "dumpsys display" | grep "DisplayDeviceInfo{\"NS_APP\[$PKG_RE\]\"" \
     | grep -oE 'state [A-Z]+' | head -1
 }
 

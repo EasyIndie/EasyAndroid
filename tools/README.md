@@ -1,8 +1,27 @@
 # tools
 
-设备连接 / 安装 / 引导脚本。按 WSL2 + Linux 版 adb 编写。
+设备连接 / 安装 / 引导脚本。**跨平台:Windows 原生(Git Bash)/ WSL2 / Linux 都能跑。**
 
-路径都用 `$(dirname "$0")` 解析,可以从任意目录调用。
+路径都用 `$(dirname "${BASH_SOURCE[0]}")` 解析,可以从任意目录调用。
+平台差异(adb 解析、超时命令、临时目录、python)统一在 `_common.sh` 里抹平,
+详见它的头部注释。
+
+## 跨平台速记
+
+| | Windows 原生(Git Bash) | WSL2 / Linux |
+|---|---|---|
+| adb | `tools/platform-tools/adb.exe`(脚本自动解析) | 系统 PATH 里的 adb |
+| USB 引导 Pico | 直接跑 `pico-usb.sh` | 同样跑 `pico-usb.sh`(它内部会调 Windows 侧 adb) |
+| 构建应用 | 需自装 JDK 17 + Android SDK,设 `ANDROID_HOME` | `/opt/android-sdk`(见 docs/01) |
+| 脚本临时文件 | `$TMP`(默认仓库 `.tmp/`,可用 `EASYANDROID_TMP` 覆盖) | `/tmp` |
+| 侧载到电视 | `tv-install.sh` 直接可用(需 aapt2) | 同左 |
+
+**别直接调 `timeout`** —— Git Bash 的 PATH 里 `C:\Windows\system32` 常排在前面,
+`timeout` 命中的是 Windows 自带那个(语法是 `timeout /T 5`,不接受 GNU 写法)。
+脚本里一律用 `_common.sh` 导出的 `run_timeout`。
+
+**Windows 原生 python 的路径** —— Git Bash 的 `/e/foo` 对 Windows python 是
+不存在的路径。把路径传给 python 前过 `pyfile`(在 `_common.sh` 里)。
 
 ## 脚本
 
@@ -27,7 +46,7 @@ bash tools/new-app.sh MyPlayer com.example.myplayer
 - 替换包名(`namespace` / `applicationId` / 源码目录结构)
 - 设置 `rootProject.name` 和 `app_name`
 - 清掉构建产物与旧 `local.properties`
-- 根据 `$ANDROID_HOME` 重新生成 `local.properties`
+- 根据 `$ANDROID_HOME` 重新生成 `local.properties`(Windows 上自动转成本机路径格式)
 - 生成 README 骨架
 - 检查 `applicationId` 与已有工程是否冲突
 
@@ -75,7 +94,7 @@ bash tools/verify-all.sh --build-only   # 只验环境 + 构建(不需要设备)
 ```
 
 换机器、升级 SDK 之后跑一次就知道有没有坏。设备不在线会自动跳过并标 SKIP,
-不算失败,所以 CI 上也能跑。
+不算失败,所以 CI 上也能跑。缺什么(比如 Windows 上没装 JDK/SDK)会明确列出来。
 
 ### `device-status.sh` — 设备状态一次性报告
 
@@ -88,6 +107,7 @@ bash tools/device-status.sh "$TV_ADDR" com.example.dualdemo   # 顺带查某个�
 一次输出:型号 / 系统 / ABI → 目标包是否安装及版本 → 当前前台 → 最近崩溃 → 当前界面全部文案。
 
 全部是纯文本,**不消耗多模态 token**。写自动化或排查问题时先跑这个。
+(Pico 上最后一段「界面文案」会失败,那是系统限制,见 docs/04。)
 
 ### `pico-panel.sh` — 给 Pico 的 2D 面板定向注入按键/触摸
 
@@ -124,6 +144,16 @@ LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>   # 手动�
 装完会**自动启动并截一张图**(调 `ui-dump.sh`),所以一次命令就能同时确认
 「装好了」和「长这样」。用 `--no-shot` 关掉,`--shot-out <path>` 改输出路径。
 
+需要 aapt2 读 APK 信息(脚本自动找 `aapt2` 和 `aapt2.exe`)。**没装 Android SDK 的
+机器上 aapt2 是可选的**:用环境变量手动给元信息即可,
+
+```bash
+PKG=com.example.dualdemo VER=0.0.1 ACTIVITY=com.example.dualdemo.MainActivity \
+  bash tools/tv-install.sh apps/DualDemo/app/build/outputs/apk/debug/app-debug.apk
+```
+
+(PKG 必须给;VER 缺省则跳过装后版本校验;ACTIVITY 缺省则装完不自动启动。)
+
 需要高频迭代时优先用 Pico —— 它接受普通 `adb install`,只要 2~3 秒。
 
 完整背景见 [../docs/03-tcl-tv-sideload.md](../docs/03-tcl-tv-sideload.md)。
@@ -138,11 +168,14 @@ LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>   # 手动�
 ### `pico-usb.sh` — Pico 重启后恢复无线调试
 
 ```bash
-bash tools/pico-usb.sh        # 需要 USB 线插在 Windows 主机上
+bash tools/pico-usb.sh        # USB 线插在本机
 ```
 
 Pico 的 `persist.adb.tcp.port` 写不进去(需 root),所以**每次重启后**都要重新
 `adb tcpip 5555` 一次。这个脚本做这件事,约 10 秒。
+
+Windows 原生上直接用当前 adb.exe;WSL2 上自动找 `tools/platform-tools/adb.exe`
+(WSL2 没有 USB 总线,这一步必须由 Windows 侧 adb 完成)。
 
 日常规避:**别关机,用待机**,adbd 不会重启。
 
@@ -154,7 +187,9 @@ Pico 的 `persist.adb.tcp.port` 写不进去(需 root),所以**每次重启后**
 bash tools/fetch-platform-tools.sh
 ```
 
-只在 `pico-usb.sh` 需要。产物落在 `tools/platform-tools/`(**已 gitignore**,不入库)。
+**WSL2 上必需**(给 `pico-usb.sh` 用)。Windows 原生上通常**不需要** ——
+你本地的 adb 本来就是 adb.exe,脚本会直接复用;只有机器上完全没装
+platform-tools 时才需要拉一份。产物落在 `tools/platform-tools/`(**已 gitignore**,不入库)。
 
 ---
 
@@ -173,9 +208,11 @@ cp tools/device.env.example tools/device.env
 |---|---|
 | `TV_ADDR` | 电视 serial,如 `192.0.2.11:5555` |
 | `PICO_ADDR` | 第二台设备 |
-| `ANDROID_SDK_DIR` | SDK 位置,默认 `/opt/android-sdk` |
-| `WINADB` | Windows 版 adb 路径 |
-| `WINADB_PORT` | Windows 侧 adb server 端口,默认 `15037` |
+| `ADB` | 覆盖 adb 可执行文件路径(默认自动解析,一般不用设) |
+| `ANDROID_SDK_DIR` / `ANDROID_HOME` | SDK 位置(构建类脚本用;Windows 上也会自动探测 `%LOCALAPPDATA%\Android\Sdk`) |
+| `EASYANDROID_TMP` | 覆盖临时目录(默认:Windows 上仓库 `.tmp/`,Linux 上 `/tmp`) |
+| `WINADB` | Windows 版 adb 路径(WSL2 上 USB 引导用,自动探测) |
+| `WINADB_PORT` | Windows 侧 adb server 端口(仅 WSL2 需要错开,默认 `15037`) |
 
 统一由 [`_common.sh`](_common.sh) 载入,所以换设备不用改代码。
 
@@ -183,16 +220,12 @@ cp tools/device.env.example tools/device.env
 
 | | 要求 |
 |---|---|
-| Linux 版 adb | `/opt/android-sdk/platform-tools`,并在 PATH 里 |
-| JDK 17 | `tv-install.sh` 用 `aapt2` 读 APK 信息,需要 `JAVA_HOME` |
-| aapt2 | `/opt/android-sdk/build-tools/<version>` |
-| Python 3 | 解析 `uiautomator` 的 XML |
+| adb | 自动解析:`$ADB` > `tools/platform-tools/` > 系统 PATH |
+| JDK 17 | `tv-install.sh` / 构建需要;`JAVA_HOME` 或常见安装位置自动探测 |
+| aapt2 | `$ANDROID_HOME/build-tools/<版本>/aapt2[.exe]`,脚本自动找 |
+| Python 3 | 解析 `uiautomator` 的 XML(`python3` 或 `python` 都行) |
 
-如果不是装在默认路径,改脚本顶部的 PATH 或 `WINADB` 变量。
-
----
-
-## 为什么有 Windows 版 adb
+## 为什么 WSL2 还需要一份 Windows 版 adb
 
 WSL2 **没有 USB 总线**(`/dev/bus/usb` 不存在,也没有 `usbip` 内核模块),
 插在 Windows 上的设备 WSL 看不见。
@@ -200,5 +233,7 @@ WSL2 **没有 USB 总线**(`/dev/bus/usb` 不存在,也没有 `usbip` 内核模�
 所以「USB 引导 Pico」这一步必须由 **Windows 侧** 的 adb 完成。
 Windows 那份固定跑在 **15037** 端口 —— 因为 `.wslconfig` 是 `networkingMode=mirrored`,
 两边共享 localhost,抢同一个 5037 会起不来。
+
+Windows 原生环境没有这个问题(只有一个 adb,直接用默认端口)。
 
 详见 [../docs/02-adb-multi-device.md](../docs/02-adb-multi-device.md#-核心坑wsl2-mirrored-网络下只能有一个-adb-server)。

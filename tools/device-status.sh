@@ -2,22 +2,27 @@
 # 一次性输出设备状态报告(纯文本,不吃多模态 token)
 #
 # 用法:
-#   bash tools/device-status.sh                 # 默认 TV
+#   bash tools/device-status.sh                           # 默认 TV
 #   bash tools/device-status.sh "$PICO_ADDR"
 #   bash tools/device-status.sh "$TV_ADDR" com.example.dualdemo
 #
 # 输出: 型号/系统/ABI → 目标包是否安装及版本 → 当前前台 → 最近崩溃 → 当前界面文案
+#
+# 跨平台:Windows 原生 / WSL2 / Linux 均可,差异见 tools/_common.sh 顶部。
 set -uo pipefail
 
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# 只取第一个位置参数 —— 用 source 加载本文件时 $@ 会带上外层参数,
+# 那不是我们想要的。显式按需读取即可(下面用 ${1:-} 而非数组)。
 DEV="${1:-$TV_ADDR}"
 PKG="${2:-}"
+[ -n "$ADB" ] || { echo "!! 找不到可用的 adb(见 tools/README.md)" >&2; exit 1; }
 
-A(){ timeout 30 adb -s "$DEV" shell "$@" </dev/null 2>&1; }
+A(){ run_timeout 30 "$ADB" -s "$DEV" shell "$@" </dev/null 2>&1; }
 
-if ! adb devices | awk -v d="$DEV" '$1==d && $2=="device"' | grep -q .; then
+if ! adb_online "$DEV"; then
   echo "设备 $DEV 未连接。先跑: bash tools/devices.sh" >&2
   exit 1
 fi
@@ -54,12 +59,15 @@ if [ -n "$crashes" ]; then echo "$crashes" | sed 's/^ */  /'; else echo "  无";
 
 echo
 echo "════════ 当前界面文案 ════════"
+UI_XML="$TMP/_status.xml"
 A uiautomator dump /sdcard/_status.xml >/dev/null 2>&1
-if timeout 30 adb -s "$DEV" pull /sdcard/_status.xml /tmp/_status.xml </dev/null >/dev/null 2>&1; then
-  python3 - <<'PY' | sed 's/^/  /'
-import re
+if run_timeout 30 "$ADB" -s "$DEV" pull /sdcard/_status.xml "$UI_XML" </dev/null >/dev/null 2>&1 \
+   && [ -s "$UI_XML" ]; then
+  if [ -n "$PY" ]; then
+    "$PY" - "$(pyfile "$UI_XML")" <<'PY' | sed 's/^/  /'
+import re, sys
 try:
-    s = open('/tmp/_status.xml', encoding='utf-8').read()
+    s = open(sys.argv[1], encoding='utf-8').read()
 except Exception:
     print('(读不到 UI 树)'); raise SystemExit
 seen, out = set(), []
@@ -69,8 +77,15 @@ for x in re.findall(r'<node[^>]*>', s):
     T = (t.group(1) if t else '') or (d.group(1) if d else '')
     if T and T not in seen:
         seen.add(T); out.append(T)
-print(' | '.join(out[:40]) if out else '0 个带文案的节点。若设备是 TV,先确认是不是在屏保(见 AGENTS.md)')
+print(' | '.join(out[:40]) if out else
+      '0 个带文案的节点。若是 TV,先确认不是屏保(见 AGENTS.md);若是 Pico,UI 树本就拿不到(见 docs/04)')
 PY
+  else
+    grep -oE 'text="[^"]+"' "$UI_XML" | head -40 | sed 's/^/  /'
+  fi
 else
   echo "  (拉取 UI 树失败)"
 fi
+
+# 收尾:别把 dump 文件留在设备上
+A "rm -f /sdcard/_status.xml" >/dev/null 2>&1 || true

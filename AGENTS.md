@@ -18,6 +18,15 @@
    (严格 SemVer,第一个版本 `0.0.1`)。`versionName` / `versionCode` / 界面上显示的版本
    全部从它推导。改版本只改那一个文件,然后 `bash tools/tag-release.sh`。
    见 [docs/06](docs/06-app-conventions.md) 的「版本号」一节。
+7. **`tools/` 下的脚本是跨平台的**(Windows 原生 Git Bash / WSL2 / Linux)。
+   写新脚本或改现有脚本时:
+   - 不要直接调 `timeout` / `mktemp` / `adb` / `python3`,用 `_common.sh` 导出的
+     `run_timeout` / `mktmp` / `$ADB` / `$PY`;
+   - 路径传给 python 或其他 Windows 原生程序前过 `pyfile`;
+   - 需要正则转义用 `re_escape`,纯字面量替换用 python `str.replace`(别用 sed);
+   - 脚本开头调一次 `adb_connect_all`(沙箱/CI 里 daemon 不跨进程存活);
+   - 判断设备在线用 `adb_online`,别手写 `adb devices | awk`。
+   平台差异全表见 `tools/_common.sh` 头部注释和 [tools/README.md](tools/README.md) 的「跨平台速记」。
 
 ---
 
@@ -287,6 +296,20 @@ A(){ adb -s "$DEV" shell "$@" </dev/null 2>&1; }
 ```
 
 不要硬编码设备地址或 SDK 路径。
+
+### adb 的本机侧路径必须过 `win_of`
+
+`adb.exe` 是原生程序,**不认 Git Bash 的 POSIX 路径**(`/e/foo` 会静默失败),
+而 bash 自己的重定向/`test` 反而只认 POSIX 形式:
+
+```bash
+"$ADB" -s "$TV" pull /sdcard/x "$(win_of "$TMP/x")"   # ✓ 转换
+something > "$TMP/x.log"                              # ✓ 保持 POSIX
+```
+
+规则:凡是**传给 adb 的本机路径**(push 源、pull 目标)都要 `win_of`;
+凡是 **bash 内部使用**(重定向、`[ -f ]`、`cat`)保持 POSIX。两处不能混。
+同理,调 Windows 原生 python 时路径过 `pyfile`(= `win_of`)。
 
 ### 改完脚本至少做语法检查
 
