@@ -71,6 +71,24 @@ PICO_IP="${PICO_ADDR%%:*}"
 # Git Bash 会把 `C:\Users\...` 当成一个奇怪的相对路径。
 _tmp_ok(){ [ -n "${1:-}" ] && mkdir -p "$1" 2>/dev/null && [ -w "$1" ]; }
 
+# ⚠️ 下面两个函数的语义是「**按需**转换」,不是无条件转 ——
+#    要不要转取决于**消费这个路径的程序**是本机原生还是 Windows 原生:
+#
+#     平台              | $ADB / python 是   | cygpath | 转换行为    | 对不对
+#      Windows (Git Bash)| adb.exe / Windows  |  有     | 转成 E:\... | ✅
+#      WSL2              | Linux 版 / Linux   |  无     | 原样返回    | ✅
+#      Linux             | Linux 版 / Linux   |  无     | 原样返回    | ✅
+#
+#    重点看 WSL2 那行:**win_of 在 WSL 上是恒等函数,而这是对的** ——
+#    WSL 上 $ADB 是 Linux 版 adb,传 `/mnt/e/...` 才对;若在这里用 wslpath
+#    转成 `E:\...` 反而会把所有 pull/push 弄坏。
+#
+#    所以实现的真实判据是「本机有没有 cygpath」≈「我在不在 Windows 原生 shell 里」,
+#    这个巧合目前恒成立。要更严谨的话,应按消费方是不是 `*.exe` 来决定。
+#
+#    唯一会用 Windows 原生程序的 WSL 场景是 pico-usb.sh 里的 $WINADB,
+#    而它只传子命令、不传本机路径,所以没踩到。
+
 # posix_of <路径> —— 把 Windows 路径转成 Git Bash 可用的 POSIX 形式
 posix_of(){
   local p="$1"

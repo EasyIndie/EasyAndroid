@@ -22,6 +22,10 @@ PKG="${2:-}"
 
 A(){ run_timeout 30 "$ADB" -s "$DEV" shell "$@" </dev/null 2>&1; }
 
+# 收尾时把落在设备上的 dump 文件清掉。用 trap 而不是写在末尾 ——
+# Ctrl-C / 中途报错退出时末尾那行不会执行,文件就留在 /sdcard 了。
+trap 'A "rm -f /sdcard/_status.xml" >/dev/null 2>&1' EXIT
+
 if ! adb_online "$DEV"; then
   echo "设备 $DEV 未连接。先跑: bash tools/devices.sh" >&2
   exit 1
@@ -86,6 +90,3 @@ PY
 else
   echo "  (拉取 UI 树失败)"
 fi
-
-# 收尾:别把 dump 文件留在设备上
-A "rm -f /sdcard/_status.xml" >/dev/null 2>&1 || true

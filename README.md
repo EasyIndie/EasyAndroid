@@ -75,3 +75,7 @@ adb、超时命令、临时目录、python 的平台差异统一在 `tools/_comm
 
 具体环境搭建步骤见 [`docs/01-headless-android-build.md`](docs/01-headless-android-build.md),
 Windows 侧的坑见 [`docs/05-gotchas.md`](docs/05-gotchas.md) 的第一节。
+
+## 许可
+
+[MIT](LICENSE) © 2026 wangzhizhou
