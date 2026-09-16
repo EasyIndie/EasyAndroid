@@ -28,11 +28,17 @@ REPO="$_REPO_DIR"
 APP_DIR="$REPO/apps/DualDemo"
 PKG="com.example.dualdemo"
 
-PASS=0; FAIL=0; SKIP=0
+PASS=0; FAIL=0; SKIP=0; WARN=0
 RESULTS=()
 ok(){   RESULTS+=("PASS  $1"); PASS=$((PASS+1)); printf '  ✅ %s\n' "$1"; }
 bad(){  RESULTS+=("FAIL  $1"); FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
 skip(){ RESULTS+=("SKIP  $1"); SKIP=$((SKIP+1)); printf '  ⏭️  %s\n' "$1"; }
+
+# warn —— 按【警告】记账,不计入失败。用于「本模式用不到、但值得提醒」的项:
+# CI 只跑 --build-only,设备相关的 adb / build-tools 不应把构建判死。
+warn(){ RESULTS+=("WARN  $1"); WARN=$((WARN+1)); printf '  ⚠️  %s\n' "$1"; }
+# need —— 当前模式下的必需项:完整模式当失败,--build-only 当警告。
+need(){ if [ "$BUILD_ONLY" = 1 ]; then warn "$1"; else bad "$1"; fi; }
 
 online(){ adb_online "$1"; }
 
@@ -51,11 +57,20 @@ step_env(){
   [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ] \
     || [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" ] \
     && ok "cmdline-tools" || bad "cmdline-tools 缺失"
-  # build-tools 里可能是 aapt2 或 aapt2.exe
-  if ls "$ANDROID_HOME"/build-tools/*/aapt2 "$ANDROID_HOME"/build-tools/*/aapt2.exe >/dev/null 2>&1; then
+  # build-tools 里可能是 aapt2 或 aapt2.exe。逐个候选判断,不要用带多个
+  # glob 参数的 `ls` —— 只要有一个路径不存在,ls 整体就返回非零(CI 上
+  # 没有 aapt2.exe,老写法会恒判失败)。
+  local _aapt2=""
+  for d in "$ANDROID_HOME"/build-tools/*/; do
+    for cand in "${d}aapt2" "${d}aapt2.exe"; do
+      [ -f "$cand" ] && { _aapt2="$cand"; break 2; }
+    done
+  done
+  if [ -n "$_aapt2" ]; then
     ok "build-tools + aapt2"
   else
-    bad "build-tools 缺失"
+    # aapt2 只用来校验 APK 内容(build 段缺它是 skip),不是构建的硬依赖
+    need "build-tools 缺失(没有 aapt2 就验不了 APK 里的钩子/版本号)"
   fi
   [ -x "$APP_DIR/gradlew" ] || [ -f "$APP_DIR/gradlew" ] \
     && ok "gradlew" || bad "找不到 $APP_DIR/gradlew"
@@ -64,7 +79,16 @@ step_env(){
   [ -f "$_TOOLS_DIR/device.env" ] \
     && ok "tools/device.env" \
     || skip "tools/device.env 未创建(设备地址会用示例值)"
-  [ -n "$ADB" ] && ok "adb 可用($ADB)" || bad "adb 不可用"
+  # $ADB 来自基座:tools/platform-tools/ 或 PATH。CI 上 SDK 自带的 adb 在 PATH 里,
+  # 但工具的探测要求 -x(可执行位),个别环境会给成不可执行 —— 再兜一层 PATH 检查。
+  # adb 只有设备环节用得到,--build-only(CI)下缺了不该判负。
+  if [ -n "$ADB" ]; then
+    ok "adb 可用($ADB)"
+  elif command -v adb >/dev/null 2>&1; then
+    ok "adb 可用($(command -v adb))"
+  else
+    need "adb 不可用(设备环节用得到)"
+  fi
   ok "临时目录 $TMP"
 }
 step_env
@@ -86,10 +110,11 @@ step_build(){
   [ -f "$apk" ] && ok "APK 产出 ($(file_size "$apk") bytes)" || bad "APK 没产出"
 
   # debug 包里必须有自截图钩子,release 包里必须没有
-  local bt="" aapt2=""
+  # 与环境段的探测保持一致:[ -f ] 而非 [ -x ],避免个别环境可执行位缺失时误判
+  local aapt2=""
   for d in "$ANDROID_HOME"/build-tools/*/; do
     for cand in "${d}aapt2" "${d}aapt2.exe"; do
-      [ -x "$cand" ] && { bt="$d"; aapt2="$cand"; break 2; }
+      [ -f "$cand" ] && { aapt2="$cand"; break 2; }
     done
   done
   if [ -n "$aapt2" ]; then
@@ -174,14 +199,19 @@ for r in "${RESULTS[@]}"; do
   case "$r" in
     PASS*) printf '  ✅ %s\n' "${r#PASS  }" ;;
     FAIL*) printf '  ❌ %s\n' "${r#FAIL  }" ;;
+    WARN*) printf '  ⚠️  %s\n' "${r#WARN  }" ;;
     SKIP*) printf '  ⏭️  %s\n' "${r#SKIP  }" ;;
   esac
 done
 echo
-printf '  通过 %d  失败 %d  跳过 %d\n' "$PASS" "$FAIL" "$SKIP"
+printf '  通过 %d  失败 %d  警告 %d  跳过 %d\n' "$PASS" "$FAIL" "$WARN" "$SKIP"
 echo
 if [ "$FAIL" -gt 0 ]; then
   echo "有问题先查 docs/01(环境)和 docs/05(踩坑速查)。"
   exit 1
 fi
-echo "工具链正常。"
+if [ "$WARN" -gt 0 ]; then
+  echo "工具链正常(有警告项:当前模式用不到,完整设备验证前请补齐)。"
+else
+  echo "工具链正常。"
+fi
