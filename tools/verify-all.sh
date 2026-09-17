@@ -173,6 +173,17 @@ step_build(){
   else
     skip "版本号一致性校验(缺 aapt2)"
   fi
+
+  # CHANGELOG.md 的最新条目必须就是当前版本 ——
+  # release.sh 同时写这两个文件,所以它们**不该**漂移。这条是防回归。
+  if [ -n "$want" ] && [ -f "$_REPO_DIR/CHANGELOG.md" ]; then
+    cle_top="$(grep -m1 '^## \[' "$_REPO_DIR/CHANGELOG.md" 2>/dev/null | sed 's/^## \[//;s/\].*//;s/(.*//')"
+    [ "$cle_top" = "$want" ] \
+      && ok "CHANGELOG 最新条目与版本号一致 ($want)" \
+      || bad "CHANGELOG 最新条目是 $cle_top,版本号是 $want(release.sh 应该同时更新它们)"
+  elif [ ! -f "$_REPO_DIR/CHANGELOG.md" ]; then
+    warn "没有 CHANGELOG.md(生成:bash tools/release.sh --backfill)"
+  fi
 }
 step_build
 

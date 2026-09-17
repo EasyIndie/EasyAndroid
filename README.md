@@ -35,18 +35,39 @@ Android 开发实践沉淀。
 >
 > 完整约定见 [`docs/06-app-conventions.md`](docs/06-app-conventions.md)。
 
-### 版本号
+### 发版
 
-**唯一来源是仓库根的 [`version.properties`](version.properties)**,工程里不写版本字面量。
-格式是严格 SemVer(`MAJOR.MINOR.PATCH`),第一个版本 `0.0.1`;`versionCode` 由它推导,
-tag 名也取它。
+**一条命令。** 版本号从提交信息机械推导,CHANGELOG 自动生成,CI 接手出包:
 
 ```bash
-bash tools/tag-release.sh --bump patch   # 0.0.1 -> 0.0.2
-bash tools/tag-release.sh                # 校验 + 构建自检 + 打 tag + 推送
+bash tools/release.sh
 ```
 
-为什么、以及 `versionCode` 怎么算,见 [`docs/06`](docs/06-app-conventions.md#版本号)。
+就这样。它会:读「上一个 tag..HEAD」的提交 → 推导段位 → 写 `version.properties`
+和 [`CHANGELOG.md`](CHANGELOG.md) → 提交 → 打 tag → 推 → **CI 构建签名包并建 Release**。
+
+```bash
+bash tools/release.sh --dry-run    # 先看将要发生什么,一个字节都不改
+```
+
+| 提交信息 | 效果 |
+|---|---|
+| `feat: …` | MINOR |
+| `fix: …` / `perf: …` | PATCH |
+| `feat!: …` 或正文含 `BREAKING CHANGE` | MAJOR(`0.x` 阶段升 MINOR) |
+| `docs:` / `chore:` / `refactor:` / `test:` … | 不发版 |
+
+> **版本号是从提交信息推导的,所以提交信息是规范的一部分**,不是风格偏好 ——
+> 写成 `type(scope): 描述`。CI 会校验(`tools/release.sh --check-commits`)。
+> 一条 `feat`/`fix` 都没有时 `release.sh` 会告诉你**不该发版**,这是对的:
+> 版本号是给使用者看的「有什么变了」,不是「仓库动过」。
+
+**版本号的唯一来源**是 [`version.properties`](version.properties),工程里不写版本字面量;
+格式是严格 SemVer,`versionCode` 与 tag 名都从它推导。
+
+为什么这么定、`versionCode` 怎么算、以及需要人工介入时的逃生门
+(`--as` / `--version` / `--backfill`),见
+[`docs/06-app-conventions.md`](docs/06-app-conventions.md#发版流程)。
 
 ## 快速开始
 

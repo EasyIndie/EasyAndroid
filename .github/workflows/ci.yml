@@ -16,6 +16,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 提交信息规范校验要回溯到上一个 tag;浅克隆会让它看不到。
+          # (fetch-depth: 0 在这个仓库也就几 MB,不必省)
+          fetch-depth: 0
+
+      # 放在最前面:版本号是**从提交信息机械推导**的(release.sh),
+      # 不规范的提交会让推导失准。让它在 CI 里当场报错,而不是等发版时才发现。
+      # 只看**这次推送**的提交,不翻旧账。
+      - name: 提交信息规范(Conventional Commits)
+        if: github.event_name == 'push'
+        run: |
+          bash tools/release.sh --check-commits \
+            "${{ github.event.before }}..${{ github.sha }}"
 
       - name: 装 JDK 17
         uses: actions/setup-java@v4

@@ -147,7 +147,36 @@ Release 附件必须能从 tag 复现。逐个校验已签名 / `versionName` / 
 
 > ⚠️ release 包与 debug 包签名不同,同一台设备上换装要先 `adb uninstall`。
 
+### `release.sh` — 发版(推荐入口,一条命令)
+
+版本号从提交信息推导,CHANGELOG 自动生成,CI 接手出包。**日常发版只需要它。**
+
+```bash
+bash tools/release.sh             # 推导 → 写 CHANGELOG → 提交 → 打 tag → 推
+bash tools/release.sh --dry-run   # 先看将要发生什么(一个字节都不改)
+bash tools/release.sh --check     # 只校验(提交规范 / 工作区干净 / 已推送)
+bash tools/release.sh --title "…" # 覆盖自动生成的版本标题
+bash tools/release.sh --as patch  # 强制段位(该发但推导说不用发时)
+bash tools/release.sh --version 1.0.0
+bash tools/release.sh --no-verify        # 跳过构建自检
+bash tools/release.sh --check-commits    # 只校验提交信息规范(CI 里跑的就是它)
+bash tools/release.sh --backfill         # 从所有 tag 重建 CHANGELOG.md
+```
+
+段位推导:`feat`→MINOR,`fix`/`perf`→PATCH,`!`/`BREAKING CHANGE`→MAJOR
+(`0.x` 阶段升 MINOR),其余类型不发版。完整约定见
+[docs/06-app-conventions.md](../docs/06-app-conventions.md#发版流程)。
+
+> 提交信息里 `type(scope)!: 描述` 的 `!` 是**不兼容变更**的标记,会传染版本号,
+> 所以别随手加。类型列表(规范里可用的):
+> `feat` `fix` `perf` `docs` `refactor` `test` `style` `ci` `build` `chore`。
+
+---
+
 ### `tag-release.sh` — 打发布 tag(tag 名 = version.properties 的 version)
+
+> 这是**机制层**:只保证「tag 名 == version.properties 的 version」。
+> 日常发版用上面的 [`release.sh`](#releasesh--发版推荐入口一条命令),它会调这个脚本。
 
 ```bash
 bash tools/tag-release.sh --check          # 只校验,不改动任何东西(可放 CI)

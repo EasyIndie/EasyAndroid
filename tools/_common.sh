@@ -170,6 +170,15 @@ else
   run_timeout(){ local _s="$1"; shift; "$@"; }
 fi
 
+# ── 4b. 仓库 slug(owner/repo)───────────────────────────────────────
+# 从 origin remote 推。release-apk.sh / release.sh 都要拿它拼 compare 链接,
+# 所以抽在这里 —— 不然就是第 N 份拷贝(上次差一点变成两份)。
+repo_slug(){
+  git -C "${1:-$_REPO_DIR}" remote get-url origin 2>/dev/null \
+    | sed 's#.*github\.com[:/]##;s#\.git$##' | tr -d '\r'
+}
+
+
 # ── 5. 跨平台小工具 ─────────────────────────────────────────────────
 file_size(){ stat -c%s "$1" 2>/dev/null || wc -c < "$1" 2>/dev/null || echo 0; }
 file_mtime(){ stat -c%Y "$1" 2>/dev/null || date +%s; }

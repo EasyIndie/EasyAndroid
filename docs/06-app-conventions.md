@@ -104,24 +104,83 @@ version=01.0.0 的段 '01' 不合法(SemVer 不允许空段或前导零)
 version=a.b.c 里有非数字段: a
 ```
 
-### 改版本的流程
+### 发版流程
+
+**只有一个入口,一条命令:**
 
 ```bash
-# 1. 涨版本号(只改唯一来源)
-bash tools/tag-release.sh --bump patch    # 或 minor / major
-
-# 2. 提交 + 推送
-#    构建自检会把 APK 里的 versionName 和 version.properties 对一遍,
-#    不一致就报错 —— 把「唯一来源」变成可执行约束,而不是只写在文档里
-git commit -am "chore(release): 0.0.2 —— ..."
-git push
-
-# 3. 打 tag 并推送。tag 名 == version(不带 v 前缀),由脚本强制校验
-#    这样任何时刻 `git checkout <tag>` 构出来的 APK 版本号都等于 tag 名
-bash tools/tag-release.sh
+bash tools/release.sh
 ```
 
+它会连做五件事,全部机械执行:
+
+```
+1. 读「上一个 tag..HEAD」的提交信息,推导段位
+2. 写 version.properties(version + 版本历史那一行)
+3. 生成 CHANGELOG.md 条目并插到最上面(最新在上)
+4. git commit "chore(release): x.y.z —— …,然后 push
+5. 调 tag-release.sh:构建自检 → 打 tag → 推
+   ↓
+   CI(.github/workflows/release.yml):从 tag 构建签名包 → 建 Release → 挂附件
+```
+
+结束后看 https://github.com/EasyIndie/EasyAndroid/releases 。
+
+#### 为什么是这条路
+
+以前发一版要人工做 5 件事,其中 3 件是**纯记账**:判断段位、补 `version.properties`
+的历史注释、手打提交信息。而「这一版改了什么」被同时记在**四个地方** ——
+`version.properties` 注释块、`docs/releases/*.md`、Release notes、git log ——
+四处维护必然漂移。
+
+现在段位、CHANGELOG、提交信息全部**从提交历史推导**,所以:
+
+> **提交信息是规范的一部分,不是风格偏好。** 写成 `type(scope): 描述`。
+> CI 会校验(`release.sh --check-commits`),不规范的提交会让版本号推导失准。
+
+| 提交信息 | 段位 |
+|---|---|
+| `feat: …` | MINOR |
+| `fix: …` / `perf: …` | PATCH |
+| `feat!: …`,或正文含 `BREAKING CHANGE` | MAJOR |
+| `docs/chore/refactor/test/style/ci/build: …` | 不发版 |
+
+`a+b:` 也支持(一次提交同属多类,取最高那类;历史里真有 `docs+fix:`)。
+
+⚠️ **MAJOR 还是 0 的时候,BREAKING 升 MINOR 而不是 MAJOR** —— `0.x` 本来就不承诺稳定,
+直接跳到 `1.0.0` 会让人误以为已经稳定。真想到 `1.0.0` 就明说:`--version 1.0.0`。
+
+**一条 `feat`/`fix` 都没有时不发版**(`exit 0`,不是错误)。这是对的:
+版本号是给使用者看的「有什么变了」,不是「仓库动过」。文档改了就说文档改了。
+
+#### 什么时候需要人工介入
+
+推导是机械的,所以留了逃生门:
+
+```bash
+bash tools/release.sh --dry-run          # 先看将要发生什么(一个字节都不改)
+bash tools/release.sh --title "…"        # 覆盖自动生成的版本标题
+bash tools/release.sh --as patch         # 强制段位(该发但推导说不用发时)
+bash tools/release.sh --version 1.0.0    # 完全指定版本号
+bash tools/release.sh --check            # 只校验,不改任何东西
+bash tools/release.sh --check-commits    # 只校验提交信息规范(CI 里跑的就是它)
+bash tools/release.sh --backfill         # 从所有 tag 重建 CHANGELOG.md(换格式时用)
+bash tools/release.sh --no-verify        # 跳过构建自检(已单独跑过 verify-all)
+```
+
+#### 底下那两层
+
+`release.sh` 是流程层,底下是两个机制层脚本,单独也都能用:
+
+| 脚本 | 管什么 |
+|---|---|
+| `tools/tag-release.sh` | 「tag 名 == `version.properties` 的 version」这条约束 + 构建自检 |
+| `tools/release-apk.sh` | 从某个 tag 构建签名包并校验(CI 用的就是它,加 `--in-place`) |
+
+`release.sh` 不重复实现它们 —— 它调 `tag-release.sh` 来打 tag。
+
 第一个版本是 **`0.0.1`**(`git tag 0.0.1`)。`0.x` 表示对外行为还可能变。
+版本历史见 [`CHANGELOG.md`](../CHANGELOG.md)(自动生成,**不要手改**)。
 
 ### 签名凭据:存哪儿 —— 什么能入库,什么不能
 
@@ -527,18 +586,14 @@ AGP 产出的 `app-release-unsigned.apk` **装不上设备**(Android 拒绝未�
 
 #### 一条线:推 tag → CI 全自动(推荐)
 
+**发版本身只有一条命令**(见上面的[发版流程](#发版流程)):
+
 ```bash
-# 1. 涨版本(只改唯一来源)
-bash tools/tag-release.sh --bump minor
-
-# 2. 提交推送
-git commit -am "chore(release): 0.3.0 —— ..." && git push
-
-# 3. 打个 tag 推上去 —— 剩下的事 CI 干
-bash tools/tag-release.sh
+bash tools/release.sh
 ```
 
-推完 tag,`.github/workflows/release.yml` 会自动:
+它写完版本号和 CHANGELOG 之后调 `tag-release.sh` 打 tag 并推。推完 tag,
+`.github/workflows/release.yml` 会自动:
 
 ```
 校验 tag 与 version.properties 一致

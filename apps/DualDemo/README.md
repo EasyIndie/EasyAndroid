@@ -44,9 +44,14 @@ sdk.dir=/opt/android-sdk
 version=0.0.1        # versionName=0.0.1  versionCode=1
 ```
 
-改版本只改那一个文件,然后 `bash ../../tools/tag-release.sh`。完整约定(含为什么
-`versionCode` 要推导、为什么不支持 `-alpha.1` 后缀)见
-[../../docs/06-app-conventions.md](../../docs/06-app-conventions.md#版本号)。
+发版是一条命令(在仓库根跑,不在本工程里):
+
+```bash
+bash tools/release.sh
+```
+
+它从提交信息推导版本号,并自动更新 `version.properties` 与 `CHANGELOG.md`。
+完整约定见 [../../docs/06-app-conventions.md](../../docs/06-app-conventions.md#发版流程)。
 
 ## 安装
 

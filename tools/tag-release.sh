@@ -73,6 +73,11 @@ if [ -n "$BUMP" ]; then
   echo "     这个段位(major/minor/patch)"
   echo "  2. 把改动写进提交信息,然后 git commit && git push"
   echo "  3. bash tools/tag-release.sh"
+  echo
+  echo "⚠️ 这一串是**手工记账**。日常发版请用一条命令的那个:"
+  echo "     bash tools/release.sh"
+  echo "   它从提交信息推导段位,并自动写 version.properties 的历史与 CHANGELOG.md。"
+  echo "   --bump 只留给「想让版本号脱离推导结果」的场合。"
   exit 0
 fi
 

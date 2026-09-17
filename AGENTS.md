@@ -16,8 +16,11 @@
 5. **优先用文本手段验收 UI,不要截图** —— 见第 4 节。
 6. **不要在代码里写版本号字面量** —— 唯一来源是仓库根的 `version.properties`
    (严格 SemVer,第一个版本 `0.0.1`)。`versionName` / `versionCode` / 界面上显示的版本
-   全部从它推导。改版本只改那一个文件,然后 `bash tools/tag-release.sh`。
-   见 [docs/06](docs/06-app-conventions.md) 的「版本号」一节。
+   全部从它推导。**发版是一条命令:`bash tools/release.sh`** —— 它从提交信息推导段位,
+   自动写 version.properties 与 CHANGELOG.md,然后提交、打 tag、推,CI 接手出包。
+   见 [docs/06](docs/06-app-conventions.md#发版流程)。
+   由此:**提交信息必须写 `type(scope): 描述`**(Conventional Commits)——
+   版本号是从它机械推导的,CI 会校验。
 7. **签名密钥绝对不能入库** —— `tools/keystore/`、`keystore.properties`、`*.jks` 已在
    `.gitignore`。往仓库里放任何密钥文件前先确认 `.gitignore` 拦得住。
    ⚠️ **`gen-keystore.sh --export` 出来的凭据包文件名不在黑名单里,得自己注意** ——
@@ -54,7 +57,9 @@
 ```
 docs/            知识沉淀(踩坑、结论、绕行方案)
 apps/            可运行的 Android 工程(每个子目录是一个独立 Gradle 构建)
-tools/           设备连接 / 安装 / 引导脚本
+tools/           设备连接 / 安装 / 引导脚本 / 发版
+CHANGELOG.md     版本历史 —— 由 tools/release.sh 自动生成,不要手改
+version.properties  版本号唯一来源
   _common.sh             共用的配置载入逻辑(所有脚本 source 它)
   device.env.example     设备地址模板 → 复制成 device.env(不入库)
 ```
