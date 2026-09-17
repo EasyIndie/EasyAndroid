@@ -44,12 +44,15 @@
 #   bash tools/gen-keystore.sh                    # 首次生成(已存在则拒绝)
 #   bash tools/gen-keystore.sh --status           # 看当前配置:路径 / 别名 / 指纹 / 有效期
 #   bash tools/gen-keystore.sh --add-alias <应用名>    # 给单个应用加一把专用密钥(推荐)
+#   bash tools/gen-keystore.sh --scan [目录]         # 扫出本机所有密钥材料副本(含不该有的)⭐
 #   bash tools/gen-keystore.sh --manifest            # 对仓里的 signing-manifest.txt 自检
 #   bash tools/gen-keystore.sh --manifest --write    # 更新那个文件(加了别名之后跑)
 #   bash tools/gen-keystore.sh --verify-against <apk>  # 确认本机密钥和某个已发布 APK 是同一把
 #   bash tools/gen-keystore.sh --export [文件]    # 导出自包含的 base64 凭据包(备份/搬运/喂 CI)
 #   bash tools/gen-keystore.sh --push-secret [owner/repo]  # 把凭据包直接写进仓库的 Actions secret
 #   bash tools/gen-keystore.sh --import <文件>    # 从凭据包还原(换机器 / 灾后恢复)
+#   bash tools/gen-keystore.sh --drill <文件> [--record]   # ⭐ 恢复演练:在临时目录里真跑一遍导入并核对指纹
+#                                                #   --record 把「哪天验的」记进入库的期望值文件
 #   bash tools/gen-keystore.sh --force            # ⚠️ 覆盖重建 = 换签名,老用户升不了级
 #
 #   KS_PASSWORD=xxx bash tools/gen-keystore.sh    # 指定密码(默认随机 28 位,不打印)
@@ -63,6 +66,10 @@ set -uo pipefail
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# 允许把「仓库根」指到别处。**只有 --drill(恢复演练)会用** ——
+# 它要在临时目录里走一遍**真实的导入路径**,从而不碰本机凭据。
+_REPO_DIR="${GENKS_ROOT:-$_REPO_DIR}"
+
 KS_DIR="$_REPO_DIR/tools/keystore"
 KS="$KS_DIR/release.jks"
 PROPS="$_REPO_DIR/keystore.properties"
@@ -73,11 +80,38 @@ MANIFEST="$_REPO_DIR/signing-manifest.txt"
 die(){ echo "!! $*" >&2; exit 1; }
 have_creds(){ [ -f "$KS" ] && [ -f "$PROPS" ]; }
 
-# 临时目录用**全局变量** + 单一 EXIT trap。
-# 踩过:写成函数内的 `local tmpd` + `trap 'rm -rf "$tmpd"'`,函数返回后 local 已销毁,
-# 脚本退出时 trap 再引用它就报 “tmpd: unbound variable”(配合 set -u)。
-TMPD=""
-trap 'rm -rf "${TMPD:-}"' EXIT
+# ── 临时目录:用**列表**跟踪全部,退出时逐个删 ──────────────────────
+#
+# 这个文件里的临时目录会装着**明文私钥**。踩过两次,两次都真的把私钥留在了盘上:
+#
+#   1) `local tmpd` + `trap 'rm -rf "$tmpd"'` —— 函数返回后 local 已销毁,
+#      脚本退出时 trap 报 “tmpd: unbound variable”,**什么都没删**。
+#      (现场:.tmp/tmpd.3LdnqyLsIH/ 里躺着 release.jks + 明文密码的 properties)
+#
+#   2) 用单个全局 TMPD —— `write_bundle` 内部又 mktmpd 一次,把调用者的 TMPD
+#      覆盖掉,那个目录从此没人删。而它恰恰装着一份完整的凭据包。
+#      (现场:.tmp/tmpd.*/bundle.b64,每跑一次 --push-secret 漏一个)
+#
+# 所以:凡是要建临时目录,**一律走 mktmpd_tracked**;trap 遍历列表全删。
+# 保证「创建」和「清理」之间没有任何可能失配的路径。
+#
+# ⚠️ 路径通过 **$TMPDIR_LAST** 返回,不用 stdout —— 因为 `d="$(mktmpd_tracked)"`
+#    这种写法会开**子 shell**,在子 shell 里往 TMPDIRS 追加对父 shell 不可见,
+#    结果 trap 遍历的是空列表,一个目录都删不掉。
+#    踩过:第一版就是这么写的,改完再测 —— 每次 --push-secret 照样漏一份凭据包。
+TMPDIRS=""
+TMPDIR_LAST=""
+mktmpd_tracked(){
+  TMPDIR_LAST="$(mktmpd)" || return 1
+  TMPDIRS="$TMPDIRS $TMPDIR_LAST"
+}
+_reap_tmp(){
+  local d
+  for d in $TMPDIRS; do rm -rf "$d" 2>/dev/null; done
+  TMPDIRS=""
+}
+# EXIT 之外还接 INT/TERM/HUP —— 被 Ctrl-C 或 timeout 打断时也要清干净
+trap '_reap_tmp' EXIT INT TERM HUP
 
 # keytool 跟着 JDK 走
 KEYTOOL=""
@@ -242,10 +276,15 @@ write_bundle(){
   local out="$1" fp; fp="$(fingerprint_raw)"
   [ -n "$fp" ] || die "读不出证书指纹 —— 密钥库或密码可能对不上"
 
-  TMPD="$(mktmpd)" || die "建临时目录失败"
-  cp "$KS" "$TMPD/release.jks"
-  cp "$PROPS" "$TMPD/keystore.properties"
-  ( cd "$TMPD" && tar czf bundle.tgz release.jks keystore.properties ) || die "打包失败"
+  # ⚠️ 必须用**函数内**的目录变量,不能碰全局 TMPD —— 否则会把调用者的
+  #    临时目录孤立掉,而那个目录里可能正装着一份凭据包(见文件上方 2) 的说明)。
+  local t
+  mktmpd_tracked || die "建临时目录失败"
+  t="$TMPDIR_LAST"
+  cp "$KS" "$t/release.jks"
+  cp "$PROPS" "$t/keystore.properties"
+  chmod 600 "$t/release.jks" "$t/keystore.properties" 2>/dev/null || true
+  ( cd "$t" && tar czf bundle.tgz release.jks keystore.properties ) || die "打包失败"
 
   mkdir -p "$(dirname "$out")" 2>/dev/null || true
   {
@@ -260,7 +299,7 @@ write_bundle(){
     echo "#"
     echo "# 还原: bash tools/gen-keystore.sh --import <本文件>"
     echo "#"
-    base64 < "$TMPD/bundle.tgz" | tr -d '\n'
+    base64 < "$t/bundle.tgz" | tr -d '\n'
     echo
   } > "$out"
 }
@@ -281,9 +320,12 @@ cmd_push_secret(){
 
   # 先写到临时文件再重定向给 gh —— 不用 --body,避免命令行参数长度限制,
   # 也不用把密钥落在 dist/ 里(那是构建产物目录,容易忘掉)。
-  TMPD="$(mktmpd)" || die "建临时目录失败"
+  mktmpd_tracked || die "建临时目录失败"; TMPD="$TMPDIR_LAST"
   local tmpf="$TMPD/bundle.b64"
   write_bundle "$tmpf"
+
+  # 推之前也验一次 —— 写进 secret 里的坏包更难发现(要到 CI 跑起来才炸)
+  verify_bundle "$tmpf" || die "要推给 CI 的凭据包自检失败 —— 没有写入 secret"
 
   echo "==> 写入 $repo 的 Actions secret: KEYSTORE_B64  ($(file_size "$tmpf") bytes)"
   # 重定向由 bash 做(本地 POSIX 路径),gh 从 stdin 读 —— 不需要 winpath。
@@ -370,6 +412,118 @@ cmd_add_alias(){
 #
 # 指纹统一写成 **小写无冒号**(与 apksigner 的输出格式一致),
 # 免得又踩「keytool 大写带冒号 vs apksigner 小写」那个归一化坑。
+# 扫描工作目录,列出**所有**密钥材料的副本。
+#
+# 为什么需要:
+#   1. 「我到底有几份、都在哪」—— 「过段时间找不到」这个问题的一半是**不知道有几份**
+#   2. 发现**不该存在**的副本。实测踩过:--push-secret 每次都在 .tmp/ 漏一份
+#      完整凭据包(明文),没人知道它们躺在那儿,直到跑了一次扫描。
+#
+# 判定依据(任一命中就算):
+#   · 文件名像密钥文件(release.jks / keystore.properties / *.b64 …)
+#   · 内容与本机密钥库**逐字节相同**(改名、换扩展名也躲不掉)
+#   · 文件头是本仓库凭据包的标志行
+cmd_scan(){
+  local root="${1:-$_REPO_DIR}"
+  root="$(cd "$root" && pwd)"
+  echo "  ════ 扫描密钥材料副本: $root ════"
+
+  local ksha=""
+  have_creds && ksha="$(sha256sum "$KS" 2>/dev/null | cut -d' ' -f1)"
+
+  local list; list="$TMPDIR_LAST.scan"
+  mktmpd_tracked >/dev/null || die "建临时目录失败"
+  list="$TMPDIR_LAST/scan.txt"
+
+  "$PY" - "$(pyfile "$root")" "$ksha" "$(pyfile "$KS")" "$(pyfile "$PROPS")" > "$list" <<'PYEOF'
+import os, sys, hashlib
+root, ksha, ks, props = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+SKIP_DIR = {'.git', 'build', '.gradle', 'node_modules', '.idea', 'platform-tools'}
+NAME_HINTS = ('release.jks', 'keystore.properties', 'signing-bundle', 'bundle.b64')
+HEADER = '# EasyAndroid release'
+
+def size_of(p):
+    try:
+        return os.path.getsize(p)
+    except OSError:
+        return -1
+
+def sha(p):
+    h = hashlib.sha256()
+    try:
+        with open(p, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+# ⚠️ 必须在 size_of/sha 定义**之后**才能调用 —— 写在这之前会 NameError,
+#    而 NameError 会让整个扫描崩掉。崩掉本身还不算最坏:如果外面没检查退出码,
+#    它看起来就是「什么都没找到」—— 一个安全扫描静默失败比不扫更糟。
+ks_size = size_of(ks) if ks else -1
+
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames[:] = [d for d in dirnames if d not in SKIP_DIR]
+    for fn in filenames:
+        full = os.path.join(dirpath, fn)
+        why = None
+        if fn in NAME_HINTS or fn.endswith(('.jks', '.keystore', '.p12')):
+            why = '文件名像密钥材料'
+        elif ksha and size_of(full) == ks_size:
+            # 逐字节相同的副本**大小必然相同** —— 先用大小筛掉 99.9% 的文件,
+            # 再算哈希。这样改名、换扩展名、去掉扩展名都躲不掉,而且不用
+            # 把整个仓库哈希一遍。
+            if sha(full) == ksha:
+                why = '内容与本机密钥库完全相同(改了名也没用)'
+        if why is None and fn.endswith(('.b64', '.txt')):
+            try:
+                with open(full, 'r', errors='ignore') as f:
+                    if f.readline().startswith(HEADER):
+                        why = '是本仓库的凭据包(含私钥+明文密码)'
+            except OSError:
+                pass
+        if why:
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                size = 0
+            print(f"{os.path.relpath(full, root)}\t{size}\t{why}")
+PYEOF
+  local prc=$?
+  [ "$prc" = 0 ] || die "扫描器自己崩了(exit $prc)—— **不能当成「没找到」**,请先修它"
+
+  local n_exp=0 n_odd=0 n_tracked=0
+  local rel size why ign
+  # 预期内的三个位置
+  local expected=" tools/keystore/release.jks keystore.properties dist/signing-bundle.b64 "
+  while IFS=$'\t' read -r rel size why; do
+    [ -n "$rel" ] || continue
+    ign=""
+    git -C "$root" check-ignore -q "$rel" 2>/dev/null && ign="gitignored" || ign="⚠️ 会被提交"
+    [ "$ign" = "gitignored" ] || n_tracked=$((n_tracked+1))
+    case "$expected" in
+      *" $rel "*) n_exp=$((n_exp+1)); printf '  ✅ 预期内   %-44s %8s B  %s\n' "$rel" "$size" "$ign" ;;
+      *)           n_odd=$((n_odd+1)); printf '  ⚠️  额外副本 %-44s %8s B  %s   ← %s\n' "$rel" "$size" "$ign" "$why" ;;
+    esac
+  done < "$list"
+
+  echo
+  if [ "$n_exp" = 0 ] && [ "$n_odd" = 0 ]; then
+    echo "  扫描不到任何密钥材料 —— 本机没有凭据(或者它们都不在这个目录下)"
+  else
+    echo "  预期内 $n_exp 份,额外 $n_odd 份"
+  fi
+  echo "  ⚠️  这个扫描只看 $root。密码管理器、U 盘、别的机器上的副本它看不到 ——"
+  echo "     那些要靠 docs/06「凭据在哪」记下来,不然就是「找不到了」。"
+  [ "$n_odd" = 0 ] || echo "  建议:额外副本确认用不到的,删掉(每多一份就多一个泄露面)"
+  [ "$n_tracked" = 0 ] || echo "  ❌ 有 $n_tracked 份**没被 gitignore** —— 一旦提交就无法收回!"
+  # 干净状态下额外副本应该是 0 份,所以它会让这个命令失败 —— 这样能放进 CI/自检。
+  # 不想让仓库的工作区里存第二份密钥副本,那是「忘了的地方」的主要来源。
+  if [ "$n_tracked" != 0 ] || [ "$n_odd" != 0 ]; then return 1; fi
+  return 0
+}
+
 cmd_manifest(){
   have_creds || die "本机还没配置凭据,先跑 bash tools/gen-keystore.sh"
   local pw; pw="$(prop_of storePassword)"
@@ -429,7 +583,155 @@ cmd_manifest(){
   done < <(grep -E '^alias\.' "$MANIFEST" 2>/dev/null)
   [ "$n" -gt 0 ] || { echo "  (文件里没有 alias.* 条目)"; return 0; }
   [ "$bad" = 0 ] && echo "  ✅ 全部一致" || echo "  ❌ 有别名对不上 —— 见上面提示"
+
+  # 「上次恢复演练是什么时候」—— 备份会**悄悄过期**(文件被改坏、口令忘了、
+  # 存的那份是旧的),不演练就不知道。所以把日期摆出来,让它自己显得可疑。
+  local dl; dl="$(sed -n 's/^drill\.last=//p' "$MANIFEST" 2>/dev/null | head -1)"
+  if [ -n "$dl" ]; then
+    local days=""
+    days="$("$PY" -c "
+import datetime,sys
+try:
+    d=datetime.date.fromisoformat('$dl')
+    print((datetime.date.today()-d).days)
+except Exception:
+    print('')
+" 2>/dev/null)"
+    if [ -n "$days" ]; then
+      echo "  上次恢复演练 $dl (${days} 天前,$(sed -n 's/^drill\.bundle=//p' "$MANIFEST" | head -1))"
+      [ "$days" -gt 180 ] && echo "  ⚠️  超过半年没验过备份了 —— 跑一次:bash tools/gen-keystore.sh --drill <凭据包> --record"
+    else
+      echo "  上次恢复演练 $dl"
+    fi
+  else
+    echo "  ⚠️  从没跑过恢复演练。备份「存了」不等于「能恢复」——"
+    echo "     bash tools/gen-keystore.sh --drill <凭据包> --record"
+  fi
   return "$bad"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# 恢复演练 —— 回答「我存下/存走的那份备份,以后真的还能用吗?」
+#
+# 为什么需要它:**「存了」和「能恢复」是两件事。** 半年后再打开备份,可能发现
+#   · 文件被邮件客户端或云盘改坏(自动换行、截断、加 BOM)
+#   · 密码管理器里存的是更早那一次导出的旧版本
+#   · 导出的口令自己忘了、或者当时就是随手设的
+#   · 存的时候没注意,存进了另一个项目的凭据
+# 这些**只有真跑一遍才知道**。而真跑一遍的风险是:万一那份是旧的,就把本机
+# 凭据覆盖成错的了 —— 于是这里在**临时目录**里跑完整的 --import 路径。
+#
+# 它验的是:解码 → 解包 → 读密码 → 算指纹 → 对仓里记录的期望值。
+# 全程不碰 $KS / $PROPS。
+cmd_drill(){
+  # 位置无关地解析:--record 写在文件前面后面都行(踩过:按 $1/$2 取位置,
+  # 结果 `--drill <文件> --record` 里的 --record 被当成多余参数丢掉了,
+  # 命令照常成功、只是记录没写 —— 又是「静默什么都没做」)
+  local src=""
+  local a
+  for a in "$@"; do
+    case "$a" in
+      --record) DRILL_RECORD=1 ;;
+      "") ;;
+      *) src="$a" ;;
+    esac
+  done
+  [ -n "$src" ] || die "用法: bash tools/gen-keystore.sh --drill <凭据包文件> [--record]"
+  [ -f "$src" ] || die "找不到 $src"
+  # 子进程可能在别的 cwd 下跑,先取绝对路径
+  src="$(cd "$(dirname "$src")" && pwd)/$(basename "$src")"
+
+  mktmpd_tracked || die "建临时目录失败"; TMPD="$TMPDIR_LAST"
+  local root; root="$TMPD"
+
+  echo "████ 恢复演练(全程不碰本机凭据)████"
+  echo "  备份文件  $src"
+  echo "            $(wc -c <"$src" | tr -d ' ') 字节,含 $(grep -c '^#' "$src" 2>/dev/null | tr -d ' ') 行头部注释"
+  echo "  演练目录  $root"
+  echo "  本机凭据  $KS"
+  echo "            ↑ 演练结束后它应该**一个字节都没变**"
+  echo
+
+  echo "  [1/3] 按真实路径导入到临时目录 …"
+  if ! GENKS_ROOT="$root" bash "${BASH_SOURCE[0]}" --import "$src" >"$root/import.log" 2>&1; then
+    echo "  ❌ 导入失败 —— 这份备份**现在就用不了**:" >&2
+    sed 's/^/       /' "$root/import.log" >&2
+    echo >&2
+    echo "  结论:赶紧换一份能用的。别把这份当备份。" >&2
+    return 1
+  fi
+  echo "        ✅ 解码 / 解包 / 密码 / 密钥库读取 全部通过"
+
+  echo "  [2/3] 核对指纹 …"
+  if [ -f "$MANIFEST" ]; then
+    cp "$MANIFEST" "$root/signing-manifest.txt"
+    GENKS_ROOT="$root" bash "${BASH_SOURCE[0]}" --manifest >"$root/mf.log" 2>&1
+    local mrc=$?
+    sed 's/^/       /' "$root/mf.log"
+    if [ "$mrc" != 0 ]; then
+      echo >&2
+      echo "  ❌ 能导入,但**指纹和本仓库记录的不是同一把** —— 这份不是发布用的那份。" >&2
+      echo "     用它发布 = 老用户升不了级。先搞清楚哪一份才是对的。" >&2
+      return 1
+    fi
+  else
+    echo "        ⚠️  仓库里没有 signing-manifest.txt,跳过核对"
+    echo "           (生成了才能挡住「导入了别的项目的凭据」:bash tools/gen-keystore.sh --manifest --write)"
+  fi
+
+  echo "  [3/3] 清理临时目录 …"
+  echo "        ✅ 已删除 $root"
+
+  if [ "${DRILL_RECORD:-0}" = 1 ] && [ -f "$MANIFEST" ]; then
+    # 把「哪一份、什么时候验过」记进入库的期望值文件。
+    # 目的是**让过期可见**:半年后 git log 上看到 drill.last 还是很久以前,
+    # 就知道该重跑一次了 —— 而不是等到真要恢复时才发现那份早就坏了。
+    local today; today="$(date '+%Y-%m-%d')"
+    grep -v '^drill\.' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+    {
+      echo "drill.last=$today"
+      echo "drill.bundle=$(basename "$src")"
+      echo "drill.size=$(wc -c <"$src" | tr -d ' ')"
+    } >> "$MANIFEST"
+    echo
+    echo "  已记进 $(basename "$MANIFEST"):drill.last=$today($(basename "$src"))"
+    echo "  git diff 能看到 —— 提交它,以后看这个日期就知道备份多久没验过了。"
+  fi
+
+  echo
+  echo "  ════ 演练通过 ════"
+  echo "  这份备份能还原出**发布用的那一把**,可以在新机器上 --import。"
+  echo
+  echo "  但它只证明了「文件是对的」,**没证明「你以后找得到它」**。后者是流程问题:"
+  echo "    · 存在一个**固定**的地方,并在 docs/06「凭据在哪」里记下位置"
+  echo "    · 条目名带上仓库名和指纹前缀,以后能搜到:"
+  echo "        EasyAndroid 签名凭据 (alias=release, SHA eb3bfaf6)"
+  echo "    · 换个时间再跑一次这个演练 —— 通过了才算数"
+  return 0
+}
+
+# 自检一份凭据包:能不能解开、里面是不是**本机这一把**。
+#
+# 存在理由(实测踩过):有一版 --export 因为变量名漏改,导出了一个只有头部注释、
+# 正文为空的 **467 字节**文件,而命令一路报成功。存进密码管理器的就是一张废纸,
+# 而且要到半年后真要恢复时才发现 —— 那时本机可能已经没有别的副本了。
+# 所以导出后必须**当场解回来验一遍**:解不开或不是这一把,就删掉并报错。
+verify_bundle(){
+  local f="$1"
+  [ -f "$f" ] || return 1
+  local t
+  mktmpd_tracked || return 1
+  t="$TMPDIR_LAST"
+  sed '/^#/d' "$f" | tr -d '\r\n' | base64 -d > "$t/b.tgz" 2>/dev/null || return 1
+  ( cd "$t" && tar xzf b.tgz ) >/dev/null 2>&1 || return 1
+  [ -f "$t/release.jks" ] && [ -f "$t/keystore.properties" ] || return 1
+  local pw al fp
+  pw="$(prop_of_file "$t/keystore.properties" storePassword)"
+  al="$(prop_of_file "$t/keystore.properties" keyAlias)"
+  fp="$(fp_of "$t/release.jks" "$pw" "$al")"
+  [ -n "$fp" ] || return 1
+  [ "$fp" = "$(fingerprint)" ] || return 1
+  return 0
 }
 
 cmd_export(){
@@ -471,7 +773,7 @@ cmd_import(){
   #    凡是拿指纹做比较的地方都必须先过这一步。
   local want_fp; want_fp="$(sed -n 's/^# SHA-256 指纹: //p' "$src" | head -1 | tr -d ':' | tr 'A-Z' 'a-z')"
 
-  TMPD="$(mktmpd)" || die "建临时目录失败"
+  mktmpd_tracked || die "建临时目录失败"; TMPD="$TMPDIR_LAST"
   local tmpd; tmpd="$TMPD"
   # 去掉以 # 开头的头部注释行,其余就是 base64
   sed '/^#/d' "$src" | tr -d '\r\n' | base64 -d > "$tmpd/bundle.tgz" 2>/dev/null \
@@ -585,6 +887,7 @@ case "${1:-}" in
   ""|--force)  [ "${1:-}" = "--force" ] && FORCE=1; cmd_init ;;
   --status)    cmd_status ;;
   --add-alias) shift; cmd_add_alias "${1:-}" ;;
+  --scan)      shift; cmd_scan "${1:-}" ;;
   --manifest)  shift
                MWANT=""
                [ "${1:-}" = "--write" ] && { MWANT="--write"; shift; }
@@ -593,6 +896,7 @@ case "${1:-}" in
   --verify-against) shift; cmd_verify "${1:-}" ;;
   --export)    cmd_export "${2:-}" ;;
   --import)    shift; [ "${1:-}" = "--force" ] && { FORCE=1; shift; }; cmd_import "${1:-}" ;;
+  --drill)     shift; cmd_drill "${1:-}" "${2:-}" ;;
   -h|--help)   sed -n '3,45p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
   *)           die "未知参数: $1(看 --help)" ;;
 esac

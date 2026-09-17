@@ -93,6 +93,39 @@ step_env(){
 }
 step_env
 
+echo "════════════════ 1.5/4 签名凭据卫生 ════════════════"
+step_signing(){
+  # 凭据在不在(不在是正常的 —— 不做发版的人不需要。在的话才往下查)
+  if [ ! -f "$_REPO_DIR/keystore.properties" ] && [ ! -f "$_REPO_DIR/tools/keystore/release.jks" ]; then
+    skip "本机没有签名凭据(只做开发的话正常)"
+    return 0
+  fi
+  ok "本机有签名凭据"
+
+  # 指纹对不对得上仓里记录的期望值
+  if [ -f "$_REPO_DIR/signing-manifest.txt" ]; then
+    if bash "$_REPO_DIR/tools/gen-keystore.sh" --manifest >"$TMP/verify-signing.log" 2>&1; then
+      ok "指纹与 signing-manifest.txt 一致"
+    else
+      bad "指纹与签名期望值**不一致** —— 别用它发版"
+      grep -E '❌|期望 |本机 ' "$TMP/verify-signing.log" | sed 's/^/       /'
+    fi
+  else
+    warn "没有 signing-manifest.txt,无法核对指纹(--manifest --write 生成)"
+  fi
+
+  # 工作目录里有没有游离的密钥副本 —— 会漏的主要是「临时目录」和「忘了删的导出」。
+  # 实测踩过:--push-secret 每跑一次就在 .tmp/ 漏一份完整凭据包,没人知道。
+  if bash "$_REPO_DIR/tools/gen-keystore.sh" --scan >"$TMP/verify-scan.log" 2>&1; then
+    ok "没有游离的密钥副本"
+  else
+    bad "工作目录里有游离的密钥副本:"
+    grep -E '额外副本|没被 gitignore' "$TMP/verify-scan.log" | sed 's/^/       /'
+  fi
+}
+step_signing
+
+
 echo
 echo "════════════════ 2/4 构建 ════════════════"
 step_build(){

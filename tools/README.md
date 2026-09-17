@@ -87,6 +87,9 @@ bash tools/gen-keystore.sh --status              # 路径 / 别名 / 指纹 / �
 bash tools/gen-keystore.sh --add-alias <AppName> # 给单个应用加一把专用密钥(推荐)
 bash tools/gen-keystore.sh --manifest            # 对仓里 signing-manifest.txt 自检指纹
 bash tools/gen-keystore.sh --manifest --write    # 更新那个文件(加了别名之后跑)
+bash tools/gen-keystore.sh --drill <凭据包>      # 恢复演练:临时目录里真跑一遍导入 + 核对指纹
+bash tools/gen-keystore.sh --drill <凭据包> --record  # 同上,并把日期记进 manifest
+bash tools/gen-keystore.sh --scan [目录]         # 扫出所有密钥材料副本(改名/换扩展名也躲不掉)
 bash tools/gen-keystore.sh --export [文件]       # 导出单个自包含凭据包 → 存密码管理器 / CI Secret
 bash tools/gen-keystore.sh --push-secret         # 直接把凭据包写进仓库的 Actions secret
 bash tools/gen-keystore.sh --import <文件>       # 换机器 / 灾后恢复(先验后写,会核对指纹)
@@ -110,11 +113,25 @@ bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签�
 因为 `app/build.gradle.kts` 是「找到 `keystore.properties` 才配 `signingConfig`」。
 
 > ⚠️ 核对指纹时别用眼睛比:`keytool` 是大写带冒号,`apksigner` 是小写无冒号。
-> 用 `--verify-against` 或 `--manifest`,它们做归一化后机械比对。
+> 用 `--verify-against` / `--manifest` / `--drill`,它们归一化后机械比对。
 >
 > **凭据本体不能入库,但 `signing-manifest.txt`(只有指纹)可以,而且应该** ——
 > `release-apk.sh` 会查它:签名不在清单里就直接拒绍发布。
-> 完整说明见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md#签名凭据存哪儿--什么能入库什么不能)。
+>
+> **备份会惄惄过期**,所以除了「存」还得能「验」:
+>
+> | 问题 | 命令 |
+> |---|---|
+> | 这份备份**能恢复**吗? | `--drill <凭据包> --record` |
+> | 本机这把**对不对**? | `--manifest` |
+> | 我到底**有几份副本**? | `--scan` |
+>
+> `--scan` 比内容哈希,所以改名、换扩展名、去掉扩展名都躲不掉;
+> **任何多出来的副本都算失败**(会进 `verify-all.sh`)。
+> 实测靠它发现 `--push-secret` 每次都在 `.tmp/` 漏一份完整凭据包。
+>
+> 存哪儿 / 什么能入库 / 怎么保证半年后还找得到,
+> 见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md#签名凭据存哪儿--什么能入库什么不能)。
 
 ### `release-apk.sh` — 构建正式版 APK 并挂到 Release
 
