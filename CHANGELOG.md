@@ -8,6 +8,12 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.4](https://github.com/EasyIndie/EasyAndroid/compare/0.4.3...0.4.4) - 2026-09-17
+
+### 修复
+
+- **tools**: --print-notes 把进度和说明混在同一个 stdout,据此生成的 Release 正文是脏的 ([726579c](https://github.com/EasyIndie/EasyAndroid/commit/726579c))
+
 ## [0.4.3](https://github.com/EasyIndie/EasyAndroid/compare/0.4.2...0.4.3) - 2026-09-17
 
 ### 修复
