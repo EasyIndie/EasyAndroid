@@ -69,6 +69,18 @@ done
 die(){ echo "!! $*" >&2; exit 1; }
 step(){ printf '\n════════ %s ════════\n' "$1"; }
 
+# ── stdout 只留给「数据」,诊断一律走 stderr ──────────────────────────
+# `--print-notes` 是给 shell 重定向用的(`> notes.md`),所以**进度信息不能
+# 混进 stdout**,否则说明文件的开头会是「════════ 校验 ════════」。
+#
+# 踩过:没有这道分离时,我拿 `--print-notes > notes.md` 生成的四个文件
+# (0.3.0 / 0.4.0 / 0.4.1 / 0.4.2)带着整个构建进度被当成 Release 正文发了出去。
+# 约定:stdout = 数据,stderr = 诊断。这个区分在别的脚本里也一样(见 docs/05)。
+if [ "$PRINT_NOTES" = 1 ]; then
+  exec 3>&1     # 把真正的 stdout 存到 fd 3
+  exec 1>&2     # 之后的进度输出全部走 stderr
+fi
+
 [ -n "$VER" ] || die "用法: bash tools/release-apk.sh <version> [--upload] [--with-debug] [--in-place] [--create-release] [--notes-file <f>]"
 
 # 仓库 slug(生成说明里的 compare 链接用)
@@ -356,7 +368,8 @@ step "产物"
 for apk in "${BUILT[@]}"; do echo "  $apk"; done
 
 if [ "$PRINT_NOTES" = 1 ]; then
-  gen_notes "$VER"
+  gen_notes "$VER" >&3     # 说明走真正的 stdout(fd 3)
+  exec 1>&3 3>&-
   exit 0
 fi
 
