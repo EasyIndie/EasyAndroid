@@ -245,7 +245,12 @@ for key, heading in GROUPS:
         lines.append(fmt(c))
     lines.append('')
 
-entry = '\n'.join(lines).rstrip() + '\n'
+# 条目以**空行结尾**。这样两条消费路径天然一致:
+#   · --backfill 直接把条目 cat 起来 → 条目之间正好一个空行
+#   · release.sh 插到顶部时不再自己补换行
+# 踩过:先前条目只以单个 \n 结尾,而插入路径额外补了一个换行 ——
+#       于是跑一次 --backfill 就会生成一堆「少个空行」的假 diff。
+entry = '\n'.join(lines).rstrip() + '\n\n'
 
 # ── version.properties 的历史行 ──
 hist = [f'#   {newver}  {title}  (git tag {newver})']
@@ -539,7 +544,8 @@ if idx < 0:
     head, rest = old.rstrip() + '\n', ''
 else:
     head, rest = old[:idx + 1], old[idx + 1:]
-open(out, 'w', encoding='utf-8').write(head + ('\n' if head and not head.endswith('\n\n') else '') + new + '\n' + rest)
+# new 自带结尾空行,所以直接接上即可(见生成器里那段注释)
+open(out, 'w', encoding='utf-8').write(head + new + rest)
 PYEOF
   mv "$ctmp" "$CLE"
   ok "CHANGELOG.md:已插入 $NEWVER 条目"
