@@ -67,20 +67,19 @@ done
 kt(){ "$KEYTOOL" -J-Duser.language=en "$@"; }
 
 # 从 keystore.properties 读一个字段
-prop_of(){ sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "$PROPS" 2>/dev/null | tr -d '\r' | head -1; }
+prop_of_file(){ sed -n "s/^$2[[:space:]]*=[[:space:]]*//p" "$1" 2>/dev/null | tr -d '\r' | head -1; }
+prop_of(){ prop_of_file "$PROPS" "$1"; }
 
-# 证书 SHA-256 指纹。
-# 两个来源的格式不一样,必须归一化后再比:
-#   keytool  → EB:3B:FA:...(大写,带冒号)
-#   apksigner→ eb3bfaf6...(小写,无冒号)
-# 直接字符串比较会得出「不一致」的假警报 —— 而这个功能存在的意义恰恰是
-# 回答「手里这把是不是线上发布那把」,搞错方向比没有还坑。
-fingerprint_raw(){
-  local pw; pw="$(prop_of storePassword)"
-  kt -list -v -keystore "$KS" -storepass "$pw" -alias "$ALIAS" 2>/dev/null \
-    | sed -n 's/^[[:space:]]*SHA256: //p' | head -1
+# 任意密钥库的 SHA-256 指纹(归一化:小写无冒号)。
+# 两个来源格式不同 —— keytool 大写带冒号、apksigner 小写无冒号 ——
+# 凡是拿指纹做比较的地方都必须过这一步。这个坑本文件里踩了两次。
+fp_of(){
+  local ks="$1" pw="$2" al="${3:-$ALIAS}"
+  kt -list -v -keystore "$ks" -storepass "$pw" -alias "$al" 2>/dev/null \
+    | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr 'A-Z' 'a-z'
 }
-fingerprint(){ fingerprint_raw | tr -d ':' | tr 'A-Z' 'a-z'; }
+fingerprint_raw(){ fp_of "$KS" "$(prop_of storePassword)" | tr 'a-z' 'A-Z' | sed 's/../&:/g;s/:$//'; }
+fingerprint(){ fp_of "$KS" "$(prop_of storePassword)"; }
 
 show_certs(){
   local pw; pw="$(prop_of storePassword)"
@@ -226,7 +225,11 @@ cmd_import(){
   fi
 
   # 头部注释里记的指纹(可能没有,那就跳过核对)
-  local want_fp; want_fp="$(sed -n 's/^# SHA-256 指纹: //p' "$src" | head -1)"
+  # ⚠️ 必须归一化后再比:包头部存的是 keytool 的形式(大写带冒号),
+  #    而 fingerprint() 返回的是 apksigner 的形式(小写无冒号)。
+  #    直接比会得出「不一致」的假警报 —— 这个坑在本文件里踩了两次,
+  #    凡是拿指纹做比较的地方都必须先过这一步。
+  local want_fp; want_fp="$(sed -n 's/^# SHA-256 指纹: //p' "$src" | head -1 | tr -d ':' | tr 'A-Z' 'a-z')"
 
   TMPD="$(mktmpd)" || die "建临时目录失败"
   local tmpd; tmpd="$TMPD"
@@ -238,6 +241,19 @@ cmd_import(){
     || die "包里缺文件(release.jks / keystore.properties)"
 
   mkdir -p "$KS_DIR"
+
+  # ⚠️ **先验后写**:先拿临时目录里那份算出指纹并与包记录比对,
+  # 全部通过才落盘。之前的版本是先 cp 再核对 —— 核对失败时本机凭据已经被
+  # 覆盖了,而「拿错包」恰恰是这个核对要防的场景。
+  local tmp_pw tmp_alias tmp_fp
+  tmp_pw="$(prop_of_file "$tmpd/keystore.properties" storePassword)"
+  tmp_alias="$(prop_of_file "$tmpd/keystore.properties" keyAlias)"
+  tmp_fp="$(fp_of "$tmpd/release.jks" "$tmp_pw" "$tmp_alias")"
+  [ -n "$tmp_fp" ] || die "包里的密钥库读不出来 —— 密码与密钥库对不上,包可能坏了。本机未做任何改动"
+  if [ -n "$want_fp" ] && [ "$tmp_fp" != "$want_fp" ]; then
+    die "指纹不一致!包里记的是 $want_fp,实际是 $tmp_fp。本机未做任何改动 —— 别用这份发布"
+  fi
+
   chmod 700 "$KS_DIR" 2>/dev/null || true
   cp "$tmpd/release.jks" "$KS"
   cp "$tmpd/keystore.properties" "$PROPS"
@@ -245,19 +261,11 @@ cmd_import(){
   echo "==> 已还原:"
   echo "      $KS"
   echo "      $PROPS"
-
-  local got_fp; got_fp="$(fingerprint)"
-  [ -n "$got_fp" ] || die "还原后读不出证书 —— 密码与密钥库对不上,包可能是坏的"
-  if [ -n "$want_fp" ]; then
-    if [ "$got_fp" = "$want_fp" ]; then
-      echo "==> ✅ 指纹与包里记录的一致"
-    else
-      die "指纹不一致!包里记的是 $want_fp,实际是 $got_fp —— 别用这份发布"
-    fi
-  fi
-  echo "      $got_fp"
+  [ -n "$want_fp" ] && echo "==> ✅ 指纹与包里记录的一致(已先验后写)"
+  echo "      $tmp_fp"
   echo
-  echo "  核对一下这就是线上发布用的那一把(与 Release 附件对比指纹)"
+  echo "  核对一下这就是线上发布用的那一把:"
+  echo "    bash tools/gen-keystore.sh --verify-against <某个已发布的 apk>"
 }
 
 cmd_init(){

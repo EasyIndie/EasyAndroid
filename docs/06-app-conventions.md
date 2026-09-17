@@ -180,6 +180,27 @@ Settings → Secrets and variables → Actions → New repository secret
 配了它,CI 的 `assembleRelease` 就产出**已签名**的包;没配就是 unsigned(装不上设备,
 只能当编译检查)。GitHub 会自动在日志里给 secret 打码。
 
+> ## ⚠️ CI 用**同一把**,不要重新生成
+>
+> 这是一个很容易犯的错:以为「CI 是另一台机器,应该有自己的一份密钥」。
+> **不行。** 签名不是环境的属性,是**密钥**的属性 ——
+> Android 拿新包的签名和**已安装应用**的签名比,一致才允许覆盖安装。
+>
+> 所以在 CI 上跑 `gen-keystore.sh`(不带 `--import`)等于换密钥,
+> 结果是 **CI 发出来的包任何人都装不上**(已装机的会报
+> `INSTALL_FAILED_UPDATE_INCOMPATIBLE`,新装的装完又变成另一个应用)。
+>
+> 正确做法只有一个:本机 `--export` → 存 secret → CI `--import`。
+> 密钥**只在一处生成一次**,之后到处都是拷贝。
+
+CI 侧的行为要点:
+
+- 还原步骤用 `--import`,且**失败就直接让 job 挂掉**(不要 `|| true`)——
+  宁可构建失败,也不要静默产出一个 unsigned 包冒充正式包。
+- 还原成功后 `keystore.properties` 落在 checkout 目录的仓库根,
+  `app/build.gradle.kts` 从 `rootDir` 往上找就能找到。
+- 只在 job 内存在,跑完随 runner 一起销毁。
+
 #### 核对:本机这把是不是线上发布那把
 
 **这是最容易搞错的一步。** `keytool` 输出大写带冒号(`EB:3B:FA:...`),
