@@ -534,7 +534,6 @@ grep -qE '^version=[0-9]+\.[0-9]+\.[0-9]+$' "$fixed" \
 mv "$fixed" "$VF" || die "写 version.properties 失败"
 grep -q "^version=$NEWVER\$" "$VF" || die "写完后自检失败:version 不是 $NEWVER"
 ok "version.properties: version=$NEWVER + 版本历史"
-ok "version.properties: version=$NEWVER + 版本历史"
 
 # CHANGELOG:新条目插在最后一个 `## [` 之前(最新在上),保留头部说明
 if [ -f "$CLE" ]; then
