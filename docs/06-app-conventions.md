@@ -123,6 +123,87 @@ bash tools/tag-release.sh
 
 第一个版本是 **`0.0.1`**(`git tag 0.0.1`)。`0.x` 表示对外行为还可能变。
 
+### 签名凭据:获取、配置、核对
+
+**先纠正一个直觉:签名凭据不是“申请”来的,是你自己生成一份。**
+自签名应用不需要 CA,任意一把 RSA 密钥都能签。关键在于**必须一直用同一把** ——
+Android 用签名判定「是不是同一个应用」:
+
+| 情况 | 后果 |
+|---|---|
+| **丢了** | 已装机的用户**永远无法升级**,只能卸载重装(数据全丢) |
+| **换了** | 同上,新包装不上,报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` |
+| **泄露** | 别人能以你的名义发版 |
+
+所以它等同私钥:**不入库、不贴聊天、不进 issue**。`.gitignore` 已经拦住了
+`tools/keystore/`、`keystore.properties`、`*.jks`、`*.keystore`。
+
+#### 凭据长什么样
+
+两个文件(都已 gitignore):
+
+| 文件 | 内容 |
+|---|---|
+| `tools/keystore/release.jks` | 密钥库(RSA 4096,有效期 30 年) |
+| `keystore.properties`(仓库根) | `storeFile` / `storePassword` / `keyAlias` / `keyPassword` |
+
+各工程的 `app/build.gradle.kts` 从 `rootDir` 往上找 `keystore.properties`,**找到才配
+`signingConfig`**;找不到时 `assembleRelease` 照样能跑,只是产出 unsigned 包。
+
+#### 三个场景
+
+**① 本机首次** —— 生成,然后**立刻导出保管**:
+
+```bash
+bash tools/gen-keystore.sh            # 生成(幂等:已存在则拒绝,不会误覆盖)
+bash tools/gen-keystore.sh --export   # 导出一个自包含的凭据包 → 存进密码管理器
+```
+
+密码默认随机 28 位,只落进 `keystore.properties`,**不打印到控制台**。
+想自己定就 `KS_PASSWORD=xxx bash tools/gen-keystore.sh`。
+
+**② 换机器 / 灾后恢复** —— 从凭据包还原:
+
+```bash
+bash tools/gen-keystore.sh --import <凭据包文件>
+```
+
+导入时会核对包头部记录的指纹,不一致直接报错(避免拿错包)。
+
+**③ CI** —— 把凭据包**全文**存进 GitHub Secret,`ci.yml` 里已经有对应的还原步骤:
+
+```
+Settings → Secrets and variables → Actions → New repository secret
+  名字:KEYSTORE_B64   值:--export 产物的全部内容(含 # 头部注释)
+```
+
+配了它,CI 的 `assembleRelease` 就产出**已签名**的包;没配就是 unsigned(装不上设备,
+只能当编译检查)。GitHub 会自动在日志里给 secret 打码。
+
+#### 核对:本机这把是不是线上发布那把
+
+**这是最容易搞错的一步。** `keytool` 输出大写带冒号(`EB:3B:FA:...`),
+`apksigner` 输出小写无冒号(`eb3bfaf6...`)—— 直接字符串比会得出**假的不一致**。
+所以别靠眼睛,用子命令比:
+
+```bash
+# 拿任意一个已发布的 Release 附件比
+bash tools/gen-keystore.sh --verify-against <某个已发布的 apk>
+
+# 同一把 → ✅ exit 0;不同把 → ❌ exit 1 并告诉你后果
+```
+
+`--status` 会同时打出两种写法,并提示该比对命令。
+
+#### 备份怎么做
+
+- `--export` 出来的凭据包是**单个文本文件** —— 直接存密码管理器(或 Secret),不用分别保管两个文件。
+- 别把副本长期放在 `dist/` —— 那是构建产物目录,可能被清掉。导出后**立刻挪走**。
+- 至少要能回答:「如果这台机器明天坏了,我从哪拿到这把密钥?」答不出来就是没备份。
+
+> 密钥库里有 30 年有效期(证书 2056 年到期),`--status` 会提示剩余天数。
+> 真到期前需要换密钥 —— 那是个**发布事件**(老用户必须卸载重装),别当成日常操作。
+
 ### 怎么验证版本号真的走的是这一个来源
 
 两层,第一层不需要设备:
