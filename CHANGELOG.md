@@ -48,6 +48,7 @@
 ### 其他
 
 - **tools**: new-app.sh 的「接下来」提示补上「首次发布前加签名别名」 ([1a535ed](https://github.com/EasyIndie/EasyAndroid/commit/1a535ed))
+
 ## [0.2.0](https://github.com/EasyIndie/EasyAndroid/compare/0.1.0...0.2.0) - 2026-09-17
 
 ### 新增
@@ -62,6 +63,7 @@
 
 - **release**: 补 0.2.0 的版本历史注记;--bump 提醒同步更新它 ([8a428ac](https://github.com/EasyIndie/EasyAndroid/commit/8a428ac))
 - 发版流程补「发布正式版 APK」;修正改版本流程里的错误命令 ([3972f80](https://github.com/EasyIndie/EasyAndroid/commit/3972f80))
+
 ## [0.1.0](https://github.com/EasyIndie/EasyAndroid/compare/0.0.1...0.1.0) - 2026-09-16
 
 ### 新增
@@ -76,6 +78,7 @@
 ### 其他
 
 - add MIT LICENSE ([47106e2](https://github.com/EasyIndie/EasyAndroid/commit/47106e2))
+
 ## [0.0.1] - 2026-09-13
 
 ### 新增
@@ -110,3 +113,4 @@
 - 修掉 docs/08 里指向未创建文件的死链 ([f2ec557](https://github.com/EasyIndie/EasyAndroid/commit/f2ec557))
 - 设备地址外置到 device.env,清除仓库内内网地址 ([3bc3497](https://github.com/EasyIndie/EasyAndroid/commit/3bc3497))
 - 初始化 EasyAndroid 仓库 ([ef90b0c](https://github.com/EasyIndie/EasyAndroid/commit/ef90b0c))
+
