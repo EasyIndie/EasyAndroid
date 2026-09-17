@@ -191,21 +191,31 @@ fail=0
 for apk in "${BUILT[@]}"; do
   n="$(basename "$apk")"
   # 4.1 签名
-  if "$APKSIGNER" verify --print-certs "$apk" >"$TMP/release-verify.log" 2>&1; then
-    who="$("$APKSIGNER" verify --print-certs "$apk" 2>/dev/null | sed -n 's/^Signer #1 certificate DN: //p' | head -1)"
-    apk_fp="$("$APKSIGNER" verify --print-certs "$apk" 2>/dev/null \
-              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-Z' 'a-z')"
+  if "$APKSIGNER" verify "$apk" >"$TMP/release-verify.log" 2>&1; then
+    # ⚠️ 指纹/DN 走 apk_cert_* —— 它们**取不到就返回非 0**,不会给出空字符串。
+    #    以前是就地 sed:取不到时得到 "",而下面的守护检查是
+    #    `grep -qF "" manifest` —— **匹配任何非空文件** → 静默通过 + 打 ✅。
+    #    一个永远不会失败的检查比没有检查更糟,它会让人以为已经守住了。
+    if ! who="$(apk_cert_dn "$apk")" || ! apk_fp="$(apk_cert_fp "$apk")"; then
+      echo "  ❌ $n 取不到签名证书信息 —— 无法核对「是不是同一把密钥」" >&2
+      echo "     apksigner 原始输出(格式可能随 build-tools 版本变了):" >&2
+      apk_cert_dump "$apk" | sed 's/^/       /' >&2
+      fail=1; continue
+    fi
     echo "  ✅ $n 已签名  ($who)"
   else
     echo "  ❌ $n 签名校验失败" >&2; sed 's/^/     /' "$TMP/release-verify.log" >&2; fail=1; continue
   fi
+
 
   # 4.1b 签名必须是仓库认得的那把
   # signing-manifest.txt 记着本仓库发布该用哪些密钥(只有指纹,不是秘密)。
   # 这是防「用错密钥发版」的最后一道 —— 陌生密钥发的包,老用户装不上,
   # 新用户装的是一个“另一个应用”,以后同样升不了。
   if [ -f "$REPO/signing-manifest.txt" ]; then
-    if grep -qF "$apk_fp" "$REPO/signing-manifest.txt"; then
+    # ⚠️ 必须显式要求 apk_fp 非空 —— `grep -qF ""` 会匹配任何非空文件,
+    #    空指纹会让这条守护静默通过。上面已保证非空,这里是第二道。
+    if [ -n "$apk_fp" ] && grep -qF "$apk_fp" "$REPO/signing-manifest.txt"; then
       echo "  ✅ $n 的签名在 signing-manifest.txt 里记录过"
     else
       echo "  ❌ $n 的签名 **不在** signing-manifest.txt 里 —— 陌生密钥,不能发!" >&2
@@ -298,12 +308,18 @@ gen_notes(){
   if [ -n "$apksigner" ]; then
     echo "签名证书 SHA-256(下载后核对,确保与已安装的版本是**同一个应用**):"; echo
     echo '```'
+    local okany=0
     for f in "${BUILT[@]}"; do
       case "$f" in *-debug.apk) continue ;; esac
-      fp="$("$apksigner" verify --print-certs "$f" 2>/dev/null \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-      [ -n "$fp" ] && printf '%s  %s\n' "$fp" "$(basename "$f")"
+      if fp="$(apk_cert_fp "$f")"; then
+        printf '%s  %s\n' "$fp" "$(basename "$f")"; okany=1
+      else
+        # 宁可写明「拿不到」,也不留一个空代码块 ——
+        # 空的围栏看起来像「指纹就是空的」,比缺这一节更误导。
+        printf '⚠️ 取不到 %s 的证书指纹 —— 用 tools/release-apk.sh --verify-against 核对\n' "$(basename "$f")"
+      fi
     done
+    [ "$okany" = 1 ] || printf '⚠️ 本次一个指纹都没取到 —— 别把这个空块当成「核对通过」\n'
     echo '```'; echo
   fi
 

@@ -285,6 +285,53 @@ bt_tool(){
   return 1
 }
 
+# ── APK 签名证书信息 ───────────────────────────────────────────────
+# 取 APK 的签名证书指纹 / DN。
+#
+# 为什么要有这两个函数,而不是就地写 sed:
+#
+#  1. **空值必须变成错误。** 曾经是这样的调用:
+#         fp="$(apksigner verify --print-certs "$apk" 2>/dev/null | sed -n '.../p')"
+#         grep -qF "$fp" signing-manifest.txt      # ← 守护检查
+#     当 fp 取不到(空)时,`grep -qF ""` **匹配任何非空文件** → 守护检查
+#     静默通过,还打 ✅。**一个永远不会失败的检查,比没有检查更糟** ——
+#     它会让人以为已经守住了。所以这里取不到就返回非 0。
+#
+#  2. **不要假定输出在 stdout。** 不同 build-tools 版本的 apksigner 把
+#     `--print-certs` 的信息写到哪个流并不一致(实测 GitHub runner 上的版本
+#     取不到,本机 34.0.0 正常)。所以合并 stderr 再解析。
+#
+#  3. 匹配放宽:只认 `... DN:` / `... SHA-256 digest:` 这两段后缀,
+#     前缀("Signer #1 certificate")变化不影响。
+apk_cert_fp(){
+  local apk="$1" signer out fp
+  signer="$(bt_tool apksigner)" || return 2
+  [ -f "$apk" ] || return 3
+  out="$("$signer" verify --print-certs "$apk" 2>&1)" || return 4
+  fp="$(printf '%s\n' "$out" \
+        | sed -n 's/.*SHA-256 digest:[[:space:]]*//p' | head -1 \
+        | tr -d ':' | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
+  [ -n "$fp" ] || return 5
+  printf '%s' "$fp"
+}
+
+apk_cert_dn(){
+  local apk="$1" signer out dn
+  signer="$(bt_tool apksigner)" || return 2
+  [ -f "$apk" ] || return 3
+  out="$("$signer" verify --print-certs "$apk" 2>&1)" || return 4
+  dn="$(printf '%s\n' "$out" | sed -n 's/.*certificate DN:[[:space:]]*//p' | head -1)"
+  [ -n "$dn" ] || return 5
+  printf '%s' "$dn"
+}
+
+# 取不到时的诊断输出,交给调用方打到 stderr
+apk_cert_dump(){
+  local apk="$1" signer
+  signer="$(bt_tool apksigner)" || { echo "(找不到 apksigner)"; return 0; }
+  "$signer" verify --print-certs "$apk" 2>&1
+}
+
 export PLATFORM IS_WINDOWS TMP TMP_WIN ADB PY
 export ANDROID_HOME ANDROID_SDK_ROOT PATH
 [ -n "${JAVA_HOME:-}" ] && export JAVA_HOME
@@ -342,6 +389,7 @@ adb_online(){
 }
 
 export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath pyfile run_py \
+         apk_cert_fp apk_cert_dn apk_cert_dump \
           re_escape adbx adb_connect_all adb_online bt_tool 2>/dev/null || true
 
 # ── 10. 提示 ────────────────────────────────────────────────────────

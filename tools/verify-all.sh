@@ -184,6 +184,21 @@ step_build(){
   elif [ ! -f "$_REPO_DIR/CHANGELOG.md" ]; then
     warn "没有 CHANGELOG.md(生成:bash tools/release.sh --backfill)"
   fi
+
+  # 取签名证书指纹的能力 —— 发版说明里的「签名证书 SHA-256」靠它。
+  # 实测踩过:GitHub runner 上的 apksigner 取不到(本机 34.0.0 正常),
+  # 于是发布说明里那个代码块**是空的**,而没人发现 —— 一个给用户核对
+  # 「是不是同一个应用」的字段空着,比没有更误导。
+  # 这条检查让工具链漂移在**每次推送**就暴露,而不是等到发版。
+  if [ -n "$aapt2" ]; then
+    if fp="$(apk_cert_fp "$apk" 2>/dev/null)" && [ -n "$fp" ]; then
+      ok "签名工具链能取到证书指纹 (${fp:0:16}…)"
+    else
+      bad "取不到 APK 的证书指纹 —— 发版说明里那一节会是空的"
+      echo "       apksigner 原始输出:" >&2
+      apk_cert_dump "$apk" 2>&1 | sed 's/^/         /' >&2
+    fi
+  fi
 }
 step_build
 
