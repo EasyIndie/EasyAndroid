@@ -8,6 +8,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.2](https://github.com/EasyIndie/EasyAndroid/compare/0.4.1...0.4.2) - 2026-09-17
+
+### 修复
+
+- **changelog**: 归一化条目之间的空行,让 --backfill 真正幂等 ([ab3389e](https://github.com/EasyIndie/EasyAndroid/commit/ab3389e))
+- **tools**: release.sh 重复打印了一次「✅ version.properties」 ([410a363](https://github.com/EasyIndie/EasyAndroid/commit/410a363))
+
 ## [0.4.1](https://github.com/EasyIndie/EasyAndroid/compare/0.4.0...0.4.1) - 2026-09-17
 
 ### 修复
