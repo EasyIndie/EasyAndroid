@@ -393,10 +393,52 @@ DualDemo-0.2.0.apk     → 不在                       UiDumpReceiver=0   → �
 > `adb uninstall <applicationId>`,否则 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
 > 真机验收结束后记得把 debug 包装回去,不然下次 `ui-dump.sh` 会失败。
 
-### 发布正式版 APK(可选)
+### 发布正式版 APK
 
 GitHub Release 默认只有源码 zip。要挂**可安装的 APK** 得先配好签名 ——
 AGP 产出的 `app-release-unsigned.apk` **装不上设备**(Android 拒绝未签名包)。
+
+#### 一条线:推 tag → CI 全自动(推荐)
+
+```bash
+# 1. 涨版本(只改唯一来源)
+bash tools/tag-release.sh --bump minor
+
+# 2. 提交推送
+git commit -am "chore(release): 0.3.0 —— ..." && git push
+
+# 3. 打个 tag 推上去 —— 剩下的事 CI 干
+bash tools/tag-release.sh
+```
+
+推完 tag,`.github/workflows/release.yml` 会自动:
+
+```
+校验 tag 与 version.properties 一致
+还原签名凭据(从 secret KEYSTORE_B64;没配就报错退出,不会发 unsigned 包)
+从 tag 检出构建 assembleRelease(逐个 app)
+逐个校验:已签名 / versionName==tag / versionCode==推导值 / 非 debuggable / 无 debug 钩子
+建 Release(说明自动生成)+ 挂上 APK
+```
+
+你只需看一眼结果:https://github.com/EasyIndie/EasyAndroid/releases
+
+> **CI 发版而不是本地发版的好处**:构建环境干净、产物来自 tag 而非工作区、
+> 每次发版都有日志留痕。本地仍然保留 `release-apk.sh`,用于补发历史版本或离线场景。
+
+#### 发布说明怎么来
+
+优先用 [`docs/releases/<version>.md`](releases/README.md)(想写清楚就写一份,
+跟着版本一起提交);没有就自动拼:附件表 + **签名指纹** + 安装命令 +
+`<上一个 tag>..<version>` 的变更列表。
+
+本地预览自动生成的说明(不碰 GitHub):
+
+```bash
+bash tools/release-apk.sh <version> --print-notes
+```
+
+#### 本地手动发(补发历史版本时用)
 
 **一次性准备**(每台机器/每个仓库一次):
 

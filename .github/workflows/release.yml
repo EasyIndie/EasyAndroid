@@ -1,0 +1,100 @@
+name: Release
+
+# 全自动发版:推一个 SemVer tag,CI 就负责
+#   校验 tag 与版本号 → 还原签名凭据 → 从 tag 构建正式包 → 逐个校验 → 建 Release → 挂附件
+#
+# 为什么放在 CI 而不是本地:
+#   · 产物来自 tag(不是工作区),可复现
+#   · 构建环境干净、有日志留痕
+#   · 本地只需要 `bash tools/tag-release.sh` 推个 tag
+#
+# 本地开发/验收仍然只打 debug 包(见 AGENTS.md 硬性规则 8);正式包只由这里和
+# tools/release-apk.sh 产出。
+#
+# 前置(一次性,见 docs/06「签名凭据」):
+#   bash tools/gen-keystore.sh --push-secret
+#     —— 把本机凭据推成 repo secret KEYSTORE_B64。
+#        必须从已认证的本机做 —— GitHub 不允许 CI 给自己创建 secret(那是提权)。
+on:
+  push:
+    tags:
+      # tag 名就是版本号,不带 v 前缀(与 version.properties 的约定一致)。
+      # 不匹配的 tag 不会触发发版。
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+# 创建 Release 需要写 contents
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: 检出这个 tag 的完整历史
+        uses: actions/checkout@v4
+        with:
+          # 0 = 完整历史 + 所有 tag:
+          #   · release-apk.sh 要校验 HEAD == tag 指向的提交
+          #   · 自动说明要列「上一个 tag..本 version」的变更
+          fetch-depth: 0
+
+      - name: 装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 认一下这次要发什么
+        run: |
+          set -euo pipefail
+          echo "tag      : $GITHUB_REF_NAME"
+          echo "commit   : $(git rev-parse --short HEAD)"
+          echo "version  : $(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' version.properties)"
+          prev="$(git describe --tags --abbrev=0 --match='[0-9]*.[0-9]*.[0-9]*' "refs/tags/$GITHUB_REF_NAME^" 2>/dev/null || echo '(无,首个版本)')"
+          echo "上一个 tag: $prev"
+          # tag 名与 version.properties 必须一致。release-apk.sh 也会查,
+          # 但早失败一步,日志里更直观。
+          v="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' version.properties)"
+          [ "$v" = "$GITHUB_REF_NAME" ] || {
+            echo "::error::tag $GITHUB_REF_NAME 与 version.properties 的 $v 不一致"
+            exit 1
+          }
+
+      # ⚠️ 正式版**必须**签名 —— 没配 secret 就直接失败,而不是产出 unsigned 包。
+      #    (ci.yml 里那种情况可以降级成警告,因为那里只是编译检查;这里是发布。)
+      - name: 还原签名凭据
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::未配置 KEYSTORE_B64 —— 正式版必须签名,不产出 unsigned 包。"
+            echo "::error::在本机跑一次: bash tools/gen-keystore.sh --push-secret"
+            exit 1
+          fi
+          printf '%s\n' "$KEYSTORE_B64" > /tmp/signing-bundle.b64
+          bash tools/gen-keystore.sh --import /tmp/signing-bundle.b64
+          rm -f /tmp/signing-bundle.b64
+
+      - name: 构建 → 校验 → 建 Release → 上传
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # --in-place:已经在 tag 上了,不用再开 worktree(脚本会强制校验 HEAD == tag)
+          # --create-release:Release 不存在就建,说明自动生成(或取 docs/releases/<ver>.md)
+          # --upload:把 APK 挂上去
+          bash tools/release-apk.sh "$GITHUB_REF_NAME" \
+            --in-place --create-release --upload
+
+      - name: 汇总
+        if: always()
+        run: |
+          {
+            echo "### Release $GITHUB_REF_NAME"
+            echo
+            echo "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"
