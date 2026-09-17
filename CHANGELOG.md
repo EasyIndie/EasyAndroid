@@ -8,6 +8,17 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.0](https://github.com/EasyIndie/EasyAndroid/compare/0.3.0...0.4.0) - 2026-09-17
+
+### 新增
+
+- **tools**: 发版收成一条命令 —— 版本号从提交信息推导,CHANGELOG 自动生成 ([59d7d83](https://github.com/EasyIndie/EasyAndroid/commit/59d7d83))
+- **tools**: 签名期望值文件 —— 指纹可以入库,而且应该 ([deff678](https://github.com/EasyIndie/EasyAndroid/commit/deff678))
+
+### 修复
+
+- **tools**: --push-secret 每跑一次都把一份完整凭据包漏在 .tmp/(+ 恢复演练/副本扫描) ([02ab23e](https://github.com/EasyIndie/EasyAndroid/commit/02ab23e))
+
 ## [0.3.0](https://github.com/EasyIndie/EasyAndroid/compare/0.2.0...0.3.0) - 2026-09-17
 
 ### 新增
