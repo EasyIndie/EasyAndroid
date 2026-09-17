@@ -22,6 +22,12 @@
 #   dist/<AppName>-<version>-debug.apk   仅 --with-debug 时
 #   (dist/ 已 gitignore —— 二进制属于 Release 附件,不入库)
 #
+# 与开发流程的关系
+#   仓库约定:**开发和验收全程用 debug 包**(它带自截图钩子),
+#   只有发版才出正式包 + 加签。本脚本是唯一会 assembleRelease 的地方,
+#   而且会逐个校验产物「非 debuggable / 无 debug 钩子」—— 防止把 debug
+#   包装成正式包发出去。
+#
 # ⚠️ 装机注意
 #   release 包用你自己的密钥签名,debug 包用的是 debug.keystore,两者签名不同。
 #   同一台设备上从 debug 换装 release 会报 INSTALL_FAILED_UPDATE_INCOMPATIBLE,
@@ -159,9 +165,9 @@ for apk in "${BUILT[@]}"; do
     echo "  ❌ $n 签名校验失败" >&2; sed 's/^/     /' "$TMP/release-verify.log" >&2; fail=1; continue
   fi
   # 4.2 版本号
-  badging="$("$AAPT2" dump badging "$apk" 2>/dev/null | head -1)"
-  got_ver="$(printf '%s' "$badging" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
-  got_code="$(printf '%s' "$badging" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
+  badging="$("$AAPT2" dump badging "$apk" 2>/dev/null)"
+  got_ver="$(printf '%s' "$badging" | head -1 | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
+  got_code="$(printf '%s' "$badging" | head -1 | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
   if [ "$got_ver" = "$VER" ] && [ "$got_code" = "$WANT_CODE" ]; then
     echo "  ✅ $n versionName=$got_ver versionCode=$got_code"
   else
@@ -170,8 +176,19 @@ for apk in "${BUILT[@]}"; do
   fi
 
   # 4.3 release 包里不该有 debug 自截图钩子
-  if [ "$("$AAPT2" dump xmltree --file AndroidManifest.xml "$apk" 2>/dev/null | grep -c UiDumpReceiver)" != "0" ]; then
+  if [ "$(printf '%s' "$badging" | grep -c UiDumpReceiver)" != "0" ] \
+     || [ "$("$AAPT2" dump xmltree --file AndroidManifest.xml "$apk" 2>/dev/null | grep -c UiDumpReceiver)" != "0" ]; then
     echo "  ❌ $n 里混进了 debug 钩子(UiDumpReceiver)—— 构建类型不对" >&2; fail=1
+  fi
+
+  # 4.4 正式包不能是 debuggable
+  # 仓库约定:开发/验收全程用 debug 包,只有发版才出正式包。
+  # debug 包在 aapt2 badging 里会多一行 application-debuggable —— 用它当机器判据,
+  # 挡住「把 debug 包装成正式包发出去」。
+  if printf '%s' "$badging" | grep -q 'application-debuggable'; then
+    echo "  ❌ $n 是 debuggable 的 —— 这是 debug 包,不是正式包" >&2; fail=1
+  else
+    echo "  ✅ $n 非 debuggable(正式包)"
   fi
 done
 [ "$fail" = 0 ] || die "有产物没通过校验,不继续"

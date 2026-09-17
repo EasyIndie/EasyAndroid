@@ -123,6 +123,101 @@ bash tools/tag-release.sh
 
 第一个版本是 **`0.0.1`**(`git tag 0.0.1`)。`0.x` 表示对外行为还可能变。
 
+### 怎么验证版本号真的走的是这一个来源
+
+两层,第一层不需要设备:
+
+```bash
+# 1) 编译产物层 —— 比对 APK 里的 versionName 与 version.properties
+bash tools/verify-all.sh --build-only
+#   ✅ 版本号与 version.properties 一致 (0.0.1)
+```
+
+第二层要设备。**只有电视能这么验**(Pico 读不到 UI 树,见 [04](04-pico4-notes.md)):
+
+```bash
+bash tools/verify-all.sh                              # 装到电视并启动
+adb -s "$TV_ADDR" shell input keyevent 20 20 20 ...   # 滚到底
+#   ⚠️ 版本文案是列表最后一项,而 LazyColumn 只组合可见项 ——
+#     不滚到底,uiautomator 里根本读不到它
+adb -s "$TV_ADDR" shell uiautomator dump /sdcard/_vc.xml
+```
+
+实测结果(2026-09,电视 Android 11):
+
+```
+dumpsys package com.example.dualdemo
+  versionName=0.0.1
+  versionCode=1
+
+UI 树 → text="共 18 项 · 构建 v0.0.1"
+```
+
+一行文本同时证明了四件事:`version.properties` 被读到 → Gradle 写进了 `versionName` →
+`BuildConfig.VERSION_NAME` 编译正确 → 界面没有字面量。
+
+> 这个「最后一项要滚到底才读得到」的细节不只影响版本号。**LazyColumn / RecyclerView
+> 里不在视口内的项在 `uiautomator` 里是不存在的** —— 写 UI 断言前先确认目标项已经进入视口,
+> 否则会误判成「界面上没有这个元素」。
+
+### 为什么放在仓库根,而不是每个工程一份
+
+`apps/` 下每个工程都是独立 Gradle 构建,各放一份更利于独立演进。
+但本仓库是**作为一个整体发**的(一个 tag、一套 `docs/`、一套 `tools/`),
+所以版本也统一成一个 —— 免得再出现「tag 是 `0.0.1`、APK 里却是 `0.1.0`」这种漂移。
+
+真需要让某个应用独立走版本线时,再把它拆成工程内一份,并在该工程 README 里写明。
+
+## 构建与发布
+
+### 开发用 debug,发布才出正式包
+
+**一条线:开发 / 验收 / 装机全部用 debug 包;只有发版才构建正式包并加签。**
+
+为什么开发阶段不能换成正式包:
+
+| | debug 包 | 正式包 |
+|---|---|---|
+| 签名 | `~/.android/debug.keystore`(自动生成) | 你的 release 密钥 |
+| `application-debuggable` | **有** | 无 |
+| 自截图钩子 `UiDumpReceiver` | **有**(`src/debug/`) | 无 |
+| 能不能做 UI 验收 | ✅ | ❌ 没有钩子,`screencap` 又被 `FLAG_SECURE` 挡 |
+| 用途 | 日常迭代、真机验收 | 对外发布 |
+
+最后两行是关键:**自截图钩子只在 debug 构建里**,而 Pico 那类设备
+`screencap` / `uiautomator` 拿不到画面(见 [04](04-pico4-notes.md))——
+换成正式包等于自断验收手段。
+
+### 各自是谁在用
+
+| 入口 | 构建 | 装/验 |
+|---|---|---|
+| `tools/verify-all.sh` | `assembleDebug` | debug |
+| `tools/tv-install.sh` | —（装你传的包） | 开发时传 debug |
+| `tools/ui-dump.sh` | — | 需要 debug 包才有钩子 |
+| CI `assembleRelease` | release | 只做**编译检查**,不签名不发布 —— 保留它能提前暴露 R8 / proguard 这类 release-only 的问题 |
+| **`tools/release-apk.sh`** | `assembleRelease` + 加签 | 发版唯一的正式包入口 |
+
+`release-apk.sh` 会逐个校验产物,把「不小心把 debug 包装成正式包」变成构建期错误:
+
+```
+✅ DualDemo-0.2.0.apk 已签名  (CN=EasyAndroid Release)
+✅ DualDemo-0.2.0.apk versionName=0.2.0 versionCode=200
+✅ DualDemo-0.2.0.apk 非 debuggable(正式包)
+```
+
+判据是 `aapt2 dump badging` 里的 `application-debuggable` —— debug 包多这一行,
+正式包没有。实测两个包:
+
+```
+app-debug.apk          → application-debuggable 在    UiDumpReceiver=1   → 拒绝
+DualDemo-0.2.0.apk     → 不在                       UiDumpReceiver=0   → 放行
+```
+
+> ⚠️ **签名不同 → 同一台设备上换装要先卸载**:
+> `adb uninstall <applicationId>`,否则 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
+> 真机验收结束后记得把 debug 包装回去,不然下次 `ui-dump.sh` 会失败。
+
 ### 发布正式版 APK(可选)
 
 GitHub Release 默认只有源码 zip。要挂**可安装的 APK** 得先配好签名 ——
@@ -172,51 +267,6 @@ bash tools/release-apk.sh 0.0.2 --upload
 > 同一台设备上从 debug 换装 release 会报
 > `INSTALL_FAILED_UPDATE_INCOMPATIBLE`,必须先 `adb uninstall <applicationId>`。
 > 全新设备没这个问题。
-
-### 怎么验证版本号真的走的是这一个来源
-
-两层,第一层不需要设备:
-
-```bash
-# 1) 编译产物层 —— 比对 APK 里的 versionName 与 version.properties
-bash tools/verify-all.sh --build-only
-#   ✅ 版本号与 version.properties 一致 (0.0.1)
-```
-
-第二层要设备。**只有电视能这么验**(Pico 读不到 UI 树,见 [04](04-pico4-notes.md)):
-
-```bash
-bash tools/verify-all.sh                              # 装到电视并启动
-adb -s "$TV_ADDR" shell input keyevent 20 20 20 ...   # 滚到底
-#   ⚠️ 版本文案是列表最后一项,而 LazyColumn 只组合可见项 ——
-#     不滚到底,uiautomator 里根本读不到它
-adb -s "$TV_ADDR" shell uiautomator dump /sdcard/_vc.xml
-```
-
-实测结果(2026-09,电视 Android 11):
-
-```
-dumpsys package com.example.dualdemo
-  versionName=0.0.1
-  versionCode=1
-
-UI 树 → text="共 18 项 · 构建 v0.0.1"
-```
-
-一行文本同时证明了四件事:`version.properties` 被读到 → Gradle 写进了 `versionName` →
-`BuildConfig.VERSION_NAME` 编译正确 → 界面没有字面量。
-
-> 这个「最后一项要滚到底才读得到」的细节不只影响版本号。**LazyColumn / RecyclerView
-> 里不在视口内的项在 `uiautomator` 里是不存在的** —— 写 UI 断言前先确认目标项已经进入视口,
-> 否则会误判成「界面上没有这个元素」。
-
-### 为什么放在仓库根,而不是每个工程一份
-
-`apps/` 下每个工程都是独立 Gradle 构建,各放一份更利于独立演进。
-但本仓库是**作为一个整体发**的(一个 tag、一套 `docs/`、一套 `tools/`),
-所以版本也统一成一个 —— 免得再出现「tag 是 `0.0.1`、APK 里却是 `0.1.0`」这种漂移。
-
-真需要让某个应用独立走版本线时,再把它拆成工程内一份,并在该工程 README 里写明。
 
 ## 版本组合
 

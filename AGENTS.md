@@ -22,7 +22,14 @@
    `.gitignore`。往仓库里放任何密钥文件前先确认 `.gitignore` 拦得住。
    要发带 APK 的 Release(带签名配置、tag 构建、不装 unsigned 包)见
    [docs/06](docs/06-app-conventions.md) 的「发布正式版 APK」一节。
-8. **`tools/` 下的脚本是跨平台的**(Windows 原生 Git Bash / WSL2 / Linux)。
+8. **开发/验收全程用 debug 包,只有发版才出正式包 + 加签。**
+   `tools/verify-all.sh` / `tv-install.sh` / `ui-dump.sh` 这条循环里装的、验的都是
+   debug 包(它带自截图钩子,`screencap` 拿不到画面的设备靠它才能验收)。
+   构建正式包的**唯一**入口是 `tools/release-apk.sh`,它会校验产物
+   「非 debuggable / 无 debug 钩子」—— 防止把 debug 包装成正式包发出去。
+   两者签名不同,同一台设备上换装要先 `adb uninstall`。见
+   [docs/06](docs/06-app-conventions.md) 的「开发用 debug,发布才出正式包」一节。
+9. **`tools/` 下的脚本是跨平台的**(Windows 原生 Git Bash / WSL2 / Linux)。
    写新脚本或改现有脚本时:
    - 不要直接调 `timeout` / `mktemp` / `adb` / `python3`,用 `_common.sh` 导出的
      `run_timeout` / `mktmp` / `$ADB` / `$PY`;
