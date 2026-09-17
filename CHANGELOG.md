@@ -8,6 +8,14 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.1](https://github.com/EasyIndie/EasyAndroid/compare/0.4.0...0.4.1) - 2026-09-17
+
+### 修复
+
+- **tools**: 版本历史插入改为纯 bash,并补上写盘前后的校验 ([33f4750](https://github.com/EasyIndie/EasyAndroid/commit/33f4750))
+- **tools**: --backfill 与发版插入的条目格式不一致(条目之间少一个空行) ([a6ff0ab](https://github.com/EasyIndie/EasyAndroid/commit/a6ff0ab))
+- **tools**: 版本历史插错了位置(新条目落在列表最上面,而列表是旧→新) ([4a1a69c](https://github.com/EasyIndie/EasyAndroid/commit/4a1a69c))
+
 ## [0.4.0](https://github.com/EasyIndie/EasyAndroid/compare/0.3.0...0.4.0) - 2026-09-17
 
 ### 新增
