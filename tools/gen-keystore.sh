@@ -52,7 +52,9 @@
 #   bash tools/gen-keystore.sh --push-secret [owner/repo]  # 把凭据包直接写进仓库的 Actions secret
 #   bash tools/gen-keystore.sh --import <文件>    # 从凭据包还原(换机器 / 灾后恢复)
 #   bash tools/gen-keystore.sh --drill <文件|-> [--record [--label "在哪"]]
-#     label 也可以用环境变量给(在 PowerShell 里更安全,见 --drill 的注释):
+#     label 也可以从文件读(命令行只传 ASCII 路径,适合传不了中文的 shell):
+#       bash tools/gen-keystore.sh --drill f --record --label @label.txt
+#     label 也可以用环境变量给(WSL / Git Bash 里适用):
 #       GENKS_DRILL_LABEL="飞书个人聊天(文件消息)" bash tools/gen-keystore.sh --drill f --record
 #     `-` 表示从 stdin 读:从聊天窗口直接粘进终端(Ctrl-D 结束),不用先存文件   # ⭐ 恢复演练:在临时目录里真跑一遍导入并核对指纹
 #                                                #   --record 把「哪天验的」记进入库的期望值文件
@@ -1085,7 +1087,14 @@ case "${1:-}" in
                while [ $# -gt 0 ]; do
                  case "$1" in
                    --record) DRILL_RECORD=1 ;;
-                   --label)  shift; DRILL_LABEL="${1:-}" ;;
+                   --label)  shift; DRILL_LABEL="${1:-}"
+            # `--label @文件` 从文件读(内容按 UTF-8 解)。
+            # 用途:某些 shell 边界传不了中文(实测 Windows PowerShell → WSL
+            # 启动器会把中文参数写成乱码且不报错),而路径是 ASCII 的,
+            # 于是把中文放进文件、命令行只传路径 —— 绕开那层编码转换。
+            case "$DRILL_LABEL" in
+              @?*) DRILL_LABEL="$(cat "${DRILL_LABEL#@}" 2>/dev/null | head -1 | tr -d '\r')" ;;
+            esac ;;
                    *)        [ -z "$DRILL_SRC" ] && DRILL_SRC="$1" ;;
                  esac
                  shift

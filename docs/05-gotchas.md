@@ -625,8 +625,24 @@ bash tools/gen-keystore.sh --drill dist/signing-bundle.b64 --record --label feis
 ```
 
 > ⚠️ 中文会被写成乱码而且**不报错**,只是安静地记错。`gen-keystore.sh`
-> 现在会在 label 含非 ASCII 时提醒你确认显示是否正确,但根治办法是换终端。
-> 跨 Windows shell 边界时,label 用 ASCII;要中文就开 WSL 或 Git Bash。
+> 现在会在 label 含非 ASCII 时提醒你确认显示是否正确。
+
+**中文标签的三条路**(按推荐度):
+
+1. **换 WSL / Git Bash 终端** —— 最省事,中文照写。
+2. **label 用 ASCII** —— `--label feishu-file`,中文说明写在
+   [docs/06](06-app-conventions.md) 的「凭据在哪」表里。
+3. **`--label @文件`** —— 命令行只传 ASCII 路径,中文放进文件(UTF-8)。
+   这样绕开了 Windows→WSL 那层编码转换:
+
+   ```powershell
+   Set-Location E:\EasyAndroid
+   # 中文写进文件(UTF-8 无 BOM)
+   [IO.File]::WriteAllText("$PWD\label.txt", "飞书个人聊天(文件消息)`n", (New-Object Text.UTF8Encoding $false))
+   bash tools/gen-keystore.sh --drill dist/signing-bundle.b64 --record --label @label.txt
+   ```
+
+   (`--label @文件` 是通用机制:任何在 Windows shell 里传不了中文的参数都可以这么绕。)
 
 > 判断标准很简单:**参数里出现空格、括号、`&`、`;`、`$` 任何一个,就别在
 > PowerShell 里跑。** 换终端比调引号省事,也更安全。
