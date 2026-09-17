@@ -8,6 +8,12 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.3](https://github.com/EasyIndie/EasyAndroid/compare/0.4.2...0.4.3) - 2026-09-17
+
+### 修复
+
+- **tools**: 发布说明里的签名指纹在 CI 上是空的 —— 而且守护检查被空值骗过了 ([10a75a3](https://github.com/EasyIndie/EasyAndroid/commit/10a75a3))
+
 ## [0.4.2](https://github.com/EasyIndie/EasyAndroid/compare/0.4.1...0.4.2) - 2026-09-17
 
 ### 修复
