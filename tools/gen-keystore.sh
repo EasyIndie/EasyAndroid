@@ -279,11 +279,19 @@ cmd_push_secret(){
   write_bundle "$tmpf"
 
   echo "==> 写入 $repo 的 Actions secret: KEYSTORE_B64  ($(file_size "$tmpf") bytes)"
-  # 重定向由 bash 做(本地 POSIX 路径),gh 从 stdin 读 —— 不需要 winpath
+  # 重定向由 bash 做(本地 POSIX 路径),gh 从 stdin 读 —— 不需要 winpath。
+  #
+  # ⚠️ **这里绝对不能加 </dev/null**。仓库的规矩是「给吃掉 stdin 的原生程序加 </dev/null」,
+  #    但 gh secret set 恰恰要**从 stdin 读值**。`< file` 和 `</dev/null` 都作用于 stdin,
+  #    后者会覆盖前者 —— 结果 secret 被设成**空值**,而且不报错。
+  #    踩过:CI 里 `KEYSTORE_B64:` 是空的,产出的还是 unsigned 包。
   local out rc
-  out="$("$GH" secret set KEYSTORE_B64 --repo "$repo" < "$tmpf" </dev/null 2>&1)"; rc=$?
+  out="$("$GH" secret set KEYSTORE_B64 --repo "$repo" < "$tmpf" 2>&1)"; rc=$?
   [ -n "$out" ] && printf '%s\n' "$out" | sed 's/^/  /'
   [ "$rc" = 0 ] || die "gh secret set 失败(exit $rc;需要 repo 权限,仓库必须是你的)"
+  # gh 成功时不总输出东西 —— 回查一下名字在不在,别把“静默失败”当成功
+  "$GH" secret list --repo "$repo" 2>/dev/null | grep -q "^KEYSTORE_B64" \
+    || die "secret 列表里看不到 KEYSTORE_B64 —— 写入可能没生效"
 
   echo
   echo "==> 现有 secrets(值只能写、读不回来,GitHub 也不显示):"

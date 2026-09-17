@@ -81,6 +81,37 @@ adb shell wm density </dev/null
 A(){ adb -s "$TV" shell "$@" </dev/null 2>&1; }
 ```
 
+### ⚠️ 反过来:`</dev/null` 会**覆盖**你要喂的 stdin
+
+上面那条规则很容易被推成「凡是外部命令都加 `</dev/null`」—— 那就错了。
+`< file` 和 `</dev/null` 都作用于 stdin,**后写的胜**:
+
+```bash
+$ cat < /tmp/in.txt </dev/null | wc -c
+0                     ← 6 字节的文件被 /dev/null 盖掉了,而且不报错
+$ cat < /tmp/in.txt | wc -c
+6
+```
+
+实测踩到:把签名凭据写进 GitHub Secret 的那行
+
+```bash
+gh secret set KEYSTORE_B64 < "$tmpf" </dev/null    # ✗ secret 被设成空值
+gh secret set KEYSTORE_B64 < "$tmpf"               # ✓
+```
+
+`gh` 安安静静读完 `/dev/null` 报成功,secret 却是空的 —— CI 只能通过**产物**才能发现
+(产出的还是 `app-release-unsigned.apk`)。
+
+**判断标准:这条命令需不需要从 stdin 拿数据?**
+
+| 需要吗 | 例子 | 怎么办 |
+|---|---|---|
+| 不需要,只是会意外吞掉 | `adb shell` | 加 `</dev/null` |
+| **需要**(从 stdin 读值 / 管道输入) | `gh secret set` / `tar -T -` / `patch` | **千万别加** |
+
+拿不准就先不加,并在脚本里手动确认一次行为。
+
 **另一个相关坑**:命令里带管道或分号时,`adb shell 'a; b | c'` 这种写法容易踩到
 引用和转义问题。建议一条命令只做一件事,或者写成脚本 `adb push` 上去再执行。
 
