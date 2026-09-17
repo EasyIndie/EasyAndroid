@@ -35,6 +35,18 @@ tools/platform-tools/
 # 真实设备内网地址等,不入库。模板见 tools/device.env.example
 tools/device.env
 
+# ---- 签名密钥(绝对不能入库)----
+# 真泄露了等于任何人都能以你的名义发版;丢了则已装机的应用永远无法升级。
+# 生成: bash tools/gen-keystore.sh
+keystore.properties
+*.jks
+*.keystore
+tools/keystore/
+
+# ---- 发版产物 ----
+# tools/release-apk.sh 的输出,APK 属于 GitHub Release 附件,不入库
+dist/
+
 # tv-install.sh 的列表位置缓存(本机状态)
 tools/.tv-pos-*
 

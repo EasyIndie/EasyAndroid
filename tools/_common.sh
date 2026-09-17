@@ -248,6 +248,20 @@ if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME:-}/bin/java" ]; then
   done
 fi
 
+# bt_tool <工具名> —— 解析 build-tools 里的可执行文件(aapt2 / apksigner / zipalign ...)
+# Windows 上是 .bat/.exe,Linux 上无后缀;装了多个版本时取版本号最高的那个。
+# 找不到返回非零,调用方自己决定是报错还是跳过。
+bt_tool(){
+  local name="$1" bt c
+  [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME/build-tools" ] || return 1
+  bt="$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
+  [ -n "$bt" ] || return 1
+  for c in "$bt$name" "$bt$name.bat" "$bt$name.exe"; do
+    [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+
 export PLATFORM IS_WINDOWS TMP TMP_WIN ADB PY
 export ANDROID_HOME ANDROID_SDK_ROOT PATH
 [ -n "${JAVA_HOME:-}" ] && export JAVA_HOME
@@ -261,6 +275,16 @@ if [ "$IS_WINDOWS" = 1 ] && [ -n "$ADB" ]; then
   case "$ADB" in *.exe) WINADB="$ADB" ;; esac
 fi
 export WINADB WINADB_PORT
+
+# ── 8b. GitHub CLI(发版上传 Release 附件用)───────────────────────
+# WSL 里通常没装 gh,而 Windows 侧的 gh 是可执行的 —— 直接按路径用它。
+GH=""
+if command -v gh >/dev/null 2>&1; then
+  GH="gh"
+elif [ -x "/mnt/c/Program Files/GitHub CLI/gh.exe" ]; then
+  GH="/mnt/c/Program Files/GitHub CLI/gh.exe"
+fi
+export GH
 
 # ── 9. 通用封装 ─────────────────────────────────────────────────────
 # adbx <serial> <adb 子命令...>
@@ -295,7 +319,7 @@ adb_online(){
 }
 
 export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of pyfile run_py \
-          re_escape adbx adb_connect_all adb_online 2>/dev/null || true
+          re_escape adbx adb_connect_all adb_online bt_tool 2>/dev/null || true
 
 # ── 10. 提示 ────────────────────────────────────────────────────────
 if [ ! -f "$_TOOLS_DIR/device.env" ] && [ -z "${EASYANDROID_QUIET:-}" ]; then

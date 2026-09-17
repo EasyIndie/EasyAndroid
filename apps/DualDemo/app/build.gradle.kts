@@ -10,20 +10,34 @@ plugins {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 版本号:唯一来源是仓库根的 version.properties(见 docs/06-app-conventions.md)
+// 向上查找仓库根的配置文件
 //
-// 本工程是独立 Gradle 构建(rootDir = apps/<Name>),所以从 rootDir 往上找第一个
-// version.properties,而不是写死 "../.." 这种层级 —— 拆工程、挪目录都不会坏。
+// 本工程是独立 Gradle 构建(rootDir = apps/<Name>),所以不能写死 "../.." 这种
+// 层级 —— 抽成函数往上找,拆工程 / 挪目录都不会坏。
+// (写成 `while (dir != null && !File(dir, ...)) dir = dir.parentFile` 会踩 Kotlin
+//  的智能转换限制:不能对可能被闭包捕获的 var 做 smart cast。)
 // ─────────────────────────────────────────────────────────────
+fun findUpward(name: String): File? {
+    var d: File? = rootDir
+    while (d != null) {
+        val f = File(d, name)
+        if (f.isFile) return f
+        d = d.parentFile
+    }
+    return null
+}
+
+// ─────────────────────────────────────────────────────────────
+// 版本号:唯一来源是仓库根的 version.properties(见 docs/06-app-conventions.md)
+// ─────────────────────────────────────────────────────────────
+val versionFile: File = findUpward("version.properties")
+    ?: error("找不到 version.properties —— 它是本仓库版本号的唯一来源,应该在仓库根目录")
+
 val appVersion: String = run {
-    var dir: File? = rootDir
-    while (dir != null && !File(dir, "version.properties").isFile) dir = dir.parentFile
-    val vf = File(dir ?: rootDir, "version.properties")
-    if (!vf.isFile) error("找不到 version.properties —— 它是本仓库版本号的唯一来源,应该在仓库根目录")
     val props = Properties()
-    vf.inputStream().use { props.load(it) }
+    versionFile.inputStream().use { props.load(it) }
     val v = props.getProperty("version")?.trim().orEmpty()
-    if (v.isEmpty()) error("${vf.path} 里缺少 version=<MAJOR.MINOR.PATCH>")
+    if (v.isEmpty()) error("${versionFile.path} 里缺少 version=<MAJOR.MINOR.PATCH>")
     v
 }
 
@@ -44,6 +58,21 @@ val appVersionCode: Int = run {
     nums[0] * 10000 + nums[1] * 100 + nums[2]
 }
 
+// ─────────────────────────────────────────────────────────────
+// 发布签名:同样向上找仓库根的 keystore.properties。
+//
+// **找不到就不配 signingConfig** —— release 仍能构建(产出 app-release-unsigned.apk),
+// 保证任何人 clone 下来都能跑 assembleRelease;只是那种包装不上设备。
+// 要发正式包先跑一次: bash tools/gen-keystore.sh
+// ─────────────────────────────────────────────────────────────
+// 存绝对路径:构建可能在 git worktree 里进行(tools/release-apk.sh 就是这么做的),
+// 那时 worktree 到密钥库的相对关系和工作区不同。
+val keystoreProps: Properties? = findUpward("keystore.properties")?.let { f ->
+    Properties()
+        .apply { f.inputStream().use { load(it) } }
+        .also { it.setProperty("__file", f.absolutePath) }
+}
+
 android {
     namespace = "com.example.dualdemo"
     compileSdk = 34
@@ -56,8 +85,25 @@ android {
         versionName = appVersion
     }
 
+    // ⚠️ signingConfigs 必须在 buildTypes 之前 —— buildTypes 里要用
+    // `signingConfigs.getByName("release")`,而 DSL 是按书写顺序执行的。
+    // 有密钥才建;没有就跳过(见上面 keystoreProps 的说明)
+    if (keystoreProps != null) {
+        signingConfigs {
+            create("release") {
+                // storeFile 相对仓库根;__file 是 keystore.properties 的绝对路径
+                val propsDir = File(keystoreProps.getProperty("__file")).parentFile
+                storeFile = File(propsDir, keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
