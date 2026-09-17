@@ -52,6 +52,8 @@
 #   bash tools/gen-keystore.sh --push-secret [owner/repo]  # 把凭据包直接写进仓库的 Actions secret
 #   bash tools/gen-keystore.sh --import <文件>    # 从凭据包还原(换机器 / 灾后恢复)
 #   bash tools/gen-keystore.sh --drill <文件|-> [--record [--label "在哪"]]
+#     label 也可以用环境变量给(在 PowerShell 里更安全,见 --drill 的注释):
+#       GENKS_DRILL_LABEL="飞书个人聊天(文件消息)" bash tools/gen-keystore.sh --drill f --record
 #     `-` 表示从 stdin 读:从聊天窗口直接粘进终端(Ctrl-D 结束),不用先存文件   # ⭐ 恢复演练:在临时目录里真跑一遍导入并核对指纹
 #                                                #   --record 把「哪天验的」记进入库的期望值文件
 #   bash tools/gen-keystore.sh --force            # ⚠️ 覆盖重建 = 换签名,老用户升不了级
@@ -845,7 +847,14 @@ cmd_drill(){
     # ⚠️ 默认记的是**本地文件名**,但副本常常不在本地(飞书消息、密码管理器、U 盘)。
     #    所以支持 --label 说明「验的其实是放在哪的那一份」——
     #    否则记录会指向一个临时文件,半年后照着找只会找到空气。
-    local where; where="${DRILL_LABEL:-$(basename "$src")}"
+      # 位置描述:优先命令行 --label,其次环境变量(见下面的说明),最后退化成文件名。
+    # 为什么要有环境变量这条通路:Windows 的 PowerShell 里 `bash` 解析到的是
+    # WSL 启动器(C:\Windows\System32\bash.exe),它把**所有参数拼成一整条
+    # `bash -c` 字符串**再解析 —— 于是
+    #   · 引号被 PowerShell 剥掉,带空格/括号的 --label 直接语法错误
+    #   · 更糟:label 里若有 `;` 或 `$(...)`,**会被当成命令执行**
+    # 环境变量不经过这层重新解析,所以在 PowerShell 里安全。
+    local where; where="${DRILL_LABEL:-${GENKS_DRILL_LABEL:-$(basename "$src")}}"
     {
       echo "drill.last=$today"
       echo "drill.where=$where"

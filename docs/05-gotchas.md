@@ -566,3 +566,57 @@ adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE \
 ```
 
 > TCL 电视上正是靠这招发现了 U 盘的 `AndroidTV/` 目录,从而找到侧载通道。
+
+---
+
+## Windows 上不要用 PowerShell 跑 `tools/` 的脚本
+
+**症状**:
+
+```powershell
+PS E:\EasyAndroid\dist> bash tools/gen-keystore.sh --drill .\signing-bundle.b64 --record --label "飞书个人聊天(文件消息)"
+/bin/bash: -c: line 1: syntax error near unexpected token `('
+/bin/bash: -c: line 1: `/bin/bash tools/gen-keystore.sh --drill .\signing-bundle.b64 --record --label 飞书个人聊天(文件消息)'
+```
+
+**原因**:PowerShell 里的 `bash` 解析到的是 **WSL 启动器**
+`C:\Windows\System32\bash.exe` —— 它**不是** Git 自带的
+`C:\Program Files\Git\bin\bash.exe`。
+启动器把收到的**所有参数拼成一整条 `bash -c` 字符串**再交给 WSL 解析。于是
+
+- PowerShell 先把 `"…"` 的引号剥掉
+- 启动器再把这些参数用空格拼起来,当作 shell 代码重新解析
+- 括号、空格、`&`、`|`、`;`、`$()` 全部重新获得了 shell 语义
+
+上面那条命令实际执行的是 `/bin/bash tools/gen-keystore.sh --drill … --label 飞书个人聊天(文件消息)`,
+括号露在外面 → 语法错误。
+
+**⚠️ 这不只是"报错",还是个注入面**:如果某个参数里有 `;` 或 `$(…)`,
+**它会被真的执行**。
+
+**还有第二个坑**:`.\signing-bundle.b64` 里的反斜杠在 bash 里是转义符,
+`\.` 等于一个普通的 `.`,所以路径会变成 `.signing-bundle.b64`(少了斜杠),
+报"找不到文件"。
+
+### 怎么办
+
+**首选:换一个真正的 bash 终端**,不要用 PowerShell。
+
+- **WSL**:开始菜单 → Ubuntu,或者 `wsl` 命令进去,然后 `cd /mnt/e/EasyAndroid`
+- **Git Bash**:右键 → Git Bash Here,然后 `cd /e/EasyAndroid`
+
+两个终端里 `tools/` 的脚本都可以原样跑,路径用 `./` 或直接写文件名。
+
+**非要在 PowerShell 里**:记住 `bash` 后面的东西会被重新当 shell 代码解析,所以
+
+```powershell
+# 路径:别用 .\ 反斜杠,直接写文件名或 ./
+bash tools/gen-keystore.sh --drill signing-bundle.b64 --record --label 飞书文件消息
+
+# 凡是需要引号/空格/括号的参数,改用环境变量传(不经重解析):
+$env:GENKS_DRILL_LABEL = "飞书个人聊天(文件消息)"
+bash tools/gen-keystore.sh --drill signing-bundle.b64 --record
+```
+
+> 判断标准很简单:**参数里出现空格、括号、`&`、`;`、`$` 任何一个,就别在
+> PowerShell 里跑。** 换终端比调引号省事,也更安全。
