@@ -88,7 +88,7 @@ bash tools/gen-keystore.sh --add-alias <AppName> # 给单个应用加一把专�
 bash tools/gen-keystore.sh --manifest            # 对仓里 signing-manifest.txt 自检指纹
 bash tools/gen-keystore.sh --manifest --write    # 更新那个文件(加了别名之后跑)
 bash tools/gen-keystore.sh --drill <凭据包>      # 恢复演练:临时目录里真跑一遍导入 + 核对指纹
-bash tools/gen-keystore.sh --drill <凭据包> --record  # 同上,并把日期记进 manifest
+bash tools/gen-keystore.sh --drill f --record --label "在哪"   # 记日期 + 位置进 manifest
 bash tools/gen-keystore.sh --scan [目录]         # 扫出所有密钥材料副本(改名/换扩展名也躲不掉)
 bash tools/gen-keystore.sh --export [文件]       # 导出单个自包含凭据包 → 存密码管理器 / CI Secret
 bash tools/gen-keystore.sh --push-secret         # 直接把凭据包写进仓库的 Actions secret
@@ -116,9 +116,14 @@ bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签�
 > 用 `--verify-against` / `--manifest` / `--drill`,它们归一化后机械比对。
 >
 > **凭据本体不能入库,但 `signing-manifest.txt`(只有指纹)可以,而且应该** ——
-> `release-apk.sh` 会查它:签名不在清单里就直接拒绍发布。
+> `release-apk.sh` 会查它:签名不在清单里就直接拒绝发布。
 >
-> **备份会惄惄过期**,所以除了「存」还得能「验」:
+> **从聊天/邮件里粘回来的文本可以直接验。** 解析器宽容处理折行、发送者、
+> 时间戳、末尾粘在负载上的「已读」、BOM/CRLF;但**验证是严格的** ——
+> 完整解压 + 确认 tar 里有 `release.jks` 和 `keystore.properties`,不是只看格式。
+> 截断或被改动会明确报出来。实测覆盖了 7 种粘贴形态(含折到 20 列)。
+>
+> **备份会悄悄过期**,所以除了「存」还得能「验」:
 >
 > | 问题 | 命令 |
 > |---|---|

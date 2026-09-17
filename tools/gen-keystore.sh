@@ -51,7 +51,7 @@
 #   bash tools/gen-keystore.sh --export [文件]    # 导出自包含的 base64 凭据包(备份/搬运/喂 CI)
 #   bash tools/gen-keystore.sh --push-secret [owner/repo]  # 把凭据包直接写进仓库的 Actions secret
 #   bash tools/gen-keystore.sh --import <文件>    # 从凭据包还原(换机器 / 灾后恢复)
-#   bash tools/gen-keystore.sh --drill <文件> [--record]   # ⭐ 恢复演练:在临时目录里真跑一遍导入并核对指纹
+#   bash tools/gen-keystore.sh --drill <文件> [--record [--label "在哪"]]   # ⭐ 恢复演练:在临时目录里真跑一遍导入并核对指纹
 #                                                #   --record 把「哪天验的」记进入库的期望值文件
 #   bash tools/gen-keystore.sh --force            # ⚠️ 覆盖重建 = 换签名,老用户升不了级
 #
@@ -610,6 +610,140 @@ except Exception:
   return "$bad"
 }
 
+# 从一段「可能是聊天粘贴文本」的内容里抽出凭据包的 base64 负载。
+#
+# 为什么需要:凭据包的实际流转方式常常是**粘贴** —— 飞书/微信/Slack 的个人消息、
+# 邮件正文、笔记。那些地方会带上发送者、时间戳、引用标记,还会把长行折行,
+# 有时甚至**不换行就往负载末尾追加东西**(「已读」、时间戳)。
+#
+# 原来的实现是「去掉 # 注释行,其余全当 base64」:多出来的任何东西都会让解码
+# 失败,还报「文件是不是被改坏了?」—— 把人引向错误的怀疑方向(包没坏)。
+#
+# 难点:没法靠格式规则分辨负载和噪音。
+#   · 折行宽度不确定(76 列是惯例,窄窗口可能折到 30)
+#   · 人名、`OK`、`20260917` 恰好也由 base64 字符组成
+#   · 尾部杂质会和负载粘在同一行上
+# 所以改成**多策略试 + 真验证**:每个策略拼出来的串都实际走一遍
+#     base64 解码 → gzip 解压 → 当作 tar 打开 → 确认里面有 release.jks
+#    和 keystore.properties
+# 全部通过才算数。**验内容,不验退出码** —— 只看 gzip 魔数是不够的,
+# 尾部杂质照样能让魔数匹配上(魔数在开头)。
+#
+# 一个有用的事实:合法 base64 里 `=` 只出现在**末尾**,
+# 所以第一个 `=` 之后的东西一定是杂质,可以截掉。
+#
+# 返回:0 成功(stdout = 一整行 base64);非 0 失败(stderr 说明原因)
+bundle_extract(){
+  local f="$1"
+  "$PY" - "$(pyfile "$f")" <<'PYINNER'
+import base64, gzip, io, re, sys, tarfile
+
+try:
+    text = open(sys.argv[1], encoding='utf-8-sig', errors='replace').read()
+except OSError as e:
+    print(f'READFAIL {e}', file=sys.stderr); sys.exit(2)
+
+MARK = '# EasyAndroid release'
+idx = text.find(MARK)
+if idx < 0:
+    print('NOMARK', file=sys.stderr); sys.exit(3)
+text = text[idx:]
+lines_all = [l.strip() for l in text.splitlines()]
+B64 = re.compile(r'[A-Za-z0-9+/=]+')
+FULL = re.compile(r'^[A-Za-z0-9+/=]+$')
+
+def cut(s):
+    """截掉尾部 padding 之后的杂质(合法 base64 的 `=` 只在末尾)。
+
+    ⚠️ 必须保留**整段** `=`,不能只留一个:padding 可能是 `==`(载荷长度
+       模 3 余 1 时)。先前写成 `s[:k+1]`,于是把 `...AAA==` 削成了 `...AAA=`,
+       长度从 6836 变 6835 不再是 4 的倍数 —— python 的 b64decode 会自动补
+       padding 所以看不出来,而 GNU `base64 -d` 直接报 invalid input。
+       **真凭据包反而解不开,而所有造的测试样例都通过。**
+    """
+    k = s.find('=')
+    if k < 0:
+        return s
+    m = k
+    while m < len(s) and s[m] == '=':
+        m += 1
+    return s[:m]
+
+def ok(s):
+    """真验证:解码 → 解压 → 当 tar 打开 → 里面必须有那两个文件。"""
+    if len(s) < 100:
+        return False
+    try:
+        raw = base64.b64decode(s + '=' * ((-len(s)) % 4))
+        tar_bytes = gzip.decompress(raw)
+        with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tf:
+            names = set(tf.getnames())
+    except Exception:
+        return False
+    return {'release.jks', 'keystore.properties'} <= names
+
+body = [l for l in lines_all if l and not l.startswith('#')]
+whole = [l for l in body if FULL.match(l)]
+
+runs, run = [], []
+for l in body:
+    if FULL.match(l):
+        run.append(l)
+    elif run:
+        runs.append(run); run = []
+if run:
+    runs.append(run)
+longest = max(runs, key=lambda r: sum(len(x) for x in r)) if runs else []
+
+# 由宽到窄。第一个是主力:按行取「base64 前缀」,能救回尾部粘了杂质的行。
+strategies = [
+    ('逐行取 base64 前缀', cut(''.join(m.group(0) for m in (B64.match(l) for l in body) if m))),
+    ('整行都是 base64',    cut(''.join(whole))),
+    ('整行且长度>=32',     cut(''.join(l for l in whole if len(l) >= 32))),
+    ('最长的连续段',        cut(''.join(longest))),
+]
+for name, payload in strategies:
+    if ok(payload):
+        print(f'（识别方式:{name},负载 {len(payload)} 字符）', file=sys.stderr)
+        sys.stdout.write(payload)
+        sys.exit(0)
+
+if not body:
+    print('NOPAYLOAD', file=sys.stderr); sys.exit(4)
+print('NOGZIP', file=sys.stderr); sys.exit(5)
+PYINNER
+}
+
+# 解一份凭据包到目录 $2。失败时给出**可执行**的提示,而不是笼统的「文件坏了」
+unpack_bundle(){
+  local src="$1" dest="$2" payload rc=0
+  payload="$(bundle_extract "$src" 2>/dev/null)" || rc=$?
+  if [ "$rc" != 0 ]; then
+    case "$rc" in
+      3) die "$src 里找不到凭据包的标志行 '# EasyAndroid release 签名凭据包'。
+       最常见的成因:从聊天/邮件里复制时**漏了开头那几行**。整段重贴一次。
+       或者它根本不是本仓库的凭据包。" ;;
+      4) die "$src 里找到了标志行,但后面没有 base64 字符 —— 复制**被截断**了。" ;;
+      5) die "$src 里的内容拼起来解不出 gzip —— **不完整或被改动了**。
+       最可能是复制时截断(聊天客户端常只展开前面一段)。
+       重新整段复制,再用 --drill 验一次。" ;;
+      *) die "读不了 $src" ;;
+    esac
+  fi
+  # GNU base64 要求长度是 4 的倍数(python 的 b64decode 会自动补,它不会)。
+  # 取出来的负载长度理论上是 4 的倍数,但粘贴过程可能吃掉尾部的 `=`,补上更稳。
+  case $(( ${#payload} % 4 )) in
+    2) payload="$payload==" ;;
+    3) payload="$payload=" ;;
+  esac
+  printf '%s' "$payload" | base64 -d > "$dest/b.tgz" 2>/dev/null \
+    || die "base64 解码失败"
+  ( cd "$dest" && tar xzf b.tgz ) || die "解包失败 —— 内容不完整(像是被截断)"
+  [ -f "$dest/release.jks" ] && [ -f "$dest/keystore.properties" ] \
+    || die "包里缺文件(release.jks / keystore.properties)"
+}
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 恢复演练 —— 回答「我存下/存走的那份备份,以后真的还能用吗?」
 #
@@ -624,19 +758,10 @@ except Exception:
 # 它验的是:解码 → 解包 → 读密码 → 算指纹 → 对仓里记录的期望值。
 # 全程不碰 $KS / $PROPS。
 cmd_drill(){
-  # 位置无关地解析:--record 写在文件前面后面都行(踩过:按 $1/$2 取位置,
-  # 结果 `--drill <文件> --record` 里的 --record 被当成多余参数丢掉了,
-  # 命令照常成功、只是记录没写 —— 又是「静默什么都没做」)
-  local src=""
-  local a
-  for a in "$@"; do
-    case "$a" in
-      --record) DRILL_RECORD=1 ;;
-      "") ;;
-      *) src="$a" ;;
-    esac
-  done
-  [ -n "$src" ] || die "用法: bash tools/gen-keystore.sh --drill <凭据包文件> [--record]"
+  # 参数由主解析器收集后传进来(--drill / --record / --label 顺序任意)。
+  # 踩过两次都是「参数被静默丢掉,命令照常成功」,所以这里不再自己解析。
+  local src="$DRILL_SRC"
+  [ -n "$src" ] || die "用法: bash tools/gen-keystore.sh --drill <凭据包文件> [--record [--label \"在哪\"]]"
   [ -f "$src" ] || die "找不到 $src"
   # 子进程可能在别的 cwd 下跑,先取绝对路径
   src="$(cd "$(dirname "$src")" && pwd)/$(basename "$src")"
@@ -688,13 +813,18 @@ cmd_drill(){
     # 就知道该重跑一次了 —— 而不是等到真要恢复时才发现那份早就坏了。
     local today; today="$(date '+%Y-%m-%d')"
     grep -v '^drill\.' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+    # ⚠️ 默认记的是**本地文件名**,但副本常常不在本地(飞书消息、密码管理器、U 盘)。
+    #    所以支持 --label 说明「验的其实是放在哪的那一份」——
+    #    否则记录会指向一个临时文件,半年后照着找只会找到空气。
+    local where; where="${DRILL_LABEL:-$(basename "$src")}"
     {
       echo "drill.last=$today"
-      echo "drill.bundle=$(basename "$src")"
+      echo "drill.where=$where"
+      echo "drill.file=$(basename "$src")"
       echo "drill.size=$(wc -c <"$src" | tr -d ' ')"
     } >> "$MANIFEST"
     echo
-    echo "  已记进 $(basename "$MANIFEST"):drill.last=$today($(basename "$src"))"
+    echo "  已记进 $(basename "$MANIFEST"):drill.last=$today  位置=$where"
     echo "  git diff 能看到 —— 提交它,以后看这个日期就知道备份多久没验过了。"
   fi
 
@@ -722,8 +852,7 @@ verify_bundle(){
   local t
   mktmpd_tracked || return 1
   t="$TMPDIR_LAST"
-  sed '/^#/d' "$f" | tr -d '\r\n' | base64 -d > "$t/b.tgz" 2>/dev/null || return 1
-  ( cd "$t" && tar xzf b.tgz ) >/dev/null 2>&1 || return 1
+  unpack_bundle "$f" "$t" >/dev/null 2>&1 || return 1
   [ -f "$t/release.jks" ] && [ -f "$t/keystore.properties" ] || return 1
   local pw al fp
   pw="$(prop_of_file "$t/keystore.properties" storePassword)"
@@ -775,12 +904,8 @@ cmd_import(){
 
   mktmpd_tracked || die "建临时目录失败"; TMPD="$TMPDIR_LAST"
   local tmpd; tmpd="$TMPD"
-  # 去掉以 # 开头的头部注释行,其余就是 base64
-  sed '/^#/d' "$src" | tr -d '\r\n' | base64 -d > "$tmpd/bundle.tgz" 2>/dev/null \
-    || die "base64 解码失败 —— 文件是不是被改坏了?"
-  ( cd "$tmpd" && tar xzf bundle.tgz ) || die "解包失败 —— 文件不完整?"
-  [ -f "$tmpd/release.jks" ] && [ -f "$tmpd/keystore.properties" ] \
-    || die "包里缺文件(release.jks / keystore.properties)"
+  # 允许「从聊天/邮件粘回来」的文本 —— 详见 bundle_extract 的说明
+  unpack_bundle "$src" "$tmpd"
 
   mkdir -p "$KS_DIR"
 
@@ -882,7 +1007,7 @@ PROPS_EOF
 }
 
 # ── 参数解析 ────────────────────────────────────────────────────────
-FORCE=0
+FORCE=0; DRILL_MODE=0; DRILL_SRC=""; DRILL_RECORD=0; DRILL_LABEL=""
 case "${1:-}" in
   ""|--force)  [ "${1:-}" = "--force" ] && FORCE=1; cmd_init ;;
   --status)    cmd_status ;;
@@ -896,7 +1021,27 @@ case "${1:-}" in
   --verify-against) shift; cmd_verify "${1:-}" ;;
   --export)    cmd_export "${2:-}" ;;
   --import)    shift; [ "${1:-}" = "--force" ] && { FORCE=1; shift; }; cmd_import "${1:-}" ;;
-  --drill)     shift; cmd_drill "${1:-}" "${2:-}" ;;
+  # ⚠️ --drill 的参数**先收集、循环结束后再执行**,不要在 case 里直接调。
+  #    踩过:写成 `cmd_drill "$1" "$2"` 时,--label 和它的值(第 3、4 个参数)
+  #    在 case 里就被丢掉了,`--label` 静默失效 —— 命令成功、记录却是错的。
+  # ⚠️ 这个 case 只看 $1(不是 while 循环),所以 --drill 后面的参数必须
+  #    在这里**自己消费完**,否则 `--record` / `--label` 会被静默忽略 ——
+  #    命令成功、记录却没写(这个"静默什么都没做"的坑在参数解析上踩了第三次)。
+  --drill)     shift; DRILL_MODE=1
+               while [ $# -gt 0 ]; do
+                 case "$1" in
+                   --record) DRILL_RECORD=1 ;;
+                   --label)  shift; DRILL_LABEL="${1:-}" ;;
+                   *)        [ -z "$DRILL_SRC" ] && DRILL_SRC="$1" ;;
+                 esac
+                 shift
+               done ;;
   -h|--help)   sed -n '3,45p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
   *)           die "未知参数: $1(看 --help)" ;;
 esac
+# ⚠️ 必须用 if 而不是 `[ ... ] && cmd_drill`:后者在条件为假时**整个脚本以 1 退出**,
+#    于是 --import / --export / --status 全都"失败"了。
+#    这个 bug 是恢复演练自己抓到的 —— 子进程导入明明成功,却被判成失败。
+if [ "${DRILL_MODE:-0}" = 1 ]; then
+  cmd_drill
+fi
