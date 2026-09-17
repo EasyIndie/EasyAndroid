@@ -69,8 +69,10 @@ if [ -n "$BUMP" ]; then
   echo "==> version: $cur -> $new"
   echo
   echo "接下来:"
-  echo "  1. 把这次改动写进 CHANGELOG / 提交信息,然后 git commit"
-  echo "  2. bash tools/tag-release.sh"
+  echo "  1. 到 version.properties 的「版本历史」注释里补一行,写清这一版做了什么、为什么是"
+  echo "     这个段位(major/minor/patch)"
+  echo "  2. 把改动写进提交信息,然后 git commit && git push"
+  echo "  3. bash tools/tag-release.sh"
   exit 0
 fi
 
