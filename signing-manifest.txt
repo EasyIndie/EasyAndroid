@@ -19,6 +19,6 @@
 default_alias=release
 alias.release=eb3bfaf6847264a0e696996fb02a91fa7e034ec3c42ef9a85c68168d4d573dbd
 drill.last=2026-09-17
-drill.where=命令行
+drill.where=feishu-file
 drill.file=b.b64
 drill.size=7393

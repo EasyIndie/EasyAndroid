@@ -847,13 +847,18 @@ cmd_drill(){
     # ⚠️ 默认记的是**本地文件名**,但副本常常不在本地(飞书消息、密码管理器、U 盘)。
     #    所以支持 --label 说明「验的其实是放在哪的那一份」——
     #    否则记录会指向一个临时文件,半年后照着找只会找到空气。
-      # 位置描述:优先命令行 --label,其次环境变量(见下面的说明),最后退化成文件名。
-    # 为什么要有环境变量这条通路:Windows 的 PowerShell 里 `bash` 解析到的是
-    # WSL 启动器(C:\Windows\System32\bash.exe),它把**所有参数拼成一整条
-    # `bash -c` 字符串**再解析 —— 于是
-    #   · 引号被 PowerShell 剥掉,带空格/括号的 --label 直接语法错误
-    #   · 更糟:label 里若有 `;` 或 `$(...)`,**会被当成命令执行**
-    # 环境变量不经过这层重新解析,所以在 PowerShell 里安全。
+      # 位置描述:优先命令行 --label,其次 GENKS_DRILL_LABEL,最后退化成文件名。
+    #
+    # 环境变量这条通路是给**在 WSL / Git Bash 里**用的(躲开引号麻烦):
+    #     GENKS_DRILL_LABEL="飞书个人聊天(文件消息)" bash tools/gen-keystore.sh --drill f --record
+    #
+    # ⚠️ 它**不能**绕过 PowerShell 的问题,别搞混:
+    #    PowerShell 里的 `bash` 是 WSL 启动器(C:\Windows\System32\bash.exe),
+    #    它把参数拼成一条 `bash -c` 字符串重新解析 —— 引号被剥掉,括号/空格/`;`/`$()`
+    #    重新获得 shell 语义(既是语法错误来源,也是注入面)。
+    #    而 PowerShell 设的 `$env:X` **不会**传进 WSL(实测为空)。
+    #    非 ASCII 参数还会被这层写成乱码且不报错(实测 `飞书文件消息` → `椋炰功鏂囦欢娑堟伅`)。
+    #    结论:跨 Windows shell 边界时 label 用 ASCII;要中文就换 WSL/Git Bash 终端。
     local where; where="${DRILL_LABEL:-${GENKS_DRILL_LABEL:-$(basename "$src")}}"
     {
       echo "drill.last=$today"
@@ -863,6 +868,17 @@ cmd_drill(){
     } >> "$MANIFEST"
     echo
     echo "  已记进 $(basename "$MANIFEST"):drill.last=$today  位置=$where"
+    # 非 ASCII 的 label 值得多看一眼:Windows 的 PowerShell → WSL 启动器这一层
+    # **不是 UTF-8**,中文参数会被写成乱码,而且**不报错** —— 只是安静地记错。
+    # 实测 `--label 飞书文件消息` 记进去的是「椋炰功鏂囦欢娑堟伅」。
+    # 没法可靠地自动判别乱码,所以把值单独摆出来并点名这个陷阱。
+    case "$where" in
+      *[!\ -~]*)
+        echo "  ⚠️  上面「位置」含非 ASCII 字符 —— 请**确认它显示正确**。"
+        echo "      PowerShell 传中文参数会被写成乱码且不报错(实测过);"
+        echo "      跨 Windows shell 边界时 label 建议用 ASCII,或在 WSL/Git Bash 里跑。"
+        ;;
+    esac
     echo "  git diff 能看到 —— 提交它,以后看这个日期就知道备份多久没验过了。"
   fi
 

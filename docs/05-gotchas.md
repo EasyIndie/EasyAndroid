@@ -607,16 +607,26 @@ PS E:\EasyAndroid\dist> bash tools/gen-keystore.sh --drill .\signing-bundle.b64 
 
 两个终端里 `tools/` 的脚本都可以原样跑,路径用 `./` 或直接写文件名。
 
-**非要在 PowerShell 里**:记住 `bash` 后面的东西会被重新当 shell 代码解析,所以
+**非要在 PowerShell 里**:记住 `bash` 后面的东西会被重新当 shell 代码解析。实测的三条限制:
+
+| 行为 | 实测结果 |
+|---|---|
+| `E:\EasyAndroid` 当工作目录 | ✅ 正确翻译成 `/mnt/e/EasyAndroid`(路径没问题) |
+| 不带引号、**纯 ASCII** 的参数 | ✅ 可用 |
+| 带引号 / 空格 / 括号的参数 | ❌ 语法错误(引号被剥掉) |
+| 用 `$env:X` 传参给脚本 | ❌ **传不进 WSL**(实测为空),因为 WSL 默认只透传 `WSLENV` 里列出的变量 |
+| **中文参数** | ❌ 被写成乱码(实测 `飞书文件消息` → `椋炰功鏂囦欢娑堟伅`) |
+
+所以 PowerShell 里只有一种能用的写法:**参数全 ASCII、不加引号**。
 
 ```powershell
-# 路径:别用 .\ 反斜杠,直接写文件名或 ./
-bash tools/gen-keystore.sh --drill signing-bundle.b64 --record --label 飞书文件消息
-
-# 凡是需要引号/空格/括号的参数,改用环境变量传(不经重解析):
-$env:GENKS_DRILL_LABEL = "飞书个人聊天(文件消息)"
-bash tools/gen-keystore.sh --drill signing-bundle.b64 --record
+Set-Location E:\EasyAndroid
+bash tools/gen-keystore.sh --drill dist/signing-bundle.b64 --record --label feishu-file
 ```
+
+> ⚠️ 中文会被写成乱码而且**不报错**,只是安静地记错。`gen-keystore.sh`
+> 现在会在 label 含非 ASCII 时提醒你确认显示是否正确,但根治办法是换终端。
+> 跨 Windows shell 边界时,label 用 ASCII;要中文就开 WSL 或 Git Bash。
 
 > 判断标准很简单:**参数里出现空格、括号、`&`、`;`、`$` 任何一个,就别在
 > PowerShell 里跑。** 换终端比调引号省事,也更安全。
