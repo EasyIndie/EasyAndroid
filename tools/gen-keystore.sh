@@ -300,7 +300,12 @@ write_bundle(){
     echo "#"
     echo "# 还原: bash tools/gen-keystore.sh --import <本文件>"
     echo "#"
-    base64 < "$t/bundle.tgz" | tr -d '\n'
+    # ⚠️ **必须折行**(76 列是 base64 惯例)。
+    #    输出成一整个长行的话,把凭据包**粘进终端**会被截断:
+    #    Linux 终端规范模式下单行缓冲上限是 4096(MAX_CANON),
+    #    实测 7001 字符的长行只进来了 4096 —— 而凭据包有 6800+ 字符。
+    #    折行后每行 76 字符,粘贴、邮件、聊天都不会碰上限。
+    base64 < "$t/bundle.tgz" | fold -w76
     echo
   } > "$out"
 }
@@ -599,7 +604,10 @@ except Exception:
     print('')
 " 2>/dev/null)"
     if [ -n "$days" ]; then
-      echo "  上次恢复演练 $dl (${days} 天前,$(sed -n 's/^drill\.bundle=//p' "$MANIFEST" | head -1))"
+      # 位置字段叫 drill.where(旧版本叫 drill.bundle,为兼容两种都读)
+      local dw; dw="$(sed -n 's/^drill\.where=//p' "$MANIFEST" | head -1)"
+      [ -n "$dw" ] || dw="$(sed -n 's/^drill\.bundle=//p' "$MANIFEST" | head -1)"
+      echo "  上次恢复演练 $dl (${days} 天前,位置:$dw)"
       [ "$days" -gt 180 ] && echo "  ⚠️  超过半年没验过备份了 —— 跑一次:bash tools/gen-keystore.sh --drill <凭据包> --record"
     else
       echo "  上次恢复演练 $dl"
@@ -711,6 +719,10 @@ for name, payload in strategies:
 
 if not body:
     print('NOPAYLOAD', file=sys.stderr); sys.exit(4)
+# 有一行长得离谱(>4000)—— 多半是「粘进终端被 MAX_CANON 截断」,
+# 而不是包本身坏了。给针对性的提示,别让人去怀疑备份。
+if any(len(l) > 4000 for l in body):
+    print('LONGLINE', file=sys.stderr); sys.exit(6)
 print('NOGZIP', file=sys.stderr); sys.exit(5)
 PYINNER
 }
@@ -728,6 +740,12 @@ unpack_bundle(){
       5) die "$src 里的内容拼起来解不出 gzip —— **不完整或被改动了**。
        最可能是复制时截断(聊天客户端常只展开前面一段)。
        重新整段复制,再用 --drill 验一次。" ;;
+      6) die "$src 里有超长行(>4000 字符),几乎肯定是**粘进终端时被截断了**。
+       Linux 终端规范模式下单行缓冲上限是 4096(MAX_CANON),长行会被静默切掉。
+       三个办法(任选):
+         · 存成文件再验:用记事本粘进去,另存为 UTF-8,再 --drill <那个文件>
+         · 重新导出一份**折行**的格式(0.4.5 起默认折行 76 列)
+         · 不要把凭据包用「终端粘贴」来传" ;;
       *) die "读不了 $src" ;;
     esac
   fi
