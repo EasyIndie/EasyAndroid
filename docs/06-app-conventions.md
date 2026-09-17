@@ -299,11 +299,15 @@ EasyAndroid 签名凭据 (release, SHA eb3bfaf6)
 这是**唯一**能回答「它在飞书里还完整吗」的办法:
 
 ```bash
-# 1. 在飞书里把那条消息**整段**复制(从「# EasyAndroid release 签名凭据包」
-#    那一行开始,一直到最后),粘进一个文件
-#    2. 跑演练。--label 记下「验的是飞书的这份」,与本地文件区分开
-bash tools/gen-keystore.sh --drill feishu.txt --record --label "飞书个人聊天(发给自己)"
+# 从飞书把那条消息**整段**复制(从「# EasyAndroid release 签名凭据包」那一行开始),
+# 然后直接在终端里跑下面这条,把内容粘进去,按 Ctrl-D 结束:
+bash tools/gen-keystore.sh --drill - --label "飞书个人聊天(发给自己)"
+
+# 或者先存成文件再验:
+bash tools/gen-keystore.sh --drill feishu.txt --record --label "飞书个人聊天"
 ```
+
+`--drill -` 从 stdin 读,不用先存文件。要写进 manifest 就加 `--record`。
 
 解析器**故意做得宽容**:折行(哪怕折到 20 列)、发送者/时间戳、末尾粘在负载上的
 「已读」、BOM、CRLF 都能处理;它按行取 base64 前缀 + 用「完整解压 + tar 里必须有

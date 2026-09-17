@@ -51,7 +51,8 @@
 #   bash tools/gen-keystore.sh --export [文件]    # 导出自包含的 base64 凭据包(备份/搬运/喂 CI)
 #   bash tools/gen-keystore.sh --push-secret [owner/repo]  # 把凭据包直接写进仓库的 Actions secret
 #   bash tools/gen-keystore.sh --import <文件>    # 从凭据包还原(换机器 / 灾后恢复)
-#   bash tools/gen-keystore.sh --drill <文件> [--record [--label "在哪"]]   # ⭐ 恢复演练:在临时目录里真跑一遍导入并核对指纹
+#   bash tools/gen-keystore.sh --drill <文件|-> [--record [--label "在哪"]]
+#     `-` 表示从 stdin 读:从聊天窗口直接粘进终端(Ctrl-D 结束),不用先存文件   # ⭐ 恢复演练:在临时目录里真跑一遍导入并核对指纹
 #                                                #   --record 把「哪天验的」记进入库的期望值文件
 #   bash tools/gen-keystore.sh --force            # ⚠️ 覆盖重建 = 换签名,老用户升不了级
 #
@@ -761,7 +762,17 @@ cmd_drill(){
   # 参数由主解析器收集后传进来(--drill / --record / --label 顺序任意)。
   # 踩过两次都是「参数被静默丢掉,命令照常成功」,所以这里不再自己解析。
   local src="$DRILL_SRC"
-  [ -n "$src" ] || die "用法: bash tools/gen-keystore.sh --drill <凭据包文件> [--record [--label \"在哪\"]]"
+  [ -n "$src" ] || die "用法: bash tools/gen-keystore.sh --drill <凭据包文件|-> [--record [--label \"在哪\"]]"
+
+  # `--drill -` 从 stdin 读 —— 直接从聊天窗口粘进终端,不用先存文件。
+  # (粘贴完按 Ctrl-D 结束输入。)
+  if [ "$src" = "-" ]; then
+    mktmpd_tracked || die "建临时目录失败"
+    src="$TMPDIR_LAST/从聊天粘进来的.txt"
+    cat > "$src" || die "读 stdin 失败"
+    [ -s "$src" ] || die "stdin 是空的 —— 没粘上?粘完要按 Ctrl-D"
+    echo "  已从 stdin 读入 $(wc -c <"$src" | tr -d ' ') 字节"
+  fi
   [ -f "$src" ] || die "找不到 $src"
   # 子进程可能在别的 cwd 下跑,先取绝对路径
   src="$(cd "$(dirname "$src")" && pwd)/$(basename "$src")"
