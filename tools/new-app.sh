@@ -37,6 +37,7 @@ EOF
   exit 2
 }
 
+[ $# -eq 2 ] || usage
 [ -n "$NAME" ] && [ -n "$PKG" ] || usage
 
 # ---- 校验 ----
