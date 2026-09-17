@@ -498,37 +498,42 @@ vtmp="$(mktmp)" || die "建不了临时文件"
 sed "s|^version[[:space:]]*=.*|version=$NEWVER|" "$VF" > "$vtmp" || die "改 version.properties 失败"
 
 # 版本历史:插在**已有历史条目的末尾**(列表本身是旧→新,新的接在后面)
+#
+# ⚠️ 这段坚持用**纯 bash**,不再嵌 python heredoc。
+#    教训:先前这里是一段 python,而我用「带转义的字符串」把它注入文件时,
+#    `split('\n')` 里的 \n 被解释成了**真正的换行**,嵌进去的 python 直接语法错误。
+#    更糟的是那一步的失败**没有被检查** —— 临时文件是空的,下一行把空文件
+#    mv 成了 version.properties,推出去的版本号文件是**空的**,
+#    而屏幕上还打着「✅ 已写入」。
+#    所以这里两条纪律:① 避开转义;② 每一步都验,落盘前先验。
 fixed="$(mktmp)" || die "建不了临时文件"
-"$PY" - "$(pyfile "$vtmp")" "$(pyfile "$TMPD/history.txt")" "$(pyfile "$fixed")" <<'PYEOF'
-import re, sys
-vf, hist, out = sys.argv[1:4]
-lines = open(vf, encoding='utf-8').read().split('
-')
-new = open(hist, encoding='utf-8').read().rstrip('
-').split('
-')
+hist_mark=0; in_hist=0
+while IFS= read -r line || [ -n "$line" ]; do
+  # 没有 `# 版本历史` 节时的退路:插在 version= 之前
+  if [ "$in_hist" = 0 ] && [ "$hist_mark" = 0 ] \
+     && printf '%s' "$line" | grep -qE '^version[[:space:]]*='; then
+    cat "$TMPD/history.txt" || die "读不到新历史条目"; hist_mark=1
+  fi
+  # 有这一节:跳过它本身和之后连续的 `#    xxx` 条目,插在最后一条之后
+  if [ "$in_hist" = 1 ] && [ "$hist_mark" = 0 ] \
+     && ! printf '%s' "$line" | grep -qE '^#[[:space:]]{3,}[^[:space:]]'; then
+    cat "$TMPD/history.txt" || die "读不到新历史条目"; hist_mark=1
+  fi
+  printf '%s\n' "$line"
+  if printf '%s' "$line" | grep -qE '^#[[:space:]]*版本历史[[:space:]]*$'; then in_hist=1; fi
+done < "$vtmp" > "$fixed" || die "插入版本历史失败"
 
-# ⚠️ 插在**已有条目的后面**,不是紧跟在 `# 版本历史` 之后。
-#    这个列表是**旧 → 新**排列的(0.0.1 在最上面)。插到最前面会让它变成
-#    0.4.0 / 0.0.1 / 0.1.0 …,读起来像列表重新开始了 —— 踩过。
-start = None
-for i, l in enumerate(lines):
-    if re.match(r'^#\s*版本历史\s*$', l):
-        start = i
-        break
-if start is None:
-    # 没有这一节就退化成插在 version= 之前,不报错
-    j = next((i for i, l in enumerate(lines) if l.startswith('version=')), len(lines))
-else:
-    # 历史条目 = `#` 后跟 3 个以上空格(含续行),遇到空行或普通注释就结束
-    j = start + 1
-    while j < len(lines) and re.match(r'^#\s{3,}\S', lines[j]):
-        j += 1
-lines[j:j] = new
-open(out, 'w', encoding='utf-8').write('\n'.join(lines))
-PYEOF
-mv "$fixed" "$vtmp" || die "插入版本历史失败"
-mv "$vtmp" "$VF"
+# ── 落盘前先验 ──
+# 这两个文件是发布的关键输入,写坏了代价很大(上次就是空文件被推了上去,
+# 直到 tag-release 读到 version='' 才炸)。宁可在这里停。
+[ "$hist_mark" = 1 ] || die "内部错误:没找到插入版本历史的位置(原文件未改动)"
+grep -qE '^version=[0-9]+\.[0-9]+\.[0-9]+$' "$fixed" \
+  || die "内部错误:生成的 version.properties 里没有合法 version=(原文件未改动)"
+[ "$(wc -l <"$fixed")" -ge 20 ] \
+  || die "内部错误:生成的 version.properties 只有 $(wc -l <"$fixed") 行,像被截断(原文件未改动)"
+mv "$fixed" "$VF" || die "写 version.properties 失败"
+grep -q "^version=$NEWVER\$" "$VF" || die "写完后自检失败:version 不是 $NEWVER"
+ok "version.properties: version=$NEWVER + 版本历史"
 ok "version.properties: version=$NEWVER + 版本历史"
 
 # CHANGELOG:新条目插在最后一个 `## [` 之前(最新在上),保留头部说明
