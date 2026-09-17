@@ -41,6 +41,15 @@ OUT="${OUT:-$TMP/ui-dump-$(printf '%s' "$PKG" | tr '.' '_').png}"
 
 A(){ run_timeout 40 "$ADB" -s "$DEV" shell "$@" </dev/null 2>&1; }
 
+# 目标设备是不是 Pico —— 用于只在 Pico 上才有意义的提示。
+# 只在失败路径上调,多一次 adb 调用可以接受。
+is_pico(){
+  case "$(A getprop ro.product.manufacturer)$(A getprop ro.product.model)" in
+    *Pico*|*PICO*|*pico*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 if ! adb_online "$DEV"; then
   echo "设备 $DEV 未连接。先跑: bash tools/devices.sh" >&2
   exit 1
@@ -85,7 +94,11 @@ if [ "$ok" != 1 ]; then
   else
     echo "   · 广播没到接收器 —— 工程里没集成钩子?装的是 release 包?" >&2
     echo "   · 应用不在前台(View 已停止重绘)" >&2
-    echo "     Pico 上还可能是头显睡了,先跑 tools/pico-panel.sh <pkg> awake" >&2
+    # 头显睡了是 Pico 特有的坑,别在电视上乱提示把真原因淹没
+    # (实测在电视上看到「Pico 上还可能是头显睡了」会直接让人懵)
+    if is_pico; then
+      echo "   · 头显睡了 —— 先跑 tools/pico-panel.sh <pkg> awake" >&2
+    fi
     echo "   详解见 docs/07-debug-ui-capture.md" >&2
   fi
   A "logcat -d -t 80" 2>/dev/null | grep -iE 'UiDump|AndroidRuntime' | tail -6 >&2
