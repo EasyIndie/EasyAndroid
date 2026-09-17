@@ -212,3 +212,13 @@ echo "  1. 编辑 apps/$NAME/README.md(做什么 / 目标设备 / 已知限制)"
 echo "  2. 写业务代码: apps/$NAME/app/src/main/java/$(printf '%s' "$PKG" | tr '.' '/')/"
 echo "  3. 构建自检: cd apps/$NAME && ./gradlew assembleDebug"
 echo "  4. 改版本号只改仓库根的 version.properties(工程里不要写版本字面量)"
+echo "  5. **首次发布之前**给它一把专用签名密钥:"
+echo "       bash tools/gen-keystore.sh --add-alias $NAME"
+if [ ! -f "$REPO/keystore.properties" ]; then
+  echo "     (本机还没配签名凭据 —— 先跑一次 bash tools/gen-keystore.sh)"
+fi
+echo "     同一个 .jks 里的独立别名,**不需要多管一个文件**。"
+echo "     为什么不能和其他应用共用一把:同签名下的应用之间可互信(能访问对方"
+echo "     protectionLevel=signature 的组件、共享 sharedUserId),共一把 = 共一个信任域。"
+echo "     ⚠️ 首次发布之后就**不能再改**了 —— 等于换签名,老用户升不了级。"
+echo "     见 docs/06 的「签名凭据」。"
