@@ -41,6 +41,12 @@
    「设备上装的是正式包」并直接给出换装命令,不需要你去猜是不是「没集成钩子」。
    见 [docs/06](docs/06-app-conventions.md) 的「构建与发布」一节。
 9. **`tools/` 下的脚本是跨平台的**(Windows 原生 Git Bash / WSL2 / Linux)。
+   ⚠️ **但不包括 PowerShell。** PowerShell 里的 `bash` 是 WSL 启动器
+   (`C:\Windows\System32\bash.exe`,不是 Git 自带的那个),它把参数
+   **拼成一条 `bash -c` 字符串**重新解析 —— 引号被剥掉,空格/括号/`;`/`$()`
+   全部重新获得 shell 语义(既是语法错误的来源,也是注入面);`./x` 里的
+   反斜杠还会被当转义符,路径静默变错。要用 bash 就开 WSL 或 Git Bash 终端。
+   见 [docs/05](docs/05-gotchas.md) 的「Windows 上不要用 PowerShell 跑」一节。
    写新脚本或改现有脚本时:
    - 不要直接调 `timeout` / `mktemp` / `adb` / `python3`,用 `_common.sh` 导出的
      `run_timeout` / `mktmp` / `$ADB` / `$PY`;
