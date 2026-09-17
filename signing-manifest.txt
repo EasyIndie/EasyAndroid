@@ -19,6 +19,6 @@
 default_alias=release
 alias.release=eb3bfaf6847264a0e696996fb02a91fa7e034ec3c42ef9a85c68168d4d573dbd
 drill.last=2026-09-17
-drill.where=本机 dist/signing-bundle.b64(飞书那份待验)
+drill.where=飞书个人聊天(文件消息)
 drill.file=signing-bundle.b64
-drill.size=7303
+drill.size=7393
