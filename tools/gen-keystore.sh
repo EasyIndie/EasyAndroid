@@ -449,6 +449,7 @@ cmd_scan(){
 import os, sys, hashlib
 root, ksha, ks, props = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 SKIP_DIR = {'.git', 'build', '.gradle', 'node_modules', '.idea', 'platform-tools'}
+# 子串匹配(以前是精确匹配,于是 signing-bundle.b64.bak 漏了)
 NAME_HINTS = ('release.jks', 'keystore.properties', 'signing-bundle', 'bundle.b64')
 HEADER = '# EasyAndroid release'
 
@@ -478,19 +479,29 @@ for dirpath, dirnames, filenames in os.walk(root):
     for fn in filenames:
         full = os.path.join(dirpath, fn)
         why = None
-        if fn in NAME_HINTS or fn.endswith(('.jks', '.keystore', '.p12')):
+        # 判定顺序:名字 → 大小+哈希 → **内容标志行**。
+        # ⚠️ 最后一条**不能限定扩展名**。踩过:用户把本机导出的那份改名成
+        #    `signing-bundle.b64.bak`,它既不在名字清单里(清单当时是精确匹配)、
+        #    大小也 ≠ 密钥库(它是 base64 包,7393 ≠ 4394),于是被整个跳过 ——
+        #    一份含明文私钥的副本躺在 dist/ 里,而 --scan 报「额外 0 份」。
+        #    凭据包的内容有独一无二的标志行,按它认,不看文件名。
+        if any(h in fn for h in NAME_HINTS) or fn.endswith(('.jks', '.keystore', '.p12')):
             why = '文件名像密钥材料'
-        elif ksha and size_of(full) == ks_size:
-            # 逐字节相同的副本**大小必然相同** —— 先用大小筛掉 99.9% 的文件,
-            # 再算哈希。这样改名、换扩展名、去掉扩展名都躲不掉,而且不用
-            # 把整个仓库哈希一遍。
-            if sha(full) == ksha:
-                why = '内容与本机密钥库完全相同(改了名也没用)'
-        if why is None and fn.endswith(('.b64', '.txt')):
+        elif ksha and size_of(full) == ks_size and sha(full) == ksha:
+            # 逐字节相同的副本**大小必然相同** —— 先用大小筛掉绝大多数文件,
+            # 再算哈希。改名、换扩展名、去掉扩展名都躲不掉。
+            why = '内容与本机密钥库完全相同(改了名也没用)'
+        elif 0 < size_of(full) < 2_000_000:
+            # 按标志行认,不看扩展名、不看文件名。
+            # ⚠️ 必须要求它出现在**第一行**:只在前 N 字节里 grep 的话,
+            #    连本脚本自己都会被命中(它的报错文案里就有这个字符串)——
+            #    实测踩到,于是 tools/gen-keystore.sh 被标成"密钥材料、会被提交"。
+            #    凭据包的第一行**就是**这个标志,这就是最精确的判据。
             try:
                 with open(full, 'r', errors='ignore') as f:
-                    if f.readline().startswith(HEADER):
-                        why = '是本仓库的凭据包(含私钥+明文密码)'
+                    first = f.readline().lstrip('\ufeff').strip()
+                if first.startswith(HEADER):
+                    why = '是本仓库的凭据包(含私钥+明文密码)'
             except OSError:
                 pass
         if why:
@@ -1102,9 +1113,15 @@ case "${1:-}" in
   -h|--help)   sed -n '3,45p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
   *)           die "未知参数: $1(看 --help)" ;;
 esac
-# ⚠️ 必须用 if 而不是 `[ ... ] && cmd_drill`:后者在条件为假时**整个脚本以 1 退出**,
-#    于是 --import / --export / --status 全都"失败"了。
-#    这个 bug 是恢复演练自己抓到的 —— 子进程导入明明成功,却被判成失败。
-if [ "${DRILL_MODE:-0}" = 1 ]; then
-  cmd_drill
-fi
+  # ⚠️ 退出码必须**显式接住再原样退出**。踩过两次:
+  #   1) 写成 `[ ... ] && cmd_drill` —— 条件为假时整个脚本以 1 退出,
+  #      于是 --import / --export / --status 全都"失败"。
+  #   2) 改成 if 之后,条件为假时 if 返回 0 —— **把上面 case 的失败悄悄吞掉**:
+  #      --scan 发现额外密钥副本时返回 1,脚本却 exit 0,于是 verify-all 报 ✅。
+  # 教训:在脚本末尾加任何命令之前,先想清楚它会不会改写 $?。
+  RC=$?
+  if [ "${DRILL_MODE:-0}" = 1 ]; then
+    cmd_drill
+    RC=$?
+  fi
+  exit "$RC"
