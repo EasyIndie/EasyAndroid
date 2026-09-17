@@ -18,7 +18,11 @@
    (严格 SemVer,第一个版本 `0.0.1`)。`versionName` / `versionCode` / 界面上显示的版本
    全部从它推导。改版本只改那一个文件,然后 `bash tools/tag-release.sh`。
    见 [docs/06](docs/06-app-conventions.md) 的「版本号」一节。
-7. **`tools/` 下的脚本是跨平台的**(Windows 原生 Git Bash / WSL2 / Linux)。
+7. **签名密钥绝对不能入库** —— `tools/keystore/`、`keystore.properties`、`*.jks` 已在
+   `.gitignore`。往仓库里放任何密钥文件前先确认 `.gitignore` 拦得住。
+   要发带 APK 的 Release(带签名配置、tag 构建、不装 unsigned 包)见
+   [docs/06](docs/06-app-conventions.md) 的「发布正式版 APK」一节。
+8. **`tools/` 下的脚本是跨平台的**(Windows 原生 Git Bash / WSL2 / Linux)。
    写新脚本或改现有脚本时:
    - 不要直接调 `timeout` / `mktemp` / `adb` / `python3`,用 `_common.sh` 导出的
      `run_timeout` / `mktmp` / `$ADB` / `$PY`;

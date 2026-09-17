@@ -74,6 +74,36 @@ bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
 **Android 11+ 上 shell 读不了 `/sdcard/Android/data/`**,改用
 `adb exec-out run-as <pkg> cat files/ui-dump.png`。
 
+### `gen-keystore.sh` — 生成 release 签名密钥(一次性)
+
+```bash
+bash tools/gen-keystore.sh          # 已存在则拒绝
+bash tools/gen-keystore.sh --force  # ⚠️ 覆盖重建 = 换签名,老用户升不了级
+```
+
+产出 `tools/keystore/release.jks` + 仓库根 `keystore.properties`(都已 gitignore)。
+
+**为什么需要**:AGP 默认产出的 `app-release-unsigned.apk` **装不上设备**),
+要发正式版 APK 就得有 release 密钥。两个文件**必须立刻备份** ——
+丢 = 已装机应用永远无法升级,泄露 = 别人能以你的名义发版。
+
+没有密钥时工程也能构建(只是产出 unsigned 包),
+因为 `app/build.gradle.kts` 是「找到 `keystore.properties` 才配 `signingConfig`」。
+
+### `release-apk.sh` — 构建正式版 APK 并挂到 Release
+
+```bash
+bash tools/release-apk.sh <version>              # 构建,产物落 dist/
+bash tools/release-apk.sh <version> --upload     # 顺便上传到 GitHub Release
+bash tools/release-apk.sh <version> --with-debug # 额外附上 debug 包(带自截图钩子)
+```
+
+关键点:**它不用当前工作区构建**,而是在临时 git worktree 里 checkout 那个 tag ——
+Release 附件必须能从 tag 复现。逐个校验已签名 / `versionName` / `versionCode` /
+不含 debug 钩子,不过关就不上传。
+
+> ⚠️ release 包与 debug 包签名不同,同一台设备上换装要先 `adb uninstall`。
+
 ### `tag-release.sh` — 打发布 tag(tag 名 = version.properties 的 version)
 
 ```bash

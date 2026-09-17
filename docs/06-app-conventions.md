@@ -107,20 +107,71 @@ version=a.b.c 里有非数字段: a
 ### 改版本的流程
 
 ```bash
-# 1. 只改唯一来源
-$EDITOR version.properties
+# 1. 涨版本号(只改唯一来源)
+bash tools/tag-release.sh --bump patch    # 或 minor / major
 
-# 2. 构建 + 校验
-#    verify-all 会把 APK 里的 versionName 和 version.properties 对一遍,
+# 2. 提交 + 推送
+#    构建自检会把 APK 里的 versionName 和 version.properties 对一遍,
 #    不一致就报错 —— 把「唯一来源」变成可执行约束,而不是只写在文档里
-bash tools/verify-all.sh
+git commit -am "chore(release): 0.0.2 —— ..."
+git push
 
-# 3. 打 tag 并推送。tag 名 == version,不加 v 前缀
+# 3. 打 tag 并推送。tag 名 == version(不带 v 前缀),由脚本强制校验
 #    这样任何时刻 `git checkout <tag>` 构出来的 APK 版本号都等于 tag 名
-bash tools/tag-release.sh 0.0.2
+bash tools/tag-release.sh
 ```
 
-第一个版本是 **`0.0.1`**(已有 `git tag 0.0.1`)。`0.x` 表示对外行为还可能变。
+第一个版本是 **`0.0.1`**(`git tag 0.0.1`)。`0.x` 表示对外行为还可能变。
+
+### 发布正式版 APK(可选)
+
+GitHub Release 默认只有源码 zip。要挂**可安装的 APK** 得先配好签名 ——
+AGP 产出的 `app-release-unsigned.apk` **装不上设备**(Android 拒绝未签名包)。
+
+**一次性准备**(每台机器/每个仓库一次):
+
+```bash
+bash tools/gen-keystore.sh
+```
+
+它生成两个文件,**都已 gitignore**:
+
+| 文件 | 内容 |
+|---|---|
+| `tools/keystore/release.jks` | 密钥库 |
+| `keystore.properties` | 密码与别名 |
+
+> ⚠️ **这两个文件必须立刻备份。** 丢了 → 已装机的应用永远无法升级
+> (Android 用签名判定「是不是同一个应用」,只能卸载重装,数据全丢)。
+> 泄露了 → 别人能以你的名义发版。
+>
+> 工程里的 `app/build.gradle.kts` 从 `rootDir` 往上找 `keystore.properties` ——
+> **找不到就不配 `signingConfig`**,`assembleRelease` 照样能跑(产出 unsigned 包),
+> 所以别人 clone 下来不会因为缺密钥而构建失败。
+
+**发版时顺带出包**:
+
+```bash
+bash tools/release-apk.sh 0.0.2 --upload
+```
+
+它会:
+
+1. 校验 tag 存在、且 **tag 里那份 `version.properties` 就是这个版本**
+2. 在**临时 git worktree 里 checkout 那个 tag** 再构建 —— 不用当前工作区,
+   保证 Release 附件能从 tag 复现(工作区可能带着未提交改动或领先 tag 的提交)
+3. 对 `apps/` 下每个工程跑 `assembleRelease`
+4. 逐个校验:已签名、`versionName` == version、`versionCode` == 推导值、
+   **且不含 debug 自截图钩子**
+5. 产物拷到 `dist/<AppName>-<version>.apk`(`dist/` 已 gitignore)
+6. `--upload` 时传给对应的 GitHub Release
+
+`--with-debug` 会额外附上带自截图钩子的 debug 包(真机验收时有用)。
+
+> ⚠️ **装机坑**:release 包用你的密钥签名,debug 包用 `debug.keystore`,**两者签名不同**。
+> 同一台设备上从 debug 换装 release 会报
+> `INSTALL_FAILED_UPDATE_INCOMPATIBLE`,必须先 `adb uninstall <applicationId>`。
+> 全新设备没这个问题。
 
 ### 怎么验证版本号真的走的是这一个来源
 
