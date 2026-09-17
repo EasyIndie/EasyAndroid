@@ -107,7 +107,14 @@ android {
                 val propsDir = File(keystoreProps.getProperty("__file")).parentFile
                 storeFile = if (isAbsolutePath(rawStore)) File(rawStore) else File(propsDir, rawStore)
                 storePassword = keystoreProps.getProperty("storePassword")
-                keyAlias = keystoreProps.getProperty("keyAlias")
+                // 每个应用用哪个别名:优先 alias.<工程名>,回落到 keyAlias。
+                // 「一个密钥库文件 + 每应用一把密钥」靠这两行,不用改构建脚本。
+                // 为什么要分开:同一签名下的应用可互信(能取得对方 signature 级权限
+                // 保护的组件、共享 sharedUserId),共一把 = 共一个信任域。
+                // ⚠️ 已发布过的应用不要改别名 —— 等于换签名,老用户升不了级。
+                // 给新应用加别名: bash tools/gen-keystore.sh --add-alias <AppName>
+                keyAlias = keystoreProps.getProperty("alias." + rootProject.name)
+                    ?: keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")
             }
         }

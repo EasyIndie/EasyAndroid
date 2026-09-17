@@ -201,6 +201,50 @@ CI 侧的行为要点:
   `app/build.gradle.kts` 从 `rootDir` 往上找就能找到。
 - 只在 job 内存在,跑完随 runner 一起销毁。
 
+#### 多个应用:共用一把,还是各用一把
+
+**推荐:一个密钥库文件,每个应用一个别名。**
+
+同一个签名下的应用之间是**可互信**的 —— 能访问对方 `protectionLevel="signature"`
+保护的组件、能共享 `sharedUserId` 进程。所以共一把密钥 = 共一个信任域:
+
+| | 共用一把(所有应用) | 各用一把(同一 .jks 里多个别名) |
+|---|---|---|
+| 备份 | 一个文件 | **同样一个文件** |
+| 隔离性 | 无 —— 任一把泄露/被替换,全部受影响 | 每把独立,影响面限于单个应用 |
+| 轮换密钥 | 得**所有应用一起换**,每个都要用户卸载重装 | 可以单个换 |
+| 以后单独转交 / 上架某个应用 | 很难看 | 干净 |
+
+代价几乎为零 —— 因为密钥都在**同一个 `.jks` 文件**里,只多一个别名。
+
+```bash
+# 新建应用后,给它一把专用密钥(密钥库文件不变)
+bash tools/gen-keystore.sh --add-alias MyPlayer
+```
+
+各工程的 `app/build.gradle.kts` 已经有了取别名的逻辑,不用改:
+
+```kotlin
+keyAlias = keystoreProps.getProperty("alias." + rootProject.name)  // 优先:按工程名
+    ?: keystoreProps.getProperty("keyAlias")                        // 回落到默认
+```
+
+实测两个应用签出来确实是两把:
+
+```
+DualDemo   eb3bfaf6...   DN=CN=EasyAndroid Release    ← 默认别名 release,未改动
+MyPlayer   e0a85a85...   DN=CN=MyPlayer Release       ← alias.MyPlayer
+```
+
+> ⚠️ **已经发布过的应用不要改别名。** 那等于换签名,老用户升不了级。
+> 所以引入这套时:新应用用 `--add-alias` 拿自己的,**老应用继续用默认那把**。
+> 实测 DualDemo 改完配置后 `--verify-against` 已发布的 `0.2.0` 仍然是 ✅。
+
+> 💡 一个内幕:**PKCS12 密钥库会把别名转成小写。** 传 `-alias MyPlayer` 进去,
+> `keytool -list` 显示的是 `myplayer`。Java 查 PKCS12 时大小写不敏感,所以用
+> 哪个写法都能签;但配置里写 `MyPlayer`、列表里显示 `myplayer` 看着像对不上,
+> 而且换成 JKS 就会真找不到。所以 `--add-alias` 会**回读实际别名**再写进配置。
+
 #### 核对:本机这把是不是线上发布那把
 
 **这是最容易搞错的一步。** `keytool` 输出大写带冒号(`EB:3B:FA:...`),

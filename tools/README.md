@@ -84,8 +84,9 @@ bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
 ```bash
 bash tools/gen-keystore.sh                       # 首次生成(已存在则拒绝)
 bash tools/gen-keystore.sh --status              # 路径 / 别名 / 指纹 / 有效期(不打印密码)
+bash tools/gen-keystore.sh --add-alias <AppName> # 给单个应用加一把专用密钥(推荐)
 bash tools/gen-keystore.sh --export [文件]       # 导出单个自包含凭据包 → 存密码管理器 / CI Secret
-bash tools/gen-keystore.sh --import <文件>       # 换机器 / 灾后恢复(会核对指纹)
+bash tools/gen-keystore.sh --import <文件>       # 换机器 / 灾后恢复(先验后写,会核对指纹)
 bash tools/gen-keystore.sh --verify-against <apk># 本机密钥与某个已发布 APK 是不是同一把
 bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签名,老用户升不了级
 ```
@@ -93,7 +94,12 @@ bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签�
 产出 `tools/keystore/release.jks` + 仓库根 `keystore.properties`(都已 gitignore)。
 密码默认随机 28 位,只落进 properties,不打印到控制台。
 
-**为什么需要**:AGP 默认产出的 `app-release-unsigned.apk` **装不上设备**,
+**多应用:同一个 `.jks` 里每个应用一个别名**,而不是所有应用共用一把 ——
+同签名下的应用可互信(能取得对方 `signature` 级权限保护的组件),
+而分开的代价只是多一个别名(仍然只备份一个文件)。
+已发布过的应用不要改别名(等于换签名)。
+
+**为什么需要密钥**:AGP 默认产出的 `app-release-unsigned.apk` **装不上设备**,
 要发正式版 APK 就得有 release 密钥。它等同私钥 ——
 丢 = 已装机应用永远无法升级,泄露 = 别人能以你的名义发版。
 

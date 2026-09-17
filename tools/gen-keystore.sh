@@ -11,6 +11,23 @@
 #   · 换了 → 同上,新包装不上,报 INSTALL_FAILED_UPDATE_INCOMPATIBLE
 #   · 泄露 → 别人能以你的名义发版
 #
+# ── 多个应用:共用还是各用一把 ──────────────────────────────────
+# **一个密钥库文件,每个应用一个别名** —— 推荐这个做法。
+#
+# 同一个签名下的应用之间是**可互信**的:能访问对方 `protectionLevel="signature"` 的
+# 组件、能共享 sharedUserId 进程。所以共一把密钥 = 共一个信任域:
+#   · 任何一把的口令泄露、被替换,整个信任域都受影响
+#   · 想轮换密钥就得**所有共用它的应用一起换**,每个都要用户卸载重装
+#   · 以后要单独转交 / 上架某个应用时会很难看
+#
+# 而分开的代价几乎为零 —— 都在**同一个 .jks 文件**里,只多一个别名:
+#   · 仍然只需备份一个文件
+#   · 每把可以独立轮换
+#   · 泄露的影响面只限于那一个应用
+#
+# ⚠️ **已经发布过的应用不要改别名** —— 那等于换签名,老用户升不了级。
+#    新加的应用用 --add-alias 拿自己的;老应用继续用默认的 keyAlias。
+#
 # 所以它等同私钥:不入库、不贴聊天、不进 issue。
 #
 # ── 凭据怎么配 ──────────────────────────────────────────────────────
@@ -26,6 +43,7 @@
 # ── 用法 ────────────────────────────────────────────────────────────
 #   bash tools/gen-keystore.sh                    # 首次生成(已存在则拒绝)
 #   bash tools/gen-keystore.sh --status           # 看当前配置:路径 / 别名 / 指纹 / 有效期
+#   bash tools/gen-keystore.sh --add-alias <应用名>    # 给单个应用加一把专用密钥(推荐)
 #   bash tools/gen-keystore.sh --verify-against <apk>  # 确认本机密钥和某个已发布 APK 是同一把
 #   bash tools/gen-keystore.sh --export [文件]    # 导出自包含的 base64 凭据包(备份/搬运/喂 CI)
 #   bash tools/gen-keystore.sh --import <文件>    # 从凭据包还原(换机器 / 灾后恢复)
@@ -83,9 +101,31 @@ fingerprint(){ fp_of "$KS" "$(prop_of storePassword)"; }
 
 show_certs(){
   local pw; pw="$(prop_of storePassword)"
-  kt -list -v -keystore "$KS" -storepass "$pw" -alias "$ALIAS" 2>/dev/null \
+  kt -list -v -keystore "$KS" -storepass "$pw" -alias "$(prop_of keyAlias)" 2>/dev/null \
     | grep -E '^(Alias name|Owner|Valid from|Signature algorithm name)' \
     | sed 's/^/  /'
+}
+
+# 密钥库里所有别名
+list_aliases(){
+  kt -list -keystore "$KS" -storepass "$(prop_of storePassword)" 2>/dev/null \
+    | sed -n 's/^\([^,]*\), .*PrivateKeyEntry.*/\1/p'
+}
+
+list_app_aliases(){ sed -n 's/^alias\.\([^=]*\)=.*/\1/p' "$PROPS" 2>/dev/null | tr -d '\r'; }
+alias_of_app(){ sed -n "s/^alias\.$1[[:space:]]*=[[:space:]]*\(.*\)$/\1/p" "$PROPS" 2>/dev/null | tr -d '\r' | head -1; }
+
+# 大小写不敏感地找别名,返回密钥库里**实际**的名字。
+# ⚠️ PKCS12 会把别名转成小写:传 -alias MyPlayer 进去,keytool -list 显示的是 myplayer。
+#    Java 查 PKCS12 时大小写不敏感,所以用 MyPlayer 也能签;但一旦换成 JKS 就会找不到,
+#    而且配置里写 MyPlayer、列表里显示 myplayer 看起来像对不上。所以回读实际值再写配置。
+find_alias_ci(){
+  local want; want="$(printf '%s' "$1" | tr 'A-Z' 'a-z')"
+  local a
+  for a in $(list_aliases); do
+    [ "$(printf '%s' "$a" | tr 'A-Z' 'a-z')" = "$want" ] && { printf '%s' "$a"; return 0; }
+  done
+  return 1
 }
 
 cmd_status(){
@@ -104,9 +144,30 @@ cmd_status(){
       echo "    ⚠️ 权限显示 $ks_mode —— 这类挂载点(drvfs / Windows 盘)不支持 chmod,"
       echo "       实际权限由 Windows ACL 决定。请确认这个目录**不在共享/云同步盘**里。" ;;
   esac
-  echo "  配置    $PROPS  (storeFile=$(prop_of storeFile), keyAlias=$(prop_of keyAlias))"
+  echo "  配置    $PROPS  (storeFile=$(prop_of storeFile))"
+
+  # 别名:一个密钥库可放多把密钥。共用一个别名 = 共一个信任域,见文件头说明。
+  local default_alias pw a
+  default_alias="$(prop_of keyAlias)"; pw="$(prop_of storePassword)"
   echo
-  echo "  证书"
+  echo "  别名"
+  for a in $(list_aliases); do
+    local tag=""
+    [ "$a" = "$default_alias" ] && tag="  ← keyAlias 默认(未单独配置的应用都用它)"
+    printf '    %-18s%s\n' "$a" "$tag"
+    printf '    %-18s%s\n' "" "$(fp_of "$KS" "$pw" "$a")"
+  done
+  local apps; apps="$(list_app_aliases)"
+  echo
+  if [ -n "$apps" ]; then
+    echo "  按应用指定"
+    for a in $apps; do printf '    %-18s → %s\n' "$a" "$(alias_of_app "$a")"; done
+  else
+    echo "  ⚠️ 没有 alias.<应用> 配置 —— apps/ 下所有工程都用默认那一把(共一个密钥)"
+    echo "     想给新应用一把专用密钥: bash tools/gen-keystore.sh --add-alias <AppName>"
+  fi
+  echo
+  echo "  证书(默认别名 $default_alias)"
   show_certs
   echo
   echo "  SHA-256 指纹(两者是同一个值的不同写法)"
@@ -165,6 +226,51 @@ cmd_verify(){
     echo "     bash tools/gen-keystore.sh --import <文件>" >&2
     return 1
   fi
+}
+
+# 给单个应用加一把专用密钥(同一个密钥库文件,新别名)。
+# 已发布过的应用千万别这么做 —— 换别名 = 换签名 = 老用户升不了级。
+cmd_add_alias(){
+  local name="${1:-}"
+  [ -n "$name" ] || die "用法: bash tools/gen-keystore.sh --add-alias <AppName>"
+  case "$name" in *[!A-Za-z0-9_.-]*) die "应用名只能含字母数字 . _ - : $name" ;; esac
+  have_creds || die "本机还没配置凭据,先跑 bash tools/gen-keystore.sh"
+
+  local pw ksfile; pw="$(prop_of storePassword)"; ksfile="$(prop_of storeFile)"
+  case "$ksfile" in
+    /*|[A-Za-z]:[\\/]*) ;;
+    *) ksfile="$_REPO_DIR/$ksfile" ;;
+  esac
+  [ -f "$ksfile" ] || die "找不到密钥库: $ksfile"
+
+  local existing; existing="$(find_alias_ci "$name" || true)"
+  if [ -n "$existing" ]; then
+    echo "==> 别名已存在($existing),只补映射"   # 幂等
+  else
+    echo "==> 在 $ksfile 里新增别名 $name(密钥库文件不变)"
+    kt -genkeypair -keystore "$ksfile" -alias "$name" \
+      -keyalg RSA -keysize 4096 -validity 10950 \
+      -storepass "$pw" -keypass "$pw" \
+      -dname "CN=$name Release, OU=dev, O=EasyAndroid, L=-, ST=-, C=CN" \
+      >/dev/null 2>&1 || die "keytool 新增别名失败"
+    existing="$(find_alias_ci "$name" || true)"
+    [ -n "$existing" ] || die "新增后回读不到别名,keytool 行为异常"
+  fi
+  [ "$existing" != "$name" ] && echo "     (密钥库里实际存为 '$existing' —— PKCS12 会把别名转小写)"
+
+  if [ -z "$(alias_of_app "$name")" ]; then
+    {
+      echo
+      echo "# 应用 $name 用自己的一把密钥(同一个 .jks 里的独立别名)。"
+      echo "# 没有 alias.<应用> 这一行就回落到上面的 keyAlias。见 docs/06「签名凭据」。"
+      echo "# ⚠️ 已经发布过的应用不要改别名 —— 等于换签名,老用户升不了级。"
+      echo "alias.$name=$existing"
+    } >> "$PROPS"
+    echo "==> 已写入 $PROPS: alias.$name=$existing"
+  fi
+  echo "      SHA-256 $(fp_of "$ksfile" "$pw" "$existing")"
+  echo
+  echo "  下一次 bash tools/release-apk.sh <version> 就会用它签名。"
 }
 
 cmd_export(){
@@ -344,6 +450,7 @@ FORCE=0
 case "${1:-}" in
   ""|--force)  [ "${1:-}" = "--force" ] && FORCE=1; cmd_init ;;
   --status)    cmd_status ;;
+  --add-alias) shift; cmd_add_alias "${1:-}" ;;
   --verify-against) shift; cmd_verify "${1:-}" ;;
   --export)    cmd_export "${2:-}" ;;
   --import)    shift; [ "${1:-}" = "--force" ] && { FORCE=1; shift; }; cmd_import "${1:-}" ;;
