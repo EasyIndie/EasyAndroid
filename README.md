@@ -35,6 +35,25 @@ Android 开发实践沉淀。
 >
 > 完整约定见 [`docs/06-app-conventions.md`](docs/06-app-conventions.md)。
 
+### 开发循环
+
+从「改一行代码」到「发布」的完整路径。每层都比上一层快,所以**先用快的**:
+
+| 层 | 命令 | 耗时 | 能验什么 |
+|---|---|---|---|
+| 1. JVM 截图测试 | `cd apps/<Name> && ./gradlew testDebugUnitTest` | ~20 s | 布局/颜色/文案。不碰设备 |
+| 2. Pico 4 | `bash tools/ui-dump.sh <pkg> --launch` | ~3 s 装 + 截图 | 真机渲染、交互、D-pad 焦点 |
+| 3. TCL 电视 | `bash tools/tv-install.sh <apk>` | **60~80 s** | 里程碑验收(走 TGuard 图形安装器) |
+
+约束(不看会做错事,细节在 [`AGENTS.md`](AGENTS.md) 和 [`docs/`](docs/README.md)):
+
+- **开发/验收全程用 debug 包**,只有发版才出正式包 —— 自截图钩子只在 debug 里。
+- **Pico 输入必须定向**到应用自己的 display(`tools/pico-panel.sh`),且它十几秒不戴
+  就休眠,先 `awake`。电视的 `input tap` 基本失效,用 D-pad 按键。
+- **优先用文本验收**(`uiautomator dump` 读 UI 树),别截图:电视截图 md5 因 UI 自走
+  而不可靠,Pico 截图被 `FLAG_SECURE` 挡。
+- **提交信息写 `type(scope): 描述`** —— 版本号从它推导(见下)。
+
 ### 发版
 
 **一条命令。** 版本号从提交信息机械推导,CHANGELOG 自动生成,CI 接手出包:

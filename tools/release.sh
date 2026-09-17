@@ -492,14 +492,37 @@ echo "════════ 写文件 ════════"
 vtmp="$(mktmp)" || die "建不了临时文件"
 sed "s|^version[[:space:]]*=.*|version=$NEWVER|" "$VF" > "$vtmp" || die "改 version.properties 失败"
 
-# 版本历史:插在 `# 版本历史` 那一行之后,最新的在最上面
+# 版本历史:插在**已有历史条目的末尾**(列表本身是旧→新,新的接在后面)
 fixed="$(mktmp)" || die "建不了临时文件"
-awk -v histfile="$TMPD/history.txt" '
-  { print }
-  /^#[[:space:]]*版本历史[[:space:]]*$/ {
-    while ((getline line < histfile) > 0) print line
-  }
-' "$vtmp" > "$fixed" && mv "$fixed" "$vtmp" || die "插入版本历史失败"
+"$PY" - "$(pyfile "$vtmp")" "$(pyfile "$TMPD/history.txt")" "$(pyfile "$fixed")" <<'PYEOF'
+import re, sys
+vf, hist, out = sys.argv[1:4]
+lines = open(vf, encoding='utf-8').read().split('
+')
+new = open(hist, encoding='utf-8').read().rstrip('
+').split('
+')
+
+# ⚠️ 插在**已有条目的后面**,不是紧跟在 `# 版本历史` 之后。
+#    这个列表是**旧 → 新**排列的(0.0.1 在最上面)。插到最前面会让它变成
+#    0.4.0 / 0.0.1 / 0.1.0 …,读起来像列表重新开始了 —— 踩过。
+start = None
+for i, l in enumerate(lines):
+    if re.match(r'^#\s*版本历史\s*$', l):
+        start = i
+        break
+if start is None:
+    # 没有这一节就退化成插在 version= 之前,不报错
+    j = next((i for i, l in enumerate(lines) if l.startswith('version=')), len(lines))
+else:
+    # 历史条目 = `#` 后跟 3 个以上空格(含续行),遇到空行或普通注释就结束
+    j = start + 1
+    while j < len(lines) and re.match(r'^#\s{3,}\S', lines[j]):
+        j += 1
+lines[j:j] = new
+open(out, 'w', encoding='utf-8').write('\n'.join(lines))
+PYEOF
+mv "$fixed" "$vtmp" || die "插入版本历史失败"
 mv "$vtmp" "$VF"
 ok "version.properties: version=$NEWVER + 版本历史"
 
