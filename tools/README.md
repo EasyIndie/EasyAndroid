@@ -85,6 +85,8 @@ bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
 bash tools/gen-keystore.sh                       # 首次生成(已存在则拒绝)
 bash tools/gen-keystore.sh --status              # 路径 / 别名 / 指纹 / 有效期(不打印密码)
 bash tools/gen-keystore.sh --add-alias <AppName> # 给单个应用加一把专用密钥(推荐)
+bash tools/gen-keystore.sh --manifest            # 对仓里 signing-manifest.txt 自检指纹
+bash tools/gen-keystore.sh --manifest --write    # 更新那个文件(加了别名之后跑)
 bash tools/gen-keystore.sh --export [文件]       # 导出单个自包含凭据包 → 存密码管理器 / CI Secret
 bash tools/gen-keystore.sh --push-secret         # 直接把凭据包写进仓库的 Actions secret
 bash tools/gen-keystore.sh --import <文件>       # 换机器 / 灾后恢复(先验后写,会核对指纹)
@@ -108,8 +110,11 @@ bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签�
 因为 `app/build.gradle.kts` 是「找到 `keystore.properties` 才配 `signingConfig`」。
 
 > ⚠️ 核对指纹时别用眼睛比:`keytool` 是大写带冒号,`apksigner` 是小写无冒号。
-> 用 `--verify-against`,它做归一化后机械比对。
-> 完整说明见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md#签名凭据获取配置核对)。
+> 用 `--verify-against` 或 `--manifest`,它们做归一化后机械比对。
+>
+> **凭据本体不能入库,但 `signing-manifest.txt`(只有指纹)可以,而且应该** ——
+> `release-apk.sh` 会查它:签名不在清单里就直接拒绍发布。
+> 完整说明见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md#签名凭据存哪儿--什么能入库什么不能)。
 
 ### `release-apk.sh` — 构建正式版 APK 并挂到 Release
 

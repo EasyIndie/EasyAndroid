@@ -193,10 +193,34 @@ for apk in "${BUILT[@]}"; do
   # 4.1 签名
   if "$APKSIGNER" verify --print-certs "$apk" >"$TMP/release-verify.log" 2>&1; then
     who="$("$APKSIGNER" verify --print-certs "$apk" 2>/dev/null | sed -n 's/^Signer #1 certificate DN: //p' | head -1)"
+    apk_fp="$("$APKSIGNER" verify --print-certs "$apk" 2>/dev/null \
+              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-Z' 'a-z')"
     echo "  ✅ $n 已签名  ($who)"
   else
     echo "  ❌ $n 签名校验失败" >&2; sed 's/^/     /' "$TMP/release-verify.log" >&2; fail=1; continue
   fi
+
+  # 4.1b 签名必须是仓库认得的那把
+  # signing-manifest.txt 记着本仓库发布该用哪些密钥(只有指纹,不是秘密)。
+  # 这是防「用错密钥发版」的最后一道 —— 陌生密钥发的包,老用户装不上,
+  # 新用户装的是一个“另一个应用”,以后同样升不了。
+  if [ -f "$REPO/signing-manifest.txt" ]; then
+    if grep -qF "$apk_fp" "$REPO/signing-manifest.txt"; then
+      echo "  ✅ $n 的签名在 signing-manifest.txt 里记录过"
+    else
+      echo "  ❌ $n 的签名 **不在** signing-manifest.txt 里 —— 陌生密钥,不能发!" >&2
+      echo "       该 APK ${apk_fp:0:32}..." >&2
+      echo "       仓库认得:" >&2
+      grep -E '^alias\.' "$REPO/signing-manifest.txt" | sed 's/^/         /' >&2
+      echo "       先搞清楚哪把才是对的(见 docs/06「签名凭据」)" >&2
+      fail=1
+    fi
+  else
+    echo "  ⚠️  没有 signing-manifest.txt —— 跳过「签名是不是仓库认得的」校验"
+    echo "     生成一份以后就能挡住陌生密钥: bash tools/gen-keystore.sh --manifest --write"
+  fi
+
+
   # 4.2 版本号
   badging="$("$AAPT2" dump badging "$apk" 2>/dev/null)"
   got_ver="$(printf '%s' "$badging" | head -1 | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"

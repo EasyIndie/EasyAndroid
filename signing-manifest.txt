@@ -1,0 +1,20 @@
+# 签名期望值 —— 这个文件**可以**入库,和 keystore.properties 不是一回事。
+#
+# 里面只有别名和证书 SHA-256 指纹。指纹是公钥的哈希,**不是秘密**:
+# 公开它,别人既反推不出私钥,也签不出能被安装的包。
+#
+# 它的用途是**自检** —— 任何机器拿到一份凭据后,先跑:
+#     bash tools/gen-keystore.sh --manifest
+# 就能知道「手里这把是不是本仓库发布用的那把」,
+# 而不是等发完版才从用户的 INSTALL_FAILED_UPDATE_INCOMPATIBLE 里发现。
+#
+# ⚠️ 凭据本体(release.jks + 密码)绝对不能入库,存密码管理器。见 docs/06。
+#
+# 更新:bash tools/gen-keystore.sh --manifest --write
+# 自检:bash tools/gen-keystore.sh --manifest
+#
+# 生成时间:2026-09-17 11:32:15 +0800
+# 指纹格式:小写无冒号(与 apksigner 一致)
+
+default_alias=release
+alias.release=eb3bfaf6847264a0e696996fb02a91fa7e034ec3c42ef9a85c68168d4d573dbd

@@ -20,8 +20,12 @@
    见 [docs/06](docs/06-app-conventions.md) 的「版本号」一节。
 7. **签名密钥绝对不能入库** —— `tools/keystore/`、`keystore.properties`、`*.jks` 已在
    `.gitignore`。往仓库里放任何密钥文件前先确认 `.gitignore` 拦得住。
-   要发带 APK 的 Release(带签名配置、tag 构建、不装 unsigned 包)见
-   [docs/06](docs/06-app-conventions.md) 的「发布正式版 APK」一节。
+   ⚠️ **`gen-keystore.sh --export` 出来的凭据包文件名不在黑名单里,得自己注意** ——
+   它是 base64(不是加密),解出来就是密钥库 + 明文密码。
+   ✅ 但**指纹可以入库**:仓库根的 `signing-manifest.txt` 是故意的 —— 它不是秘密,
+   而且任何机器靠它能自检「手里这把是不是发布用的那把」;发版时会查它。
+   要发带 APK 的 Release 见 [docs/06](docs/06-app-conventions.md) 的「发布正式版 APK」一节,
+   存哪儿 / 什么能入库见「签名凭据:存哪儿」。
 8. **开发/验收全程用 debug 包,只有发版才出正式包 + 加签。**
    `tools/verify-all.sh` / `tv-install.sh` / `ui-dump.sh` 这条循环里装的、验的都是
    debug 包(它带自截图钩子,`screencap` 拿不到画面的设备靠它才能验收)。

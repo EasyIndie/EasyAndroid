@@ -44,6 +44,8 @@
 #   bash tools/gen-keystore.sh                    # 首次生成(已存在则拒绝)
 #   bash tools/gen-keystore.sh --status           # 看当前配置:路径 / 别名 / 指纹 / 有效期
 #   bash tools/gen-keystore.sh --add-alias <应用名>    # 给单个应用加一把专用密钥(推荐)
+#   bash tools/gen-keystore.sh --manifest            # 对仓里的 signing-manifest.txt 自检
+#   bash tools/gen-keystore.sh --manifest --write    # 更新那个文件(加了别名之后跑)
 #   bash tools/gen-keystore.sh --verify-against <apk>  # 确认本机密钥和某个已发布 APK 是同一把
 #   bash tools/gen-keystore.sh --export [文件]    # 导出自包含的 base64 凭据包(备份/搬运/喂 CI)
 #   bash tools/gen-keystore.sh --push-secret [owner/repo]  # 把凭据包直接写进仓库的 Actions secret
@@ -65,6 +67,8 @@ KS_DIR="$_REPO_DIR/tools/keystore"
 KS="$KS_DIR/release.jks"
 PROPS="$_REPO_DIR/keystore.properties"
 ALIAS="release"
+# 可以入库的「期望值」文件 —— 只有指纹,没有秘密(见 cmd_manifest 的说明)
+MANIFEST="$_REPO_DIR/signing-manifest.txt"
 
 die(){ echo "!! $*" >&2; exit 1; }
 have_creds(){ [ -f "$KS" ] && [ -f "$PROPS" ]; }
@@ -192,9 +196,12 @@ except Exception as e:
 " 2>/dev/null
   fi
   echo
-  echo "  ⚠️ 本机的必须是线上发布用的**同一把**。核对方法:拿任意一个 Release 附件比指纹"
-  echo "       bash tools/gen-keystore.sh --verify-against <某个已发布的 apk>"
-  echo "     返回 ✅ 才是同一把。见 docs/06「签名凭据」"
+  echo
+  cmd_manifest
+  echo
+  echo "  ⚠️ 本机的必须是线上发布用的**同一把**。两种核对方式:"
+  echo "       bash tools/gen-keystore.sh --manifest              # 对仓里记录的期望值"
+  echo "       bash tools/gen-keystore.sh --verify-against <apk>  # 对某个已发布的 APK"
 }
 
 # 机械比对:本机密钥 vs 某个已发布的 APK 的签名。
@@ -351,6 +358,80 @@ cmd_add_alias(){
   echo "  下一次 bash tools/release-apk.sh <version> 就会用它签名。"
 }
 
+# 「签名期望值」—— 只有一个用途:回答「我手里这把是不是本仓库发布用的那把」。
+#
+# 为什么这个文件**可以**入库:
+#   里面只有别名和证书 SHA-256 指纹。指纹是公钥的哈希,**不是秘密** ——
+#   公开它,别人既反推不出私钥,也签不出能被安装的包。
+#   而它的价值恰恰在于公开:任何机器(换机器、装 CI、灾后恢复)拿到一份凭据后,
+#   能立刻核对是不是同一把,而不是等发完版才发现老用户装不上。
+#
+# 与之相对,凭据本体(release.jks + 密码)绝对不能入库 —— 见文件头说明。
+#
+# 指纹统一写成 **小写无冒号**(与 apksigner 的输出格式一致),
+# 免得又踩「keytool 大写带冒号 vs apksigner 小写」那个归一化坑。
+cmd_manifest(){
+  have_creds || die "本机还没配置凭据,先跑 bash tools/gen-keystore.sh"
+  local pw; pw="$(prop_of storePassword)"
+
+  if [ "${1:-}" = "--write" ]; then
+    {
+      echo "# 签名期望值 —— 这个文件**可以**入库,和 keystore.properties 不是一回事。"
+      echo "#"
+      echo "# 里面只有别名和证书 SHA-256 指纹。指纹是公钥的哈希,**不是秘密**:"
+      echo "# 公开它,别人既反推不出私钥,也签不出能被安装的包。"
+      echo "#"
+      echo "# 它的用途是**自检** —— 任何机器拿到一份凭据后,先跑:"
+      echo "#     bash tools/gen-keystore.sh --manifest"
+      echo "# 就能知道「手里这把是不是本仓库发布用的那把」,"
+      echo "# 而不是等发完版才从用户的 INSTALL_FAILED_UPDATE_INCOMPATIBLE 里发现。"
+      echo "#"
+      echo "# ⚠️ 凭据本体(release.jks + 密码)绝对不能入库,存密码管理器。见 docs/06。"
+      echo "#"
+      echo "# 更新:bash tools/gen-keystore.sh --manifest --write"
+      echo "# 自检:bash tools/gen-keystore.sh --manifest"
+      echo "#"
+      echo "# 生成时间:$(date '+%Y-%m-%d %H:%M:%S %z')"
+      echo "# 指纹格式:小写无冒号(与 apksigner 一致)"
+      echo
+      echo "default_alias=$(prop_of keyAlias)"
+      local a
+      for a in $(list_aliases); do echo "alias.$a=$(fp_of "$KS" "$pw" "$a")"; done
+      for a in $(list_app_aliases); do echo "app.$a=$(alias_of_app "$a")"; done
+    } > "$MANIFEST"
+    echo "==> 已更新 $MANIFEST"
+    grep -vE '^#|^$' "$MANIFEST" | sed 's/^/     /'
+    return 0
+  fi
+
+  if [ ! -f "$MANIFEST" ]; then
+    echo "  还没有 $MANIFEST —— 用 --manifest --write 生成"
+    return 0
+  fi
+  echo "  ════ 与 $(basename "$MANIFEST") 核对(本机这把是不是发布用的那把)════"
+  local want got al bad=0 n=0
+  while IFS='=' read -r key want; do
+    case "$key" in
+      alias.*)
+        al="${key#alias.}"; n=$((n+1))
+        got="$(fp_of "$KS" "$pw" "$al" 2>/dev/null)"
+        if [ -z "$got" ]; then
+          echo "  ❌ 本机没有别名 '$al'"; bad=1
+        elif [ "$got" = "$want" ]; then
+          echo "  ✅ $al 指纹一致"
+        else
+          echo "  ❌ $al 指纹**不一致** —— 别用它发版!"; bad=1
+          echo "       期望 $want"
+          echo "       本机 $got"
+          echo "       先把正确的凭据导入: bash tools/gen-keystore.sh --import <凭据包>"
+        fi ;;
+    esac
+  done < <(grep -E '^alias\.' "$MANIFEST" 2>/dev/null)
+  [ "$n" -gt 0 ] || { echo "  (文件里没有 alias.* 条目)"; return 0; }
+  [ "$bad" = 0 ] && echo "  ✅ 全部一致" || echo "  ❌ 有别名对不上 —— 见上面提示"
+  return "$bad"
+}
+
 cmd_export(){
   have_creds || die "还没生成凭据,先跑 bash tools/gen-keystore.sh"
   local out="${1:-$_REPO_DIR/dist/signing-bundle.b64}"
@@ -504,6 +585,10 @@ case "${1:-}" in
   ""|--force)  [ "${1:-}" = "--force" ] && FORCE=1; cmd_init ;;
   --status)    cmd_status ;;
   --add-alias) shift; cmd_add_alias "${1:-}" ;;
+  --manifest)  shift
+               MWANT=""
+               [ "${1:-}" = "--write" ] && { MWANT="--write"; shift; }
+               cmd_manifest "$MWANT" ;;
   --push-secret) shift; cmd_push_secret "${1:-}" ;;
   --verify-against) shift; cmd_verify "${1:-}" ;;
   --export)    cmd_export "${2:-}" ;;
