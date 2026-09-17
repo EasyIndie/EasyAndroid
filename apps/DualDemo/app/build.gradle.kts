@@ -27,6 +27,15 @@ fun findUpward(name: String): File? {
     return null
 }
 
+// 判断是不是绝对路径(Unix `/...` 或 Windows `C:\...` / `C:/...`)。
+// ⚠️ 为什么不能直接 File(parent, child):Java 的 File(File, String) 在 child 是
+//    绝对路径时做的是**拼接**而不是替换 ——
+//      File("/a/b", "/x/y") == "/a/b/x/y"
+//    踩过:release-apk.sh 在临时 worktree 里把 storeFile 写成绝对路径后,
+//    AGP 去找 <worktree>/mnt/e/.../release.jks,报 Keystore file not found。
+fun isAbsolutePath(p: String): Boolean =
+    p.startsWith("/") || p.startsWith("\\") || Regex("^[A-Za-z]:[\\\\/]").containsMatchIn(p)
+
 // ─────────────────────────────────────────────────────────────
 // 版本号:唯一来源是仓库根的 version.properties(见 docs/06-app-conventions.md)
 // ─────────────────────────────────────────────────────────────
@@ -91,9 +100,12 @@ android {
     if (keystoreProps != null) {
         signingConfigs {
             create("release") {
-                // storeFile 相对仓库根;__file 是 keystore.properties 的绝对路径
+                // storeFile 默认是相对仓库根的路径,也支持绝对路径
+                // (tools/release-apk.sh 在临时 worktree 里构建时会写成绝对路径;CI 同理)。
+                // 路径拼接的坑见 isAbsolutePath 的注释。
+                val rawStore = keystoreProps.getProperty("storeFile")
                 val propsDir = File(keystoreProps.getProperty("__file")).parentFile
-                storeFile = File(propsDir, keystoreProps.getProperty("storeFile"))
+                storeFile = if (isAbsolutePath(rawStore)) File(rawStore) else File(propsDir, rawStore)
                 storePassword = keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")

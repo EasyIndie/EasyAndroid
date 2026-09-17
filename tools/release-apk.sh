@@ -82,11 +82,23 @@ git -C "$REPO" worktree add --detach "$WT" "$TAG_SHA" >/dev/null 2>&1 \
   || die "创建 worktree 失败: $WT"
 echo "  $WT  (detached @ $(git -C "$REPO" rev-parse --short "$TAG_SHA"))"
 
-# keystore.properties 是被 gitignore 的,worktree 里没有 —— 显式放一份,
-# 并把 storeFile 改写成绝对路径(worktree 到密钥库的相对关系和工作区不同)。
-sed "s|^storeFile=.*|storeFile=$REPO/tools/keystore/release.jks|" \
-  "$REPO/keystore.properties" > "$WT/keystore.properties" \
-  || die "写入 worktree 的 keystore.properties 失败"
+# keystore.properties 是被 gitignore 的,worktree 里没有 —— 拷一份进去。
+#
+# 保留 **相对路径** 而不是改写成绝对路径:因为构建用的 build.gradle.kts 来自 **tag**,
+# 不一定支持绝对 storeFile(早期版本会拼成 <worktree>/mnt/e/... 而找不到密钥)。
+# 拷到 worktree 内的同一相对位置就能通用于任何 tag。代价是密钥会在 .tmp/ 下
+# 有一份副本 —— 那里已 gitignore,且随 worktree 一起删。
+cp "$REPO/keystore.properties" "$WT/keystore.properties" || die "拷贝 keystore.properties 失败"
+mkdir -p "$WT/tools/keystore"
+KS_REL="$(sed -n 's/^storeFile[[:space:]]*=[[:space:]]*//p' "$REPO/keystore.properties" | tr -d '\r' | head -1)"
+[ -n "$KS_REL" ] || die "keystore.properties 里没有 storeFile="
+case "$KS_REL" in
+  /*|[A-Za-z]:[\\/]*) KS_SRC="$KS_REL" ;;   # 本来就是绝对路径,直接读
+  *)                  KS_SRC="$REPO/$KS_REL" ;;
+esac
+[ -f "$KS_SRC" ] || die "找不到密钥库: $KS_SRC"
+cp "$KS_SRC" "$WT/tools/keystore/release.jks" || die "拷贝密钥库失败"
+echo "  已拷入 keystore.properties + $(basename "$KS_REL") (worktree 内,随它一起删)"
 
 # ── 3. 逐个 app 构建 ──────────────────────────────────────────────
 mapfile -t APPS < <(cd "$WT/apps" && ls -d */ 2>/dev/null | tr -d '/')
@@ -186,10 +198,18 @@ for apk in "${BUILT[@]}"; do echo "  $apk"; done
 if [ "$UPLOAD" = 1 ]; then
   step "上传到 GitHub Release $VER"
   [ -n "$GH" ] || die "找不到 gh(GitHub CLI)。装一个,或手动上传上面的文件"
+  REPO_SLUG="$(git -C "$REPO" remote get-url origin | sed 's#.*github.com[:/]##;s#\.git$##')"
   # gh 是原生程序,不加 </dev/null 会吃掉脚本的 stdin(见 docs/05)
-  "$GH" release view "$VER" --repo "$(git -C "$REPO" remote get-url origin | sed 's#.*github.com[:/]##;s#\.git$##')" </dev/null >/dev/null 2>&1 \
+  "$GH" release view "$VER" --repo "$REPO_SLUG" </dev/null >/dev/null 2>&1 \
     || die "GitHub 上没有 $VER 这个 release。先建: gh release create $VER --title ... --notes-file ..."
-  "$GH" release upload "$VER" "${BUILT[@]}" --clobber </dev/null 2>&1 | tail -5 | sed 's/^/  /' \
+
+  # ⚠️ 路径必须过 winpath,不能用 win_of。
+  # Windows 版 gh.exe 从 WSL 里调用时不认 /mnt/e/...,而 win_of 在 WSL 上是
+  # 恒等函数 —— 直接传会报 “no matches found for /mnt/e/.../x.apk”。
+  # winpath 不做平台判断,无条件转成 Windows 路径。
+  declare -a WIN_FILES=()
+  for apk in "${BUILT[@]}"; do WIN_FILES+=("$(winpath "$apk")"); done
+  "$GH" release upload "$VER" "${WIN_FILES[@]}" --clobber </dev/null 2>&1 | tail -5 | sed 's/^/  /' \
     || die "上传失败"
   echo "  ✅ 已上传"
 fi

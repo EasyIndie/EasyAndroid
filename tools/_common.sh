@@ -71,7 +71,7 @@ PICO_IP="${PICO_ADDR%%:*}"
 # Git Bash 会把 `C:\Users\...` 当成一个奇怪的相对路径。
 _tmp_ok(){ [ -n "${1:-}" ] && mkdir -p "$1" 2>/dev/null && [ -w "$1" ]; }
 
-# ⚠️ 下面两个函数的语义是「**按需**转换」,不是无条件转 ——
+# ⚠️ 上面两个函数的语义是「**按需**转换」,不是无条件转 ——
 #    要不要转取决于**消费这个路径的程序**是本机原生还是 Windows 原生:
 #
 #     平台              | $ADB / python 是   | cygpath | 转换行为    | 对不对
@@ -83,11 +83,10 @@ _tmp_ok(){ [ -n "${1:-}" ] && mkdir -p "$1" 2>/dev/null && [ -w "$1" ]; }
 #    WSL 上 $ADB 是 Linux 版 adb,传 `/mnt/e/...` 才对;若在这里用 wslpath
 #    转成 `E:\...` 反而会把所有 pull/push 弄坏。
 #
-#    所以实现的真实判据是「本机有没有 cygpath」≈「我在不在 Windows 原生 shell 里」,
-#    这个巧合目前恒成立。要更严谨的话,应按消费方是不是 `*.exe` 来决定。
-#
-#    唯一会用 Windows 原生程序的 WSL 场景是 pico-usb.sh 里的 $WINADB,
-#    而它只传子命令、不传本机路径,所以没踩到。
+#    ⚠️ 但**不是所有消费方都跟着平台走**。有些程序无论如何都是 Windows 原生
+#    (典型:Windows 版 gh.exe 从 WSL 里调),那种情况必须**无条件转** —— 用下面的
+#    winpath,不要用 win_of。踩过:release-apk.sh 把 /mnt/e/.../x.apk 传给 Windows 版
+#    gh,报 “no matches found for /mnt/e/...”(它根本没看见那个文件)。
 
 # posix_of <路径> —— 把 Windows 路径转成 Git Bash 可用的 POSIX 形式
 posix_of(){
@@ -113,6 +112,21 @@ win_of(){
       else printf '%s' "$p"; fi ;;
     *) printf '%s' "$p" ;;
   esac
+}
+
+# winpath <路径> —— **无条件**转成 Windows 路径,给「无论如何都是 Windows 原生程序」
+# 的消费方用(典型:Windows 版 gh.exe 从 WSL 里调)。
+#
+# 与 win_of 的区别:win_of 是「按需」,只在 Windows 原生 shell 里转 —— 它服务
+# $ADB / $PY,而那两个在 WSL 上就是 Linux 版,POSIX 路径才对。winpath 不做这个判断,
+# 因为消费方不随平台变。WSL 靠 wslpath,Git Bash 靠 cygpath,都没有就原样返回。
+winpath(){
+  local p="$1"
+  if command -v wslpath >/dev/null 2>&1 && [ "${PLATFORM:-}" = wsl ]; then
+    wslpath -w "$p" 2>/dev/null || printf '%s' "$p"
+  elif command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$p" 2>/dev/null || printf '%s' "$p"
+  else printf '%s' "$p"; fi
 }
 
 if _tmp_ok "${EASYANDROID_TMP:-}"; then
@@ -318,7 +332,7 @@ adb_online(){
   "$ADB" devices 2>/dev/null | awk -v d="$1" '$1==d && $2=="device"' | grep -q .
 }
 
-export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of pyfile run_py \
+export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath pyfile run_py \
           re_escape adbx adb_connect_all adb_online bt_tool 2>/dev/null || true
 
 # ── 10. 提示 ────────────────────────────────────────────────────────

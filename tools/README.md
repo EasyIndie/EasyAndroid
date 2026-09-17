@@ -23,11 +23,16 @@
 **Windows 原生 python 的路径** —— Git Bash 的 `/e/foo` 对 Windows python 是
 不存在的路径。把路径传给 python 前过 `pyfile`(在 `_common.sh` 里)。
 
-**`win_of` 是「按需转换」,不是无条件转** —— 要不要转取决于**消费这个路径的程序**:
-Windows 原生 shell 里 `$ADB` 是 `adb.exe`、python 是 Windows python,必须转成 `E:\...`;
-WSL2 / Linux 上两者都是本机原生程序,保持 POSIX 才对。
-所以 `win_of` 在 WSL 上原样返回**不是漏了 `wslpath`,而是这样才对** ——
-真在那儿转成 `E:\...` 会把所有 pull/push 弄坏。详表见 `_common.sh` 里 `win_of` 上方的注释。
+**`win_of` 是「按需转换」,`winpath` 是「无条件转换」** —— 两者服务不同场景:
+
+- **`win_of`**:只在 Windows 原生 shell 里转。它服务 `$ADB` / `$PY`,而那两个在
+  WSL 上就是 Linux 版,**POSIX 路径才对** —— 在 WSL 上原样返回不是漏了 `wslpath`,
+  而是这样才对。同类的还有 `new-app.sh` 写 `sdk.dir`。
+- **`winpath`**:不做平台判断,**无条件**转成 Windows 路径。服务那些「无论如何
+  都是 Windows 原生程序」的消费方,典型是 Windows 版 `gh.exe` 从 WSL 里调。
+  踩过:把 `/mnt/e/.../x.apk` 直接传给 gh 上传,报 `no matches found for /mnt/e/...`。
+
+判断标准就一句话:**消费路径的那个程序,会不会随平台换实现?** 会 → `win_of`;不会 → `winpath`。
 
 ## 脚本
 
