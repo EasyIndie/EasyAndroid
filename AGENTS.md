@@ -27,8 +27,12 @@
    debug 包(它带自截图钩子,`screencap` 拿不到画面的设备靠它才能验收)。
    构建正式包的**唯一**入口是 `tools/release-apk.sh`,它会校验产物
    「非 debuggable / 无 debug 钩子」—— 防止把 debug 包装成正式包发出去。
-   两者签名不同,同一台设备上换装要先 `adb uninstall`。见
-   [docs/06](docs/06-app-conventions.md) 的「开发用 debug,发布才出正式包」一节。
+
+   两者签名不同,同一台设备上换装要先 `adb uninstall`。
+   **在真机上验收过正式包之后,记得把 debug 包装回去** —— 否则下次 `ui-dump.sh`
+   会失败(自截图钩子只在 debug 包里)。这个失败现在能自解释:`ui-dump.sh` 会认出
+   「设备上装的是正式包」并直接给出换装命令,不需要你去猜是不是「没集成钩子」。
+   见 [docs/06](docs/06-app-conventions.md) 的「构建与发布」一节。
 9. **`tools/` 下的脚本是跨平台的**(Windows 原生 Git Bash / WSL2 / Linux)。
    写新脚本或改现有脚本时:
    - 不要直接调 `timeout` / `mktemp` / `adb` / `python3`,用 `_common.sh` 导出的

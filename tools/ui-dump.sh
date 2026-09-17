@@ -50,6 +50,21 @@ is_pico(){
   esac
 }
 
+# 装的包是不是 debuggable —— 决定 run-as / 自截图钩子能不能用。
+# 只在失败路径上调,多一次 adb 调用可以接受。
+is_debuggable(){ A "dumpsys package $PKG" 2>/dev/null | grep -q 'DEBUGGABLE'; }
+pkg_installed(){ A "pm list packages" 2>/dev/null | grep -q "package:$PKG"; }
+
+# 从 applicationId 反查工程目录,好给出**可直接复制**的 debug 包路径。
+# 拿不到就返回非零,调用方退回写 <repo>/apps/<Name>/... 的占位说法。
+app_dir_for(){
+  local pkg="$1" f
+  f="$(grep -rl "applicationId = \"$pkg\"" "$_REPO_DIR/apps" --include='build.gradle.kts' 2>/dev/null | head -1)"
+  [ -n "$f" ] || return 1
+  # <apps>/<Name>/app/build.gradle.kts -> <apps>/<Name>
+  dirname "$(dirname "$f")"
+}
+
 if ! adb_online "$DEV"; then
   echo "设备 $DEV 未连接。先跑: bash tools/devices.sh" >&2
   exit 1
@@ -91,8 +106,25 @@ if [ "$ok" != 1 ]; then
   err="$(A "run-as $PKG cat files/ui-dump.error 2>/dev/null" | head -3)"
   if [ -n "$err" ]; then
     echo "   应用报了: $err" >&2
+  elif ! pkg_installed; then
+    echo "   · $PKG 没装在这台设备上" >&2
+  elif ! is_debuggable; then
+    # 最常见也最容易被误判的一种:设备上装的是正式包。
+    # 自截图钩子在 src/debug/,正式包里压根没有 —— 而且 run-as 也用不了
+    # (它只对 debuggable 应用有效)。直接说透,省得去查“是不是没集成钩子”。
+    echo "   · **设备上装的是正式包**(非 debuggable),而自截图钩子只在 debug 包里" >&2
+    echo "     验收请装 debug 包 —— 开发/验收全程用 debug,只有发版才出正式包。" >&2
+    adbg="$(app_dir_for "$PKG" 2>/dev/null)"
+    if [ -n "$adbg" ] && [ -f "$adbg/app/build/outputs/apk/debug/app-debug.apk" ]; then
+      echo "       \"$ADB\" -s $DEV uninstall $PKG" >&2
+      echo "       \"$ADB\" -s $DEV install -r $adbg/app/build/outputs/apk/debug/app-debug.apk" >&2
+    else
+      echo "       \"$ADB\" -s $DEV uninstall $PKG" >&2
+      echo "       \"$ADB\" -s $DEV install -r apps/<Name>/app/build/outputs/apk/debug/app-debug.apk" >&2
+    fi
+    echo "     (签名不同,换装前必须先 uninstall;见 docs/06「构建与发布」)" >&2
   else
-    echo "   · 广播没到接收器 —— 工程里没集成钩子?装的是 release 包?" >&2
+    echo "   · 广播没到接收器 —— 工程里没集成钩子?" >&2
     echo "   · 应用不在前台(View 已停止重绘)" >&2
     # 头显睡了是 Pico 特有的坑,别在电视上乱提示把真原因淹没
     # (实测在电视上看到「Pico 上还可能是头显睡了」会直接让人懵)
