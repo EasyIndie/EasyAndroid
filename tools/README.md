@@ -86,6 +86,7 @@ bash tools/gen-keystore.sh                       # 首次生成(已存在则拒�
 bash tools/gen-keystore.sh --status              # 路径 / 别名 / 指纹 / 有效期(不打印密码)
 bash tools/gen-keystore.sh --add-alias <AppName> # 给单个应用加一把专用密钥(推荐)
 bash tools/gen-keystore.sh --export [文件]       # 导出单个自包含凭据包 → 存密码管理器 / CI Secret
+bash tools/gen-keystore.sh --push-secret         # 直接把凭据包写进仓库的 Actions secret
 bash tools/gen-keystore.sh --import <文件>       # 换机器 / 灾后恢复(先验后写,会核对指纹)
 bash tools/gen-keystore.sh --verify-against <apk># 本机密钥与某个已发布 APK 是不是同一把
 bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签名,老用户升不了级

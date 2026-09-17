@@ -170,15 +170,44 @@ bash tools/gen-keystore.sh --import <凭据包文件>
 
 导入时会核对包头部记录的指纹,不一致直接报错(避免拿错包)。
 
-**③ CI** —— 把凭据包**全文**存进 GitHub Secret,`ci.yml` 里已经有对应的还原步骤:
+**③ CI** —— 把凭据包写进仓库的 Actions secret,一条命令:
+
+```bash
+bash tools/gen-keystore.sh --push-secret            # 自动推导 owner/repo
+bash tools/gen-keystore.sh --push-secret owner/repo # 或显式指定
+```
+
+它内部就是 `gh secret set KEYSTORE_B64 < <凭据包>`。手工也行:
 
 ```
 Settings → Secrets and variables → Actions → New repository secret
   名字:KEYSTORE_B64   值:--export 产物的全部内容(含 # 头部注释)
 ```
 
+> **为什么不能让它自动跑在 CI 里**:secret 是只写的,而且能让 CI 自己创建 secret
+> 等于允许 CI 自赋权限 —— GitHub 从设计上就不支持。所以这一步必须从
+> **已认证的本机**跑一次。之后 secret 值就存住了,不用每次发版都推。
+
 配了它,CI 的 `assembleRelease` 就产出**已签名**的包;没配就是 unsigned(装不上设备,
 只能当编译检查)。GitHub 会自动在日志里给 secret 打码。
+
+#### 怎么确认 secret 真的生效
+
+secret 读不回值(`gh secret list` 只给名字和更新时间),所以只能看**产物**:
+
+```bash
+# 推一次提交 → 等 CI 跑完 → 下载 CI 上传的 APK → 对比指纹
+bash tools/gen-keystore.sh --verify-against <CI 产出的 apk>
+```
+
+同一个指纹 → ✅ CI 用的是同一把密钥。
+或者更省事:看 CI 日志里有没有这句 notice ——
+
+```
+::notice::未配置 KEYSTORE_B64 —— 跳过,assembleRelease 将产出 unsigned 包
+```
+
+**有这句 = secret 没生效**(名字拼错?仓库不对?),那种情况 CI 产的是 unsigned 包。
 
 > ## ⚠️ CI 用**同一把**,不要重新生成
 >

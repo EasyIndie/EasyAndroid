@@ -46,6 +46,7 @@
 #   bash tools/gen-keystore.sh --add-alias <应用名>    # 给单个应用加一把专用密钥(推荐)
 #   bash tools/gen-keystore.sh --verify-against <apk>  # 确认本机密钥和某个已发布 APK 是同一把
 #   bash tools/gen-keystore.sh --export [文件]    # 导出自包含的 base64 凭据包(备份/搬运/喂 CI)
+#   bash tools/gen-keystore.sh --push-secret [owner/repo]  # 把凭据包直接写进仓库的 Actions secret
 #   bash tools/gen-keystore.sh --import <文件>    # 从凭据包还原(换机器 / 灾后恢复)
 #   bash tools/gen-keystore.sh --force            # ⚠️ 覆盖重建 = 换签名,老用户升不了级
 #
@@ -228,6 +229,75 @@ cmd_verify(){
   fi
 }
 
+# 把当前凭据打成一个自包含的 base64 凭据包(供 --export / --push-secret 共用)。
+# 固定文件名打包,便于还原时定位。
+write_bundle(){
+  local out="$1" fp; fp="$(fingerprint_raw)"
+  [ -n "$fp" ] || die "读不出证书指纹 —— 密钥库或密码可能对不上"
+
+  TMPD="$(mktmpd)" || die "建临时目录失败"
+  cp "$KS" "$TMPD/release.jks"
+  cp "$PROPS" "$TMPD/keystore.properties"
+  ( cd "$TMPD" && tar czf bundle.tgz release.jks keystore.properties ) || die "打包失败"
+
+  mkdir -p "$(dirname "$out")" 2>/dev/null || true
+  {
+    echo "# EasyAndroid release 签名凭据包"
+    echo "# 生成: $(date '+%Y-%m-%d %H:%M:%S %z')"
+    echo "# 默认别名: $(prop_of keyAlias)"
+    local a; for a in $(list_app_aliases); do echo "#   alias.$a=$(alias_of_app "$a")"; done
+    echo "# SHA-256 指纹: $fp"
+    echo "#"
+    echo "# ⚠️ 这个文件等同于私钥 —— 存密码管理器/Secret,别提交、别贴聊天。"
+    echo "#     丢了 = 已装机应用永远无法升级,泄露 = 别人能以你的名义发版。"
+    echo "#"
+    echo "# 还原: bash tools/gen-keystore.sh --import <本文件>"
+    echo "#"
+    base64 < "$TMPD/bundle.tgz" | tr -d '\n'
+    echo
+  } > "$out"
+}
+
+# 把凭据包写进仓库的 Actions secret(本地开发不需要,只有想让 CI 也签包时才用)。
+#
+# 为什么不能反过来(让 CI 自己创建 secret):secret 是只写的,
+# 而且这条路等于允许 CI 自赋权限 —— GitHub 从设计上就不支持。
+# 所以必须从**已认证的本机**推。
+cmd_push_secret(){
+  have_creds || die "本机还没配置凭据,先跑 bash tools/gen-keystore.sh"
+  [ -n "$GH" ] || die "找不到 gh(GitHub CLI)。装一个: https://cli.github.com/"
+
+  local repo="${1:-}"
+  [ -n "$repo" ] || repo="$(git -C "$_REPO_DIR" remote get-url origin 2>/dev/null \
+      | sed 's#.*github\.com[:/]##;s#\.git$##')"
+  [ -n "$repo" ] || die "推不出仓库 slug。用 --push-secret <owner/repo> 指定"
+
+  # 先写到临时文件再重定向给 gh —— 不用 --body,避免命令行参数长度限制,
+  # 也不用把密钥落在 dist/ 里(那是构建产物目录,容易忘掉)。
+  TMPD="$(mktmpd)" || die "建临时目录失败"
+  local tmpf="$TMPD/bundle.b64"
+  write_bundle "$tmpf"
+
+  echo "==> 写入 $repo 的 Actions secret: KEYSTORE_B64  ($(file_size "$tmpf") bytes)"
+  # 重定向由 bash 做(本地 POSIX 路径),gh 从 stdin 读 —— 不需要 winpath
+  local out rc
+  out="$("$GH" secret set KEYSTORE_B64 --repo "$repo" < "$tmpf" </dev/null 2>&1)"; rc=$?
+  [ -n "$out" ] && printf '%s\n' "$out" | sed 's/^/  /'
+  [ "$rc" = 0 ] || die "gh secret set 失败(exit $rc;需要 repo 权限,仓库必须是你的)"
+
+  echo
+  echo "==> 现有 secrets(值只能写、读不回来,GitHub 也不显示):"
+  "$GH" secret list --repo "$repo" </dev/null 2>&1 | sed 's/^/  /'
+  echo
+  echo "════════ 怎么确认它真能用 ════════"
+  echo "  secret 读不回值,所以只能看 CI 的**产物**:推一次提交,等 CI 跑完,"
+  echo "  把 CI 上传的 APK 下载下来对比指纹:"
+  echo "    bash tools/gen-keystore.sh --verify-against <CI 产出的 apk>"
+  echo "  同一把 → ✅ CI 用的是同一把密钥,老用户能升级。"
+  echo
+  echo "  注意:如果 CI 日志里出现 '未配置 KEYSTORE_B64' 的 notice,"
+  echo "  说明 secret 没生效(名字拼错?仓库不对?)—— 那种情况 CI 产的是 unsigned 包。"
+}
 # 给单个应用加一把专用密钥(同一个密钥库文件,新别名)。
 # 已发布过的应用千万别这么做 —— 换别名 = 换签名 = 老用户升不了级。
 cmd_add_alias(){
@@ -276,41 +346,16 @@ cmd_add_alias(){
 cmd_export(){
   have_creds || die "还没生成凭据,先跑 bash tools/gen-keystore.sh"
   local out="${1:-$_REPO_DIR/dist/signing-bundle.b64}"
-  mkdir -p "$(dirname "$out")" 2>/dev/null || true
-
-  local fp; fp="$(fingerprint)"
-  [ -n "$fp" ] || die "读不出证书指纹 —— 密钥库或密码可能对不上"
-
-  # 打成一个自包含的 tar.gz,再 base64 —— 方便存密码管理器 / 贴进 CI Secret。
-  # 用固定文件名打包,便于还原时定位。
-  TMPD="$(mktmpd)" || die "建临时目录失败"
-  local tmpd; tmpd="$TMPD"
-  cp "$KS" "$tmpd/release.jks"
-  cp "$PROPS" "$tmpd/keystore.properties"
-  ( cd "$tmpd" && tar czf bundle.tgz release.jks keystore.properties ) || die "打包失败"
-
-  {
-    echo "# EasyAndroid release 签名凭据包"
-    echo "# 生成: $(date '+%Y-%m-%d %H:%M:%S %z')"
-    echo "# 别名: $ALIAS"
-    echo "# SHA-256 指纹: $fp"
-    echo "#"
-    echo "# ⚠️ 这个文件等同于私钥 —— 存密码管理器/Secret,别提交、别贴聊天。"
-    echo "#     丢了 = 已装机应用永远无法升级,泄露 = 别人能以你的名义发版。"
-    echo "#"
-    echo "# 还原: bash tools/gen-keystore.sh --import <本文件>"
-    echo "#"
-    base64 < "$tmpd/bundle.tgz" | tr -d '\n'
-    echo
-  } > "$out"
+  write_bundle "$out"
   chmod 600 "$out" 2>/dev/null || true
-
+  local fp; fp="$(fingerprint_raw)"
   echo "==> 已导出到 $out  ($(file_size "$out") bytes,权限 600)"
   echo "    指纹 $fp"
   echo
   echo "════════ 接下来(这一步不做,前面白做)════════"
-  echo "  1. 把**整个文件内容**存进密码管理器(或 GitHub Secret)"
-  echo "  2. 换机器/装 CI 时:bash tools/gen-keystore.sh --import <文件>"
+  echo "  1. 把**整个文件内容**存进密码管理器,或者直接推给 GitHub:"
+  echo "       bash tools/gen-keystore.sh --push-secret"
+  echo "  2. 换机器/灾后恢复: bash tools/gen-keystore.sh --import <文件>"
   echo "  3. 副本目录($(dirname "$out"))是 gitignored 的构建产物目录,别当长期备份"
 }
 
@@ -451,6 +496,7 @@ case "${1:-}" in
   ""|--force)  [ "${1:-}" = "--force" ] && FORCE=1; cmd_init ;;
   --status)    cmd_status ;;
   --add-alias) shift; cmd_add_alias "${1:-}" ;;
+  --push-secret) shift; cmd_push_secret "${1:-}" ;;
   --verify-against) shift; cmd_verify "${1:-}" ;;
   --export)    cmd_export "${2:-}" ;;
   --import)    shift; [ "${1:-}" = "--force" ] && { FORCE=1; shift; }; cmd_import "${1:-}" ;;
