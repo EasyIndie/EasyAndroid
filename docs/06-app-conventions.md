@@ -630,6 +630,26 @@ DualDemo-0.2.0.apk     → 不在                       UiDumpReceiver=0   → �
 > ⚠️ **签名不同 → 同一台设备上换装要先卸载**:
 > `adb uninstall <applicationId>`,否则 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
 > 真机验收结束后记得把 debug 包装回去,不然下次 `ui-dump.sh` 会失败。
+>
+> ⚠️ **debug↔debug 也会撞 —— 不只是 release↔debug。**
+> `~/.android/debug.keystore` 是**每台机器、每个环境各生成一份**的:同一台电脑上
+> WSL 里一份、Windows 里一份,换台机器又一份。它们 DN 都长成 `CN=Android Debug`,
+> 只有指纹不同,于是症状变成更迷惑的「包名对、版本号也对,就是装不上」。
+>
+> 电视那条链路尤其难认:`tv-install.sh` 的确认框是**盲按**过去的,安装器弹
+> 「应用未安装」时脚本看不见,只能靠 versionName 有没有变来兜底 —— 于是签名冲突
+> 被报成「装到的是 v0.4.4,不是目标 v0.5.0」(现已补指纹诊断)。
+>
+> 判据看**指纹**不看 DN:
+>
+> ```bash
+> adb shell pm path <pkg>                  # 拿设备上的 APK 路径
+> adb pull <该路径> /tmp/on-device.apk
+> # 与待装包对比(基座函数 apk_cert_fp,或 tools/gen-keystore.sh --apk)
+> ```
+>
+> 解法同上:`adb uninstall <applicationId>` 再装。**每换一次构建环境就要卸一次**,
+> 这是 debug 包用各机自生成密钥的固有代价。
 
 ### 发布正式版 APK
 

@@ -343,7 +343,7 @@ something > "$TMP/x.log"                              # ✓ 保持 POSIX
 
 | 消费方 | 用哪个 | 为什么 |
 |---|---|---|
-| `$ADB` / `$PY` / python | `win_of`(WSL 上是恒等) | 它们在 WSL 上就是 Linux 版,POSIX 才对 |
+| `$ADB` / `$PY` / python | `win_of`(WSL 上是恒等) | 它们在 WSL 上就是 Linux 版,POSIX 才对。⚠️ **要转的是喂给它的路径参数**:`adb install "$apk"`、`adb pull <设备路径> <本机目标>` 里那个**本机**路径(别把设备路径也转了)。漏转时 `adb install` 只回一句 `failed to stat ...: No such file or directory` |
 | Windows 版 `gh.exe`(从 WSL 调) | `winpath`(无条件) | 消费方不随平台变 |
 | **`git`** | **`gitpath`**(WSL 上是恒等) | 同 adb:Win 原生 / WSL 是 Linux 版;且给**混合形式** `E:/...`,因为 `$REPO` 还要用于 bash 拼路径 |
 | **JDK 工具(`keytool`)** | **`win_of`** | 同 adb:Win 上是原生 exe / WSL 上是 Linux 版。`gen-keystore.sh` 在唯一的入口 `kt()` 里按**参数名**(`-keystore`/`-srckeystore`/`-destkeystore`/`-file`)统一转,以后新增调用点不用各自操心 |

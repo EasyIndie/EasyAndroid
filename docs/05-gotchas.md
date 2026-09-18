@@ -237,6 +237,55 @@ adb shell pm install -r /data/local/tmp/t.apk    # 设备路径(需先 push)
 
 ---
 
+## 原生 `adb.exe` 不认 Git Bash 的 `/e/...` 路径
+
+**症状**:脚本里 `adb install "$PWD/app-debug.apk"` 报文件不存在,把同一条命令手敲一遍却成功。
+
+```bash
+adb install -r -t /e/EasyAndroid/apps/DualDemo/app/build/outputs/apk/debug/app-debug.apk
+# adb.exe: failed to stat /e/EasyAndroid/...: No such file or directory
+```
+
+**原因**:`adb.exe` 是 **Windows 原生程序**,只认 `E:\...` / `E:/...`。
+平时 Git Bash 会自动把 `/e/...` 折成 `E:\...` 再递给原生程序,但
+**`MSYS_NO_PATHCONV=1` + `MSYS2_ARG_CONV_EXCL=*` 会关掉这个转换**(部分 CI
+与沙箱环境会设),这时 `/e/...` 被原样丢给 adb.exe,它自然找不到。
+
+**解法**:喂给 adb 的本机侧路径一律**显式转换**(基座的 `win_of`),别指望自动折叠。
+
+```bash
+adb install -r -t "$(win_of "$PWD/app-debug.apk")"
+```
+
+> 这个错在下面这种写法里更阴:管道接了 `| grep -q Success`,失败原因被整个吞掉,
+> 只看到一句「安装失败」,看着像设备的问题。**判成功可以 grep,报失败要把输出打出来。**
+
+---
+
+## 换环境构建后装不上,而包名和版本号都对
+
+**症状**:覆盖安装报签名不匹配;或电视侧载脚本反复说
+「装到的是 v0.4.4,不是目标 v0.5.0」,但 U 盘里明明只有新包。
+
+```
+INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.example.dualdemo signatures
+do not match previously installed version; ignoring!
+```
+
+**原因**:`~/.android/debug.keystore` 是**每台机器、每个环境各生成一份**的 ——
+同一台电脑上 WSL 里一份、Windows 里一份,换台机器又一份。它们的 DN 都是
+`CN=Android Debug`,**只有指纹不同**,所以从 DN 上看不出任何异常。
+
+**解法**:先卸载再装。
+
+```bash
+adb uninstall com.example.dualdemo
+```
+
+判指纹别判 DN,详见 [06](06-app-conventions.md)。电视脚本现已内置这层诊断。
+
+---
+
 ## 电视会自动进屏保,期间 `am start` 毫无反应
 
 **症状**:`am start -n <某个 Activity>` 返回成功,但前台一直是
