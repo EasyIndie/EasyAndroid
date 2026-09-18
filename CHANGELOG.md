@@ -8,6 +8,30 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.0](https://github.com/EasyIndie/EasyAndroid/compare/0.4.4...0.5.0) - 2026-09-18
+
+### 新增
+
+- **keystore**: --label @文件 —— 绕开传不了中文的 shell 边界 ([529e83b](https://github.com/EasyIndie/EasyAndroid/commit/529e83b))
+- **keystore**: --label 支持环境变量传入,并查清 PowerShell 里的真凶 ([b4815db](https://github.com/EasyIndie/EasyAndroid/commit/b4815db))
+- **keystore**: --drill - 从 stdin 读,可以直接从聊天窗口粘进终端 ([8414d25](https://github.com/EasyIndie/EasyAndroid/commit/8414d25))
+- **keystore**: 凭据包可以从聊天/邮件里粘回来直接验,并记录「那一份在哪」 ([633b4f4](https://github.com/EasyIndie/EasyAndroid/commit/633b4f4))
+
+### 修复
+
+- **keystore**: --scan 的「预期内」写死了文件名,与「导出用带日期的名字」这条建议矛盾 ([10920b7](https://github.com/EasyIndie/EasyAndroid/commit/10920b7))
+- **keystore**: --manifest --write 不该抹掉 drill.* 演练记录 ([b7fcd1b](https://github.com/EasyIndie/EasyAndroid/commit/b7fcd1b))
+- **keystore**: --scan 会漏掉改了名的凭据包;脚本退出码被最后一条命令吞掉 ([35448cd](https://github.com/EasyIndie/EasyAndroid/commit/35448cd))
+- **keystore**: 更正 PowerShell 那节 —— 环境变量传不进 WSL,中文参数会变乱码 ([12cef35](https://github.com/EasyIndie/EasyAndroid/commit/12cef35))
+- **keystore**: 导出折行 76 列 —— 单行长行粘进终端会被 MAX_CANON 静默截断 ([0036b73](https://github.com/EasyIndie/EasyAndroid/commit/0036b73))
+
+### 其他
+
+- **release**: 0.5.0 的发布说明(手写)—— 凭据可用性:演练/扫描/传输 ([84c37c8](https://github.com/EasyIndie/EasyAndroid/commit/84c37c8))
+- **keystore**: 恢复 manifest 里的演练记录被测试覆盖掉的内容 ([9d8af8b](https://github.com/EasyIndie/EasyAndroid/commit/9d8af8b))
+- **agents**: 明确 tools/ 的跨平台不含 PowerShell(WSL 启动器会把参数拼成 bash -c 重新解析) ([059062d](https://github.com/EasyIndie/EasyAndroid/commit/059062d))
+- **keystore**: 飞书那份是**文件消息**形式,不是粘贴文本 —— 更正风险画像与验证步骤 ([75f3cba](https://github.com/EasyIndie/EasyAndroid/commit/75f3cba))
+
 ## [0.4.4](https://github.com/EasyIndie/EasyAndroid/compare/0.4.3...0.4.4) - 2026-09-17
 
 ### 修复
