@@ -222,6 +222,15 @@ for c in python3 python; do
   fi
 done
 
+# GNU find —— 固定走绝对路径。
+# ⚠️ Windows 自带 System32\find.exe 会**抢 PATH**,而它不认 -mindepth / -delete
+#    这套参数(直接报 INVALID PARAMETER),于是本该发生的清理静默失效。
+#    与 sort.exe 抢 PATH 同源(见下面 bt_tool 的说明),所以不靠 PATH 解析。
+FIND=""
+for c in /usr/bin/find /bin/find; do
+  [ -x "$c" ] && { FIND="$c"; break; }
+done
+
 # pyfile <路径> —— 把路径转成「本机 python 认得的」形式。
 # ⚠️ Windows 上这是必需的:Git Bash 的 /e/foo/bar 对 Windows 原生 python
 #    是不存在的路径,会直接 FileNotFoundError。
@@ -337,13 +346,43 @@ if [ -n "${JAVA_HOME:-}" ] && [ -d "$JAVA_HOME/bin" ]; then
   esac
 fi
 
+# _ver_ge <版本A> <版本B> —— A >= B 返回 0。点分数字逐段比大小。
+#
+# 为什么不用 `sort -V`:Windows 自带 System32\sort.exe 会**抢 PATH**,而它不认 -V
+# (报「-V系统找不到指定的文件。」),于是取版本最高的那一步静默返回空 ——
+# 表现成「找不到 aapt2 / apksigner」,而 build-tools 其实装得好好的。
+# 与 find.exe 抢 PATH 是同一类坑(见 AGENTS.md §6),这里索性零外部依赖。
+# 纯 bash 还避开了字典序的坑:`"10" < "9"`。
+_ver_ge(){
+  local a="$1" b="$2" i x y
+  local -a A B
+  IFS='.' read -r -a A <<< "$a"
+  IFS='.' read -r -a B <<< "$b"
+  for i in 0 1 2 3; do
+    x="${A[i]:-0}"; y="${B[i]:-0}"
+    x="${x//[!0-9]/}"; y="${y//[!0-9]/}"     # 去掉 34.0.0-rc1 这类后缀
+    [ -n "$x" ] || x=0
+    [ -n "$y" ] || y=0
+    [ "$x" -gt "$y" ] && return 0
+    [ "$x" -lt "$y" ] && return 1
+  done
+  return 0
+}
+
 # bt_tool <工具名> —— 解析 build-tools 里的可执行文件(aapt2 / apksigner / zipalign ...)
 # Windows 上是 .bat/.exe,Linux 上无后缀;装了多个版本时取版本号最高的那个。
 # 找不到返回非零,调用方自己决定是报错还是跳过。
 bt_tool(){
-  local name="$1" bt c
+  local name="$1" bt="" d c
   [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME/build-tools" ] || return 1
-  bt="$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
+  # ⚠️ 别改回 `ls ... | sort -V | tail -1` —— 见 _ver_ge 上面的说明:
+  #    沙箱/部分终端里 PATH 上排在前面的 sort.exe 会让它整体失效。
+  for d in "$ANDROID_HOME"/build-tools/*/; do
+    [ -d "$d" ] || continue
+    if [ -z "$bt" ] || _ver_ge "$(basename "${d%/}")" "$(basename "${bt%/}")"; then
+      bt="$d"
+    fi
+  done
   [ -n "$bt" ] || return 1
   # ⚠️ 判定用 [ -f ] 而不是 [ -x ]:Windows 上 .bat **没有可执行位**(实测
   #    -rw-r--r--,Git Bash 只给 .exe 打 x 位),而 apksigner 恰好就是 .bat ——
@@ -372,6 +411,45 @@ bt_run(){
   local tool
   tool="$(bt_tool "$name")" || return 1
   JAVA_HOME="$(win_of "${JAVA_HOME:-}")" "$tool" "$@"
+}
+
+# badging_field <badging文本> <行前缀> [字段名] —— 从 aapt2 dump badging 的输出里取值。
+#
+# ⚠️ **别用 sed 表达式做这件事。** 常见写法是
+#      sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p"
+#    表达式本身没错、`bash -n` 也照样通过,但那对**单引号字符**要作为参数传给
+#    sed.exe,途中会经过 MSYS2 的参数还原 —— MSYS 把 `'` 当引号,参数被重新分词,
+#    sed 收到的已经不是原来那个表达式,直接报 `unterminated `s' command`
+#    (实测 2026-09-18;换分隔符也没用,char 位置都不变)。
+#    后果很隐蔽:取值变空 → 上层判成「版本号不一致 / 包名取不到」这种**业务结论**。
+#    纯 bash 参数展开不跨进程,没有这个传输层问题。
+#
+# 用法(行前缀负责定位行,字段名负责定位字段):
+#   badging_field "$t" "package:"            versionName
+#   badging_field "$t" "package:"            name    # 不会误取 launchable-activity 的 name
+#   badging_field "$t" "launchable-activity:" name
+#   badging_field "$t" "application-label:"           # 这种行没有 `=`,取 `:` 之后的值
+# 找不到返回非零。
+badging_field(){
+  local text="$1" prefix="$2" field="${3:-}" line v
+  while IFS= read -r line; do
+    line="${line%$'\r'}"                           # aapt2 在 Windows 上输出 CRLF
+    case "$line" in "$prefix"*) ;; *) continue ;; esac
+    if [ -n "$field" ]; then
+      case "$line" in *" $field="*) ;; *) continue ;; esac
+      # ${x#* pat} 是最短匹配 —— 取的是第一个出现处,所以 platformBuildVersionName
+      # 这类后缀不会把 versionName 顶掉。
+      v="${line#* $field=}"
+    else
+      v="${line#"$prefix"}"
+    fi
+    v="${v%% *}"                                   # 值到第一个空格为止
+    case "$v" in \"*) v="${v#\"}" ;; \'*) v="${v#\'}" ;; esac
+    case "$v" in *\") v="${v%\"}" ;; *\') v="${v%\'}" ;; esac
+    printf '%s' "$v"
+    return 0
+  done <<< "$text"
+  return 1
 }
 
 # ── APK 签名证书信息 ───────────────────────────────────────────────
@@ -423,7 +501,7 @@ apk_cert_dump(){
   bt_run apksigner verify --print-certs "$(win_of "$apk")" 2>&1
 }
 
-export PLATFORM IS_WINDOWS TMP TMP_WIN ADB PY
+export PLATFORM IS_WINDOWS TMP TMP_WIN ADB PY FIND
 export ANDROID_HOME ANDROID_SDK_ROOT PATH
 [ -n "${JAVA_HOME:-}" ] && export JAVA_HOME
 
@@ -481,7 +559,7 @@ adb_online(){
 
 export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath gitpath pyfile run_py \
          apk_cert_fp apk_cert_dn apk_cert_dump \
-          re_escape adbx adb_connect_all adb_online bt_tool bt_run 2>/dev/null || true
+          re_escape adbx adb_connect_all adb_online bt_tool bt_run badging_field 2>/dev/null || true
 
 # ── 10. 提示 ────────────────────────────────────────────────────────
 if [ ! -f "$_TOOLS_DIR/device.env" ] && [ -z "${EASYANDROID_QUIET:-}" ]; then

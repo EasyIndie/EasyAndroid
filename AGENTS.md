@@ -69,6 +69,11 @@
    `upload-artifact@v7`);停在 Node 20 的旧主版本会让每次 CI 都刷一条弃用警告。
    理由与迁移判据都写在 `.github/workflows/ci.yml` 的注释里,升级前先读那份 `action.yml`
    确认用到的输入还在。
+   这两条现在**有自动校验**:`verify-all.sh` 的 `0/4 仓库自检` 段会读
+   `.github/workflows/*.yml`,报出未登记的 action、低于期望的主版本、以及没写具体
+   版本的 `runs-on`。改完 workflow 跑一次就知道。**别绕过它去改脚本里的期望值** ——
+   那张表写死是故意的,它就是你升版本时要改的那一处(见 `_min_action_major`)。
+   CI 与本地跑的是同一份判据(它不依赖 JDK / SDK / 设备)。
 
 ---
 
@@ -392,6 +397,59 @@ Git Bash 只给 `.exe` 打可执行位,**`.bat` 一律是 `-rw-r--r--`** —— 
 装上之后才第一次真正执行到。
 
 判断「工具在不在」一律用 `[ -f ]`;真正的可执行性让调用时的失败去暴露。
+
+### Windows 上有同名命令会抢 PATH(`sort` / `find`)
+
+Git Bash 的 PATH 里带着 `System32`,而 Windows 自带同名程序,所以脚本里的 `sort` /
+`find` 可能**调到了另一个程序**:
+
+| 命令 | Windows 那个的行为 |
+|---|---|
+| `sort` | 不认 `-V`(报 `-V系统找不到指定的文件。`)→ `ls … \| sort -V \| tail -1` 静默变空 |
+| `find` | 不认 `-mindepth` / `-delete`(报 `INVALID PARAMETER`)→ 清理静默不执行 |
+
+踩过(2026-09-18):`bt_tool` 用 `ls … | sort -V | tail -1` 挑 build-tools 的最高版本,
+整体返回空 —— 表现成「找不到 aapt2 / apksigner」,而工具装得好好的;再往上是
+「取不到 APK 证书指纹」「版本号不一致」这种**业务级误报**,方向完全指错。
+
+对策(都在基座里,别在脚本里另发明):
+- 版本比较用 `_ver_ge`(纯 bash,零外部命令,顺带避开字典序 `"10" < "9"` 的坑)
+- 递归找文件用 `$FIND`(绝对路径 `/usr/bin/find`,不经 PATH)
+- 想确认某个命令"是不是我们想的那一个",用 `command -v <cmd>` 看它指向哪儿
+
+同类还有 `where` / `tree` / `more` / `fc`。判据看错误信息的**风格**:Windows 原生的
+报中文或 `INVALID PARAMETER`,GNU 的会报 `unrecognized option`。
+
+**为什么你自己的终端里往往看不出来**:这取决于 PATH 里 `/usr/bin` 和 `System32` 谁在
+前面 —— 普通 Git Bash 窗口是前者,而受管沙箱 / 部分 CI 里是后者。所以别据此判定
+「脚本坏了」(它在你终端里是好的),但也**别依赖 PATH 顺序** —— 该用 `$FIND` / `_ver_ge`
+的地方就用。
+
+### 别把单引号字符塞进 `sed` 表达式
+
+`sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p"` 这种写法**看起来没问题**,
+`bash -n` 也照样通过,但表达式里那对 `'` 是要跨进程传给 `sed.exe` 的参数,途经
+MSYS2 的参数还原 —— MSYS 把 `'` 当引号,参数被重新分词,`sed` 收到的已经不是原来
+那个表达式,直接报:
+
+```
+/usr/bin/sed: -e expression #1, char 39: unterminated `s' command
+```
+
+换分隔符(`s|…|`)也没用,报的 char 位置一模一样。**后果是静默的**:取值变空,上层
+把它当业务结论(「版本号不一致:APK=」「包名取不到」),方向完全指错。
+
+踩过(2026-09-18):`verify-all.sh` / `tv-install.sh` / `release-apk.sh` 从
+`aapt2 dump badging` 取字段全是这个写法。现在统一走基座的
+`badging_field <文本> <行前缀> [字段名]`(纯 bash 参数展开,不跨进程)。
+
+通用判据:**任何含字面单引号、又要交给原生程序的参数都有这个风险**。优先用纯 bash
+(参数展开 / `case`);必须用外部程序时,把内容从 stdin 或文件送进去,别塞在命令行参数里。
+
+**触发条件**:与上面「原生程序的路径必须人工转换」是**同一对开关** —— 受管环境设了
+`MSYS_NO_PATHCONV=1` + `MSYS2_ARG_CONV_EXCL=*`,它们改变 MSYS2 还原命令行参数的方式,
+`'` 就被当成引号了。所以**你自己的 Git Bash 窗口里通常不会复现**;遇到它别怀疑脚本逻辑,
+按上面换写法即可(顺带这也是更稳的写法)。
 
 ### 别在脚本运行时编辑它
 

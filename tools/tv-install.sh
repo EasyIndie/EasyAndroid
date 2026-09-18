@@ -111,11 +111,16 @@ badging(){ [ -n "$AAPT2" ] && "$AAPT2" dump badging "$(win_of "$APK")" 2>/dev/nu
   echo "   b. PKG=com.x.y [VER=1.2.3] [ACTIVITY=...] bash tools/tv-install.sh <apk>" >&2
   exit 1
 }
-LABEL="${LABEL:-$(badging | sed -n "s/^application-label:'\(.*\)'/\1/p" | head -1)}"
+# ⚠️ 这四个字段都用基座的 badging_field,别用 `sed -n "s/^package: name='\([^']*\)'..."`:
+#    表达式里那对单引号会穿过 MSYS2 的参数还原,参数被重新分词 → sed 报
+#    `unterminated `s' command` → 取值变空 → 脚本一路用默认值/空包名(不报错)。
+#    详见 _common.sh 里 badging_field 的注释。
+BADGING="$(badging)"
+LABEL="${LABEL:-$(badging_field "$BADGING" "application-label:" "")}"
 LABEL="${LABEL:-双端演示}"
-PKG="${PKG:-$(badging | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)}"
-VER="${VER:-$(badging | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)}"
-ACTIVITY="${ACTIVITY:-$(badging | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)}"
+PKG="${PKG:-$(badging_field "$BADGING" "package:" name)}"
+VER="${VER:-$(badging_field "$BADGING" "package:" versionName)}"
+ACTIVITY="${ACTIVITY:-$(badging_field "$BADGING" "launchable-activity:" name)}"
 
 # ---- UI 读取 ----
 UI_XML="$TMP/_ui.xml"

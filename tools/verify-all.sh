@@ -8,7 +8,7 @@
 #   · 有一阵子没动这个仓库,想确认还能跑通
 #
 # 做什么
-#   环境 → 构建 → Pico(装/起/自截图)→ 电视(装/起/自截图)→ 汇总
+#   仓库自检(CI 配置)→ 环境 → 构建 → Pico(装/起/自截图)→ 电视(装/起/自截图)→ 汇总
 #
 # 用法
 #   bash tools/verify-all.sh                # 全跑
@@ -42,7 +42,110 @@ need(){ if [ "$BUILD_ONLY" = 1 ]; then warn "$1"; else bad "$1"; fi; }
 
 online(){ adb_online "$1"; }
 
+# 外部 action → 期望的最低主版本(供下面 0/4 段用)。
+# 这几个主版本都跑在 node24 上;停在更旧的主版本就会跑在已被移除的 Node 20 上,
+# GitHub 于是每次 CI 都刷一条 warning。**新引入外部 action 时在这里登记。**
+_min_action_major(){
+  case "$1" in
+    actions/checkout)        printf '5' ;;
+    actions/setup-java)      printf '5' ;;
+    actions/upload-artifact) printf '5' ;;
+    *)                       printf '' ;;
+  esac
+}
+
 echo "==> 平台 $PLATFORM"
+echo
+echo "════════════════ 0/4 仓库自检(CI 配置)════════════════"
+step_repo(){
+  # 排在 1/4 之前:它只读几个 yml、零外部依赖、毫秒级 —— 而它一旦坏了,后面所有
+  # CI 都是白跑。并且它与 JDK / SDK / 设备全都无关,CI 和本机跑的是同一份判据。
+  #
+  # 盯的是两件「坏了也不报错」的事:
+  #   · action 主版本停在旧 Node 上 —— GitHub 只刷 warning、不挡 CI,最容易积压
+  #     (2026-09 实测:三个 action 一起停在 Node 20,一直没人发现);
+  #   · runner 写 `-latest` —— 换 OS 是**无声**发生的。本仓库的 verify-all 会查
+  #     $ANDROID_HOME 下的工具链,换 OS 等于换构建环境,不该悄悄发生。
+  #
+  # 只用 grep 做浅校验,YAML 的合法性交给 GitHub 自己报(它一定会报)。
+  # ⚠️ 期望值写死是**有意的闸门**:升 action / 升 runner 都得改这两处,
+  #    改的时候就是一次显式决策 —— 别改成「自动取最新」,那样闸门就没了。
+  local runner_ok='ubuntu-24.04'
+  local found=0 f rel
+
+  for f in "$REPO"/.github/workflows/*.yml "$REPO"/.github/workflows/*.yaml; do
+    [ -e "$f" ] || continue
+    found=1
+    rel=".github/workflows/$(basename "$f")"
+
+    if ! grep -qE '^jobs:' "$f"; then
+      bad "$rel 里找不到 jobs:"
+      continue
+    fi
+
+    local issues='' n_act=0 n_run=0 line no val name ver major need
+    # 先剥掉行内注释再取值 —— 我们自己的注释里就写着 `ubuntu-latest` 和 `v4`,
+    # 不剥会全判成配置错误。
+    while IFS= read -r line; do
+      no="${line%%:*}"; val="${line#*:}"; val="${val#*runs-on:}"
+      val="${val%%#*}"
+      val="${val//[[:space:]]/}"; val="${val//\"/}"; val="${val//\'/}"
+      n_run=$((n_run+1))
+      if [ "$val" != "$runner_ok" ]; then
+        issues="${issues}第 $no 行 runs-on = ${val:-<空>},期望 $runner_ok"
+        case "$val" in
+          *'{{'*)   issues="${issues}(这里是表达式,静态看不了)" ;;
+          *latest*) issues="${issues}(-latest 会在换镜像时无声改变构建环境)" ;;
+        esac
+        issues="${issues}"$'\n'
+      fi
+    done < <(grep -nE '^[[:space:]]*runs-on:' "$f")
+
+    while IFS= read -r line; do
+      no="${line%%:*}"; val="${line#*:}"; val="${val#*uses:}"
+      val="${val%%#*}"
+      val="${val//[[:space:]]/}"; val="${val//\"/}"; val="${val//\'/}"
+      [ -n "$val" ] || continue
+      # 本地 action 与容器 action 不涉及 Node 版本,不参与登记
+      case "$val" in ./*|docker://*) continue ;; esac
+      n_act=$((n_act+1))
+      case "$val" in
+        *@*) : ;;
+        *) issues="${issues}第 $no 行 $val 没写版本 —— 必须 @主版本(如 @v7)"$'\n'; continue ;;
+      esac
+      name="${val%@*}"; ver="${val##*@}"
+      need="$(_min_action_major "$name")"
+      if [ -z "$need" ]; then
+        issues="${issues}第 $no 行出现未登记的 action: $val"$'\n'
+        issues="${issues}      （新引入的话请登记进 verify-all.sh 的 _min_action_major,并确认它跑在 node24 上）"$'\n'
+        continue
+      fi
+      major="${ver#v}"; major="${major%%.*}"
+      case "$major" in
+        ''|*[!0-9]*)
+          issues="${issues}第 $no 行 $val 的版本不是主版本号 —— 请写 @v<N>(pin SHA 会让弃用检测失效)"$'\n'
+          continue ;;
+      esac
+      if [ "$major" -lt "$need" ]; then
+        issues="${issues}第 $no 行 $val 主版本 < $need,仍跑在旧 Node 上"$'\n'
+      fi
+    done < <(grep -nE '^[[:space:]]*-?[[:space:]]*uses:' "$f")
+
+    [ "$n_run" -ge 1 ] || issues="${issues}没有任何 runs-on"$'\n'
+    [ "$n_act" -ge 1 ] || issues="${issues}没有任何外部 action(至少该有 checkout)"$'\n'
+
+    if [ -z "$issues" ]; then
+      ok "$rel(runner=$runner_ok,$n_act 个 action 主版本达标)"
+    else
+      bad "$rel"
+      printf '%s\n' "$issues" | sed '/^$/d; s/^/       /'
+    fi
+  done
+
+  [ "$found" = 1 ] || bad "找不到 .github/workflows/*.yml"
+}
+step_repo
+
 echo
 echo "════════════════ 1/4 环境 ════════════════"
 step_env(){
@@ -203,11 +306,17 @@ step_build(){
   if [ -z "$want" ]; then
     bad "读不到 $(basename "$vf") 里的 version=(版本号唯一来源,见 docs/06)"
   elif [ -n "$aapt2" ]; then
-    got="$("$aapt2" dump badging "$apk_win" 2>/dev/null \
-          | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+    # 取 versionName —— 用基座的 badging_field。
+    # ⚠️ 别写回 `sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p"`:表达式里那对
+    #    单引号会穿过 MSYS2 的参数还原(`'` 被当成引号、参数被重新分词),sed 报
+    #    `unterminated `s' command`,取值变空 —— 于是误报「版本号不一致:APK=」。
+    #    详见 _common.sh 里 badging_field 的说明。
+    local badging
+    badging="$("$aapt2" dump badging "$apk_win" 2>/dev/null)"
+    got="$(badging_field "$badging" "package:" versionName)"
     [ "$got" = "$want" ] \
       && ok "版本号与 version.properties 一致 ($want)" \
-      || bad "版本号不一致:APK=$got  version.properties=$want"
+      || bad "版本号不一致:APK=${got:-<取不到>}  version.properties=$want"
   else
     skip "版本号一致性校验(缺 aapt2)"
   fi

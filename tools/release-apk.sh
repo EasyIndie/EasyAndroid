@@ -269,9 +269,12 @@ for apk in "${BUILT[@]}"; do
 
 
   # 4.2 版本号
+  # ⚠️ 用基座的 badging_field,别用 `sed -n "s/.*versionName='\([^']*\)'.*/\1/p"`:
+  #    表达式里那对单引号会穿过 MSYS2 的参数还原 → sed 报 unterminated `s' command
+  #    → 取到空值 → 这里会报「版本不符」,方向完全指错。
   badging="$("$AAPT2" dump badging "$apk_win" 2>/dev/null)"
-  got_ver="$(printf '%s' "$badging" | head -1 | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
-  got_code="$(printf '%s' "$badging" | head -1 | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
+  got_ver="$(badging_field "$badging" "package:" versionName)"
+  got_code="$(badging_field "$badging" "package:" versionCode)"
   if [ "$got_ver" = "$VER" ] && [ "$got_code" = "$WANT_CODE" ]; then
     echo "  ✅ $n versionName=$got_ver versionCode=$got_code"
   else

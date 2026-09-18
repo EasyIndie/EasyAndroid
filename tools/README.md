@@ -53,6 +53,22 @@ bt_run apksigner verify --print-certs "$(win_of "$apk")"
 
 它只在**这一次子进程**里把 `JAVA_HOME` 转成 Windows 形式,不影响 bash 侧的 gradlew。
 
+**从 `aapt2 dump badging` 取字段别写 `sed` 表达式**。常见写法
+`sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p"` 在受管环境里会被 MSYS2 的参数
+还原打断(表达式里那对 `'` 被当成引号),直接报 ``unterminated `s' command`` ——
+**取值变空,再伪装成「版本号不一致」「包名取不到」这类业务结论**。统一走基座的:
+
+```bash
+badging_field "$(badging)" "package:" versionName      # → 0.5.0
+badging_field "$(badging)" "package:" name             # 不会误取 launchable-activity 的 name
+badging_field "$(badging)" "application-label:" ""     # 没有 `=` 的行,取 `:` 之后
+```
+
+**另外两件别依赖 PATH 的事**(见 [AGENTS.md](../AGENTS.md) §6):版本比较用 `_ver_ge`
+(纯 bash,`"10" > "9"` 也判得对),递归找文件用 `$FIND`(绝对路径的 GNU find)——
+Windows 自带的 `sort.exe` / `find.exe` 会抢 PATH,而它们不认 `-V` / `-delete`,
+会让「挑最高版本」「清理临时候选」这类动作**静默失效**。
+
 **为什么必须显式转,不能靠 Git Bash 的自动转换**:平时 Git Bash 会把 POSIX 路径自动
 转成 Windows 路径再交给原生程序,但这个转换**可以被关掉**
 (`MSYS_NO_PATHCONV=1` + `MSYS2_ARG_CONV_EXCL=*` —— WorkBuddy 的沙箱就设了这两个)。
@@ -235,12 +251,18 @@ tag 名只能来自 [`version.properties`](../version.properties),脚本把这�
 ### `verify-all.sh` — 工具链自检
 
 ```bash
-bash tools/verify-all.sh                # 环境 → 构建 → Pico → 电视 → 汇总
-bash tools/verify-all.sh --build-only   # 只验环境 + 构建(不需要设备)
+bash tools/verify-all.sh                # 仓库自检 → 环境 → 构建 → Pico → 电视 → 汇总
+bash tools/verify-all.sh --build-only   # 只验仓库自检 + 环境 + 构建(不需要设备)
 ```
 
 换机器、升级 SDK 之后跑一次就知道有没有坏。设备不在线会自动跳过并标 SKIP,
 不算失败,所以 CI 上也能跑。缺什么(比如 Windows 上没装 JDK/SDK)会明确列出来。
+
+第一段 **0/4 仓库自检**只读 `.github/workflows/*.yml`,零外部依赖、毫秒级,查两件
+「坏了也不报错」的事:action 主版本是否已升到跑 Node 24 的版本(旧版本只会让 GitHub
+刷 warning,不挡 CI,最容易积压)、`runs-on` 是否写成了 `-latest`(换镜像时**无声**
+改变构建环境)。期望值写死在脚本里是**有意的闸门** —— 要升 action 或升 runner 就得
+改那张表,改的时候即是显式决策。新引入外部 action 时同步登记进 `_min_action_major`。
 
 ### `device-status.sh` — 设备状态一次性报告
 

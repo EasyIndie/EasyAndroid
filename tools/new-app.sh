@@ -74,7 +74,9 @@ cp -r "$TEMPLATE" "$DEST"
 # 清掉不该带过来的东西
 rm -rf "$DEST/app/build" "$DEST/build" "$DEST/.gradle" "$DEST/.kotlin" \
        "$DEST/local.properties" "$DEST/README.md"
-find "$DEST" -name '*.orig' -delete 2>/dev/null || true
+# ⚠️ 用 $FIND 而不是裸 `find`:Windows 自带 System32\find.exe 会抢 PATH,而它不认
+#    -delete,报 INVALID PARAMETER —— 清理就静默失效了(基座 §5 有说明)
+[ -n "$FIND" ] && "$FIND" "$DEST" -name '*.orig' -delete 2>/dev/null || true
 
 echo "==> 替换包名: $TEMPLATE_PKG → $PKG"
 # ⚠️ 不要用 sed 做这件事。包名里的 `.` 会被当成正则通配符:
@@ -122,7 +124,7 @@ for SRCROOT in "$DEST"/app/src/*/java; do
   [ -d "$SRCROOT/$OLD_REL" ] || continue
   mkdir -p "$(dirname "$SRCROOT/$NEW_REL")"
   mv "$SRCROOT/$OLD_REL" "$SRCROOT/$NEW_REL"
-  find "$SRCROOT" -mindepth 1 -type d -empty -delete
+  [ -n "$FIND" ] && "$FIND" "$SRCROOT" -mindepth 1 -type d -empty -delete || true
   echo "    ${SRCROOT#"$DEST"/} : $OLD_REL -> $NEW_REL"
 done
 
