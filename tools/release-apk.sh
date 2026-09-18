@@ -171,8 +171,19 @@ for APP in "${APPS[@]}"; do
   APPDIR="$BUILD_ROOT/apps/$APP"
   [ -f "$APPDIR/gradlew" ] || die "$APP 里没有 gradlew"
 
-  # local.properties 是 gitignore 的,worktree 里没有,补一份
-  printf 'sdk.dir=%s\n' "$ANDROID_SDK_DIR" > "$APPDIR/local.properties"
+  # local.properties 是 gitignore 的,worktree 里没有,补一份。
+  #
+  # ⚠️ 值必须转成 **Windows 正斜杠**形式再写。Gradle 是 JVM 程序(原生),
+  #    在 Windows 上收到 `/c/Users/.../Android/Sdk` 这种 MSYS 路径解析不了;
+  #    而反斜杠在 .properties 里又是**转义符**(`E:\Android\Sdk` → `E:AndroidSdk`)。
+  #    所以先按平台转,再把反斜杠统一成正斜杠 —— 和 new-app.sh 里同一处完全一致
+  #    (那边一直是对的,这边之前漏了,Windows 上会直接构建失败)。
+  sdk_prop="$ANDROID_SDK_DIR"
+  if [ "$IS_WINDOWS" = 1 ]; then
+    sdk_prop="$(win_of "$ANDROID_SDK_DIR" 2>/dev/null || printf '%s' "$ANDROID_SDK_DIR")"
+    sdk_prop="$(printf '%s' "$sdk_prop" | tr '\\' '/')"
+  fi
+  printf 'sdk.dir=%s\n' "$sdk_prop" > "$APPDIR/local.properties"
 
   # 有些工程的 launcher activity 与应用包名不同,统一以 applicationId 为准取产物
   ( cd "$APPDIR" && run_timeout 900 ./gradlew assembleRelease \
