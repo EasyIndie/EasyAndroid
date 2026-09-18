@@ -39,8 +39,10 @@ winget install --id EclipseAdoptium.Temurin.17.JDK --exact
 
 - `JAVA_HOME` 的值末尾带一个反斜杠(`...\hotspot\`),这是 MSI 的习惯 —— 拼
   `"$JAVA_HOME/bin/keytool"` 照常可用,不用自己修。
-- **已经开着的终端要重开**才能拿到新变量(进程环境是启动时的快照)。`tools/` 脚本会先看
-  `$JAVA_HOME/bin/keytool`,再退回 PATH 里找 `keytool`。
+- **已经开着的终端要重开**才能拿到新变量(进程环境是启动时的快照)。`tools/` 脚本对此有兜底:
+  先看 `$JAVA_HOME`,再退回 PATH 里的 `keytool`,都没有就去 Windows 上的常见安装位置
+  (`C:\Program Files\Eclipse Adoptium\jdk-17*` 等)自己找 —— 所以在没重开的终端里也能跑通。
+  但直接敲 `java -version` 仍会失败,别被这个误导成「没装 JDK」。
 - 装完自己验一下:
   ```bash
   keytool -help | head -2                                  # → 密钥和证书管理工具
@@ -74,6 +76,38 @@ chmod +x /opt/android-sdk/platform-tools/*
 1. **`python3 -m zipfile` 不保留 Unix 可执行位** → 不 `chmod +x` 就会 `Permission denied`。
 2. 如果你把 `bin` 目录 `mv` 成了 `latest`,结构就变成 `latest/sdkmanager`(少一层),sdkmanager 找不到自己的 lib 会报错。
    正确结构是 `latest/bin/sdkmanager` + `latest/lib/`。
+
+### Windows 原生(Git Bash)
+
+```bash
+SDK="/c/Users/<你>/AppData/Local/Android/Sdk"     # 就是 %LOCALAPPDATA%\Android\Sdk
+mkdir -p "$SDK" && cd "$SDK"
+curl -L -o ct.zip \
+  https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip
+unzip -q ct.zip && rm ct.zip
+# 同上的结构要求:bin/lib 必须落在 latest/ 里面
+mkdir -p cmdline-tools/latest
+mv cmdline-tools/bin cmdline-tools/lib cmdline-tools/NOTICE.txt cmdline-tools/source.properties \
+   cmdline-tools/latest/
+```
+
+装到 `%LOCALAPPDATA%\Android\Sdk` 之后**不用设任何环境变量** —— `tools/_common.sh`
+会自动探到它(见第 4 节)。
+
+和 Linux 侧的三点不同:
+
+- **用 `unzip` 解,别用 python** —— 不存在可执行位问题,也就不需要 `chmod +x`。
+- **`--sdk_root` 必须写 Windows 形式**。`.bat` 是批处理脚本,认不得 `/c/...`:
+  ```bash
+  export JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot'
+  "$SDK/cmdline-tools/latest/bin/sdkmanager.bat" \
+      --sdk_root='C:\Users\<你>\AppData\Local\Android\Sdk' \
+      "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+  ```
+  同一类坑在脚本里由 `bt_run` 统一兜住(它会把 `JAVA_HOME` 转成 Windows 形式),
+  但**手工敲命令时得自己转**。
+- **别绕 `cmd.exe /c`**:`MSYS_NO_PATHCONV=1` 下 `//c` 不会折成 `/c`(会当成路径)。
+  从 Git Bash 里**直接执行 `*.bat`** 即可,路径给 POSIX 形式也行。
 
 ### sdkmanager 已被标记废弃
 

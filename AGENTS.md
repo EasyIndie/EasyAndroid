@@ -347,6 +347,7 @@ something > "$TMP/x.log"                              # ✓ 保持 POSIX
 | Windows 版 `gh.exe`(从 WSL 调) | `winpath`(无条件) | 消费方不随平台变 |
 | **`git`** | **`gitpath`**(WSL 上是恒等) | 同 adb:Win 原生 / WSL 是 Linux 版;且给**混合形式** `E:/...`,因为 `$REPO` 还要用于 bash 拼路径 |
 | **JDK 工具(`keytool`)** | **`win_of`** | 同 adb:Win 上是原生 exe / WSL 上是 Linux 版。`gen-keystore.sh` 在唯一的入口 `kt()` 里按**参数名**(`-keystore`/`-srckeystore`/`-destkeystore`/`-file`)统一转,以后新增调用点不用各自操心 |
+| **SDK build-tools 工具(`aapt2` / `apksigner`)** | **`win_of`** + **`bt_run`** | 同 adb:Win 上 `aapt2` 是 `.exe`、`apksigner` 是 `.bat`,都不认 `/e/...`;WSL/Linux 上是无后缀的 Linux 程序。⚠️ 要转的是**喂给它们的路径参数**(如 `dump badging <apk>` 里的那个 APK),不是工具自身的路径。调 `apksigner` 走 `bt_run apksigner ...` —— `.bat` 还会硬校验 `JAVA_HOME`,`bt_run` 顺带把它转成 Windows 形式 |
 | 调 Windows 原生 python 时 | `pyfile`(= `win_of`) | — |
 
 为什么会有这个坑:Git Bash 平时会把 POSIX 路径**自动**转成 Windows 路径再交给
@@ -365,6 +366,45 @@ $ bash tools/release.sh --check
 显式转换过的路径(不管 `E:/...` 还是 `E:\...`)**两种环境都对** —— 所以一律显式转,
 不要依赖那个开关。踩过的实例:`release.sh` / `tag-release.sh` / `release-apk.sh`
 早期用 `git -C "$REPO"`($REPO 是 POSIX),在上述环境里三个脚本直接不可用。
+
+### Windows 上不要用 `[ -x ]` 判断工具在不在
+
+Git Bash 只给 `.exe` 打可执行位,**`.bat` 一律是 `-rw-r--r--`** —— 而 SDK 的
+`cmdline-tools`(`sdkmanager.bat`)和 `build-tools` 里的 `apksigner` 恰好都是 `.bat`。
+
+踩过(2026-09-18,装完 SDK 才暴露):`verify-all.sh` 用 `[ -x .../sdkmanager.bat ]`
+判 cmdline-tools、`_common.sh` 的 `bt_tool` 用 `[ -x "$c" ]` 找 apksigner —— 两个都报
+「缺失 / 找不到」,而文件就在那儿。这两处以前一直走 skip 分支(机器上压根没装 SDK),
+装上之后才第一次真正执行到。
+
+判断「工具在不在」一律用 `[ -f ]`;真正的可执行性让调用时的失败去暴露。
+
+### 别在脚本运行时编辑它
+
+bash 是**边读文件边执行**的,不是先把整个脚本读进内存。所以在长脚本(比如
+`verify-all.sh`,要跑几分钟)执行期间编辑同一个文件,后半段就可能读到改写后的
+内容,报出 `syntax error near unexpected token ...` 这类**跟真实语法无关**的错。
+
+本次实测:同一份脚本 `bash -n` 完全通过,但构建期间顺手改了行注释就复现了一次 ——
+很容易被当成「自己改坏了」而去乱改代码。要改就跑完再改(或改副本),然后重跑。
+
+### 调 `.bat` 工具用 `bt_run`
+
+`apksigner`(以及 cmdline-tools 的 `sdkmanager`)是**批处理脚本**,开头就硬校验
+`%JAVA_HOME%\bin\java.exe` 在不在 —— 而基座的 `$JAVA_HOME` 是 POSIX 形式
+(`/c/Program Files/...`),批处理认不出,直接报:
+
+    ERROR: JAVA_HOME is set to an invalid directory: /c/Program Files/Eclipse Adoptium/jdk-17.0.20.101-hotspot
+
+`java.exe` / `keytool.exe` **不会**暴露这个问题:它们是原生启动器,`JAVA_HOME`
+无效时会安静地回落注册表,所以看起来「一切正常」。只有 `.bat` 会硬报错。
+
+所以调 build-tools 的 `.bat` 一律走 `bt_run` —— 它只在**这一次子进程**里把
+`JAVA_HOME` 转成 Windows 形式,不影响 bash 侧(gradlew 继续用 POSIX 的那份):
+
+```bash
+bt_run apksigner verify --print-certs "$(win_of "$apk")"
+```
 
 ### 改完脚本至少做语法检查
 

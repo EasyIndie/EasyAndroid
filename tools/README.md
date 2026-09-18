@@ -12,7 +12,7 @@
 |---|---|---|
 | adb | `tools/platform-tools/adb.exe`(脚本自动解析) | 系统 PATH 里的 adb |
 | USB 引导 Pico | 直接跑 `pico-usb.sh` | 同样跑 `pico-usb.sh`(它内部会调 Windows 侧 adb) |
-| 构建应用 | 需自装 JDK 17 + Android SDK,设 `ANDROID_HOME` | `/opt/android-sdk`(见 docs/01) |
+| 构建应用 | 需自装 JDK 17 + Android SDK;脚本会自动探 `%LOCALAPPDATA%\Android\Sdk` 与 `C:\Program Files\Eclipse Adoptium\jdk-17*`,也可用 `ANDROID_HOME` / `JAVA_HOME` 显式指定 | `/opt/android-sdk`、`/opt/jdk/...`(见 docs/01) |
 | 脚本临时文件 | `$TMP`(默认仓库 `.tmp/`,可用 `EASYANDROID_TMP` 覆盖) | `/tmp` |
 | 侧载到电视 | `tv-install.sh` 直接可用(需 aapt2) | 同左 |
 
@@ -40,6 +40,18 @@
 判断标准就两句话:**消费路径的那个程序,会不会随平台换实现?** 会 → `win_of` / `gitpath`;
 不会 → `winpath`。**转出来的路径还要不要给 bash 用?** 要 → 用 `gitpath` 的混合形式,
 避免反斜杠。
+
+**`.bat` 工具还要多一步**:`apksigner`(build-tools)、`sdkmanager`(cmdline-tools)是
+**批处理脚本**,开头硬校验 `%JAVA_HOME%\bin\java.exe` —— 而基座的 `$JAVA_HOME` 是 POSIX
+形式,批处理认不出,直接报 `JAVA_HOME is set to an invalid directory: /c/Program Files/...`。
+(`java.exe` / `keytool.exe` 是原生启动器,`JAVA_HOME` 无效时会回落注册表,所以它们**不报错**
+—— 只有 `.bat` 会硬报。)调这类工具统一走 `bt_run`:
+
+```bash
+bt_run apksigner verify --print-certs "$(win_of "$apk")"
+```
+
+它只在**这一次子进程**里把 `JAVA_HOME` 转成 Windows 形式,不影响 bash 侧的 gradlew。
 
 **为什么必须显式转,不能靠 Git Bash 的自动转换**:平时 Git Bash 会把 POSIX 路径自动
 转成 Windows 路径再交给原生程序,但这个转换**可以被关掉**
@@ -352,8 +364,8 @@ cp tools/device.env.example tools/device.env
 | | 要求 |
 |---|---|
 | adb | 自动解析:`$ADB` > `tools/platform-tools/` > 系统 PATH |
-| JDK 17 | `tv-install.sh` / 构建需要;`JAVA_HOME` 或常见安装位置自动探测 |
-| aapt2 | `$ANDROID_HOME/build-tools/<版本>/aapt2[.exe]`,脚本自动找 |
+| JDK 17 | `tv-install.sh` / 构建需要。`JAVA_HOME` 优先,否则去常见安装位置找(含 Windows 的 `C:\Program Files\Eclipse Adoptium\jdk-17*`);找到就 export,子进程 gradlew 也认 |
+| aapt2 / apksigner | `$ANDROID_HOME/build-tools/<版本>/`,脚本自动找。调 `apksigner` 走 `bt_run`(它是 `.bat`,会硬校验 `JAVA_HOME`) |
 | Python 3 | 解析 `uiautomator` 的 XML(`python3` 或 `python` 都行) |
 
 ## 为什么 WSL2 还需要一份 Windows 版 adb
