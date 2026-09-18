@@ -144,7 +144,26 @@ need_keytool(){
 }
 
 # 统一用英文输出解析(keytool 的字段名会跟着 locale 变)
-kt(){ need_keytool; "$KEYTOOL" -J-Duser.language=en "$@"; }
+#
+# ⚠️ `keytool.exe` 是**原生程序**,不认 Git Bash 的 POSIX 路径 —— 和 adb.exe /
+#    git.exe 是同一类坑(见 AGENTS.md 第 6 节)。而这里的调用方几乎都带
+#    `2>/dev/null`,于是「找不到密钥库」被吞成「读出来是空的」,再往下就变成
+#    **假的安全警报**:「本机没有别名」「指纹不一致 —— 别用它发版」。
+#
+#    所以在唯一入口处按参数名转一次,自动覆盖所有调用点(含以后新增的):
+#    路径类参数的取值过 win_of(WSL 上原样返回,那边 keytool 就是 Linux 程序)。
+kt(){
+  need_keytool
+  local args=() want=0 a
+  for a in "$@"; do
+    if [ "$want" = 1 ]; then args+=("$(win_of "$a")"); want=0; continue; fi
+    case "$a" in
+      -keystore|-srckeystore|-destkeystore|-file) args+=("$a"); want=1 ;;
+      *) args+=("$a") ;;
+    esac
+  done
+  "$KEYTOOL" -J-Duser.language=en "${args[@]}"
+}
 
 # 从 keystore.properties 读一个字段
 prop_of_file(){ sed -n "s/^$2[[:space:]]*=[[:space:]]*//p" "$1" 2>/dev/null | tr -d '\r' | head -1; }
@@ -242,10 +261,14 @@ cmd_status(){
       | sed -n 's/^Valid from: .* until: //p' | head -1)"
   if [ -n "$end" ]; then
     run_py -c "
-import sys
 from datetime import datetime
 try:
-    d = datetime.strptime('$end'.strip(), '%a %b %d %H:%M:%S %Z %Y')
+    # keytool 给的是 Java Date.toString() 格式,尾巴上带时区缩写
+    # (CST / PDT / GMT+08:00…)。Python 的 %Z 只认本机 tzname —— 中文
+    # Windows 上是「中国标准时间」,所以 '%Z' 解析 CST 必然失败。
+    # 丢掉时区那一段,只取 星期 / 月 / 日 / 时间 / 年。
+    p = '$end'.split()
+    d = datetime.strptime(' '.join([p[0], p[1], p[2], p[3], p[-1]]), '%a %b %d %H:%M:%S %Y')
     days = (d - datetime.now()).days
     print(f'    {d:%Y-%m-%d} 到期,还剩 {days} 天' + ('  ⚠️ 不足一年,该计划换密钥了(换 = 老用户必须卸载重装)' if days < 365 else ''))
 except Exception as e:
