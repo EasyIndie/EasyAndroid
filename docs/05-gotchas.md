@@ -284,6 +284,10 @@ adb uninstall com.example.dualdemo
 
 判指纹别判 DN,详见 [06](06-app-conventions.md)。电视脚本现已内置这层诊断。
 
+> **这是有意保留的,别去「统一」debug 签名。** 统一的三条路(入库 / 共享一把 /
+> 用 release 密钥签 debug)代价都比「换环境卸一次包」高,最后那条尤其危险。
+> 取舍见 [06](06-app-conventions.md) 的「debug 凭据」一节。
+
 ---
 
 ## 电视会自动进屏保,期间 `am start` 毫无反应

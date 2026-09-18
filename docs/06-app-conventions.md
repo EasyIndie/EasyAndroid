@@ -536,6 +536,63 @@ bash tools/gen-keystore.sh --verify-against <某个已发布的 apk>
 > 密钥库里有 30 年有效期(证书 2056 年到期),`--status` 会提示剩余天数。
 > 真到期前需要换密钥 —— 那是个**发布事件**(老用户必须卸载重装),别当成日常操作。
 
+#### debug 凭据:为什么每环境各自一把(别去「统一」它)
+
+**结论:保持现状。** 每台机器、每个环境各有一份自生成的 `~/.android/debug.keystore`,
+不入库、不共享、更不指向 `release.jks`。
+
+这不是「还没来得及做」,是权衡后**有意保留**的。统一 debug 签名的收益只有一条
+—— 换环境后少卸一次包;而三条路各有更高的代价:
+
+| 统一方案 | 判定 | 代价 |
+|---|---|---|
+| 用 `release.jks` 签 debug | ❌ **绝对不行** | debug 包带 `application-debuggable`,而且会四处分发(给测试装、贴进聊天、传进设备)。用它签等于把「能覆盖安装你正式版」的能力扩散给所有拿到 debug 包的人 |
+| 把某份 `debug.keystore` 提交入库 | ❌ 与铁律冲突 | 见上面「不能入库的」:git 历史永久、fork 会带走、`git rm` 收不回来。而且它正是 `.gitignore` 拦着的东西 |
+| 共享一把专用 debug 凭据(私钥不入库,走 `--export` / `--import`) | ⚠️ 可行,但收益不抵 | 动一整套凭据分发体系,只为管一把「设计上就非秘密」的密钥 |
+
+判据是**两边的量级差**:
+
+- **debug key 泄漏能干什么**:签出同签名的 APK → 覆盖安装到你的**开发设备**;
+  也能与同密钥的其他包互信。
+- **debug key 不能干什么**:覆盖安装你的正式版(签名不同)、上架任何应用市场、
+  反推 release 私钥。
+
+「互信」这条在本仓库**当前**不构成实质风险 —— merged manifest 里唯一那个
+`protectionLevel="signature"` 是 AndroidX 自动注入的
+(`DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`),不是业务设计的信任域:
+
+```bash
+grep -rn 'protectionLevel' apps/*/app/build/intermediates/merged_manifest/debug/*/AndroidManifest.xml
+```
+
+但它是隐患:将来谁新增一个 signature 级组件,互信范围就从「本机」无声扩到
+「所有攥着这把 key 的人」。所以这条要**在新增 signature 级组件时重新评估**。
+
+而且它**从一开始就不是秘密**:密码固定 `android`、别名 `androiddebugkey`,AOSP 约定。
+轮换成本也低 —— 换一把就完了,不像 release key 泄漏要让所有老用户卸载重装。
+
+**所以分水岭不在密钥强度,在 `git push` 之后收不回来。** 为一个可轮换、低价值、
+设计上就非秘密的凭据,承担一次不可逆操作 —— 这笔账不划算。
+
+> 💡 如果撞冲突的场景**只是同一台机器的 WSL ↔ Windows 两套环境**,那连「统一」
+> 都用不上:把一份 `debug.keystore` 复制到两边 `~/.android/` 就行。零共享、零泄漏,
+> 比任何方案都便宜。只有**多台机器 / 多人协作**才真需要共享机制 —— 而那也正是
+> 收益最不值、风险最高的场景。
+
+标准动作(撞到就这么办,不必改造工具链):
+
+```bash
+adb uninstall <applicationId>   # debug 包没有要保留的状态,卸了重装即可
+```
+
+`tv-install.sh` 现在会自己认出并打印真因(它那里的确认框是**盲按**过去的,不认就会
+把签名冲突误报成「装到的是旧版本,不是目标版本」)。
+
+> ⚠️ 红线(无论以后是否改主意):
+> - 不要用 `release.jks` 签 debug;
+> - 不要把任何 `.jks` / `.keystore` / `--export` 产物提交进 git;
+> - 别把 base64 当加密。
+
 ### 怎么验证版本号真的走的是这一个来源
 
 两层,第一层不需要设备:
@@ -649,7 +706,9 @@ DualDemo-0.2.0.apk     → 不在                       UiDumpReceiver=0   → �
 > ```
 >
 > 解法同上:`adb uninstall <applicationId>` 再装。**每换一次构建环境就要卸一次**,
-> 这是 debug 包用各机自生成密钥的固有代价。
+> 这是 debug 包用各机自生成密钥的固有代价 —— 而且它是**有意保留**的取舍,不是待办:
+> 统一 debug 签名的三条路都比这更贵(「用 `release.jks` 签 debug」更是绝对红线),
+> 判据与取舍见上面「签名凭据:存哪儿」里的「debug 凭据」一节。
 
 ### 发布正式版 APK
 

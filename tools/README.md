@@ -181,6 +181,9 @@ Release 附件必须能从 tag 复现。逐个校验已签名 / `versionName` / 
 不含 debug 钩子,不过关就不上传。
 
 > ⚠️ release 包与 debug 包签名不同,同一台设备上换装要先 `adb uninstall`。
+> debug 包之间同理:各环境的 `~/.android/debug.keystore` 是各自生成的,换环境构建后
+> 装包照样会撞 —— 这是**有意保留**的,别去「统一」,取舍见
+> [../docs/06-app-conventions.md](../docs/06-app-conventions.md) 的「debug 凭据」一节。
 
 ### `release.sh` — 发版(推荐入口,一条命令)
 

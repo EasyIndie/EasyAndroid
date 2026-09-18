@@ -29,6 +29,11 @@
    而且任何机器靠它能自检「手里这把是不是发布用的那把」;发版时会查它。
    要发带 APK 的 Release 见 [docs/06](docs/06-app-conventions.md) 的「发布正式版 APK」一节,
    存哪儿 / 什么能入库见「签名凭据:存哪儿」。
+   ⚠️ **debug 签名不要「统一」—— 保持每环境各自一把,这是有意的。** `~/.android/debug.keystore`
+   不存在就现生成,所以同一台机器上 WSL 一份、Windows 一份,换环境装包必然撞签名。
+   别为省这一步把它入库或共享,**尤其别用 `release.jks` 签 debug**(debug 包带
+   `debuggable` 且会外发)。撞上就 `adb uninstall` 重装,判据与取舍见
+   [docs/06](docs/06-app-conventions.md) 的「debug 凭据」一节。
 8. **开发/验收全程用 debug 包,只有发版才出正式包 + 加签。**
    `tools/verify-all.sh` / `tv-install.sh` / `ui-dump.sh` 这条循环里装的、验的都是
    debug 包(它带自截图钩子,`screencap` 拿不到画面的设备靠它才能验收)。
