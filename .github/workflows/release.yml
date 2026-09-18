@@ -28,12 +28,15 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # ⚠️ 同 ci.yml:明确 pin 版本,不用 `ubuntu-latest`(2026-10-19 起会迁到 Ubuntu 26.04,
+    #    而 26.04 的 cmdline-tools 是 20.0 —— 换代是显式动作,不该无声发生)。
+    #    发版比 CI 更不能赌环境:产物要挂到 Release 上给人下载。
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
 
     steps:
       - name: 检出这个 tag 的完整历史
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # 0 = 完整历史 + 所有 tag:
           #   · release-apk.sh 要校验 HEAD == tag 指向的提交
@@ -41,7 +44,7 @@ jobs:
           fetch-depth: 0
 
       - name: 装 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
