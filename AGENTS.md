@@ -501,12 +501,34 @@ bash tools/verify-all.sh     # 环境 → 构建 → 双设备,确认工具链�
 升级会连带 Compose 编译器、Compose BOM、tv-material 一起动,升完必须重新
 在设备上验证。真要升单独开一次,别夹在功能开发中间。
 
+### 受管沙箱里 git 写不进远端跟踪引用 —— 别误判成仓库坏了
+
+某些托管环境(如 WorkBuddy 的沙箱)对**工作区路径**的写入有拦截:`git` 写
+`refs/remotes/<remote>/<branch>` 会**静默失败** —— rc=0、不留文件,还会把已存在的
+`<remote>` 目录一起删掉。症状是 `git fetch` 之后 `git status -sb` 一直显示 `[gone]`。
+
+判据(2026-09-18 实测):`refs/heads/*`、`refs/tags/*`、`refs/remotes/<一级名>` 全都正常;
+同一个操作在 C 盘、或在工作区**之外**都能成功 → **是环境拦截,不是仓库 / 磁盘问题,
+用户自己的终端不受影响**。
+
+> ⚠️ **不要为了「修」它去跑 `git pull --rebase` / `git reset`。** `[gone]` 只表示本地
+> 没有那个远端跟踪引用,**不代表本地落后**;破坏性命令才是真会丢东西的。
+
+需要那个引用时手写即可(git 立刻认):
+
+```bash
+printf '%s\n' "$(git rev-parse HEAD)" > .git/refs/remotes/origin/main
+```
+
+一般规律:命令**报成功但结果不存在** → 先怀疑环境,用对照实验(换盘符 / 换目录 /
+换进程类型 / 手写一份)定位,确认是环境问题就别改仓库。
+
 ## 10. 环境速查
 
 | 组件 | 版本 / 路径 |
 |---|---|
-| JDK | Temurin 17,`/opt/jdk/jdk-17.0.20.1+1` |
-| Android SDK | `/opt/android-sdk`(platform-34 / build-tools 34.0.0) |
+| JDK | Temurin 17 —— Linux/CI: `/opt/jdk/jdk-17.0.20.1+1`;Windows 本机: `C:\Program Files\Eclipse Adoptium\jdk-17*`(`%JAVA_HOME%` 由 MSI 写入系统环境) |
+| Android SDK | Linux/CI: `/opt/android-sdk`;Windows 本机: `%LOCALAPPDATA%\Android\Sdk`(platform-34 / build-tools 34.0.0,基座自动探测,装法见 docs/01) |
 | Gradle | 8.11.1(wrapper 在工程里,不用全局装) |
 | 构建组合 | AGP 8.7.3 + Kotlin 2.0.21 + Compose BOM 2024.12.01 + tv-material 1.0.0 |
 | Python | 3.x(脚本用它解析 XML,平台自带) |
