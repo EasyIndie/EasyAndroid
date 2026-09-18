@@ -106,9 +106,16 @@ step_signing(){
   if [ -f "$_REPO_DIR/signing-manifest.txt" ]; then
     if bash "$_REPO_DIR/tools/gen-keystore.sh" --manifest >"$TMP/verify-signing.log" 2>&1; then
       ok "指纹与 signing-manifest.txt 一致"
-    else
+    elif grep -q '❌' "$TMP/verify-signing.log"; then
       bad "指纹与签名期望值**不一致** —— 别用它发版"
       grep -E '❌|期望 |本机 ' "$TMP/verify-signing.log" | sed 's/^/       /'
+    else
+      # 脚本**自己没跑起来**(缺 JDK / keytool 不在 PATH 等)。这跟「指纹不一致」
+      # 是两件完全不同的事,不能混报 —— 说成不一致会让人去导入一份本来没错的
+      # 凭据,或者白白换掉本机这把(而换错签名等于让老用户没法升级)。
+      # 判据:真的不一致时 cmd_manifest 一定会打出 ❌ 行;没有 ❌ 就是没跑成。
+      warn "签名指纹**没能核对**(gen-keystore.sh 没正常执行)"
+      sed -n '1,3p' "$TMP/verify-signing.log" | sed 's/^/       /'
     fi
   else
     warn "没有 signing-manifest.txt,无法核对指纹(--manifest --write 生成)"
@@ -118,9 +125,12 @@ step_signing(){
   # 实测踩过:--push-secret 每跑一次就在 .tmp/ 漏一份完整凭据包,没人知道。
   if bash "$_REPO_DIR/tools/gen-keystore.sh" --scan >"$TMP/verify-scan.log" 2>&1; then
     ok "没有游离的密钥副本"
-  else
+  elif grep -qE '额外副本|没被 gitignore' "$TMP/verify-scan.log"; then
     bad "工作目录里有游离的密钥副本:"
     grep -E '额外副本|没被 gitignore' "$TMP/verify-scan.log" | sed 's/^/       /'
+  else
+    warn "密钥副本扫描**没能运行**(gen-keystore.sh 没正常执行)"
+    sed -n '1,3p' "$TMP/verify-scan.log" | sed 's/^/       /'
   fi
 }
 step_signing

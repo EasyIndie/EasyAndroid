@@ -118,15 +118,33 @@ _reap_tmp(){
 # EXIT 之外还接 INT/TERM/HUP —— 被 Ctrl-C 或 timeout 打断时也要清干净
 trap '_reap_tmp' EXIT INT TERM HUP
 
-# keytool 跟着 JDK 走
+# keytool 跟着 JDK 走。
+#
+# ⚠️ `${JAVA_HOME:-}` 这个花括号兜底**不能省**。本脚本开着 `set -u`,而
+#    「没设 JAVA_HOME」是常态:Windows Git Bash 一般就不设;不少 Linux 也只把
+#    java 放进 PATH。裸写 "$JAVA_HOME" 会在这一行直接崩,抛
+#    `JAVA_HOME: unbound variable`,顺手绕过下面 `command -v keytool` 的兜底
+#    和那句人话报错 —— 看到的是一个 shell 内部错误,而不是「装 JDK」。
+#
+#    实测(2026-09-18,Windows Git Bash,无 JDK):verify-all.sh 的签名卫生段
+#    因此把「脚本压根没跑起来」误报成「指纹不一致 —— 别用它发版」。
 KEYTOOL=""
-for c in "$JAVA_HOME/bin/keytool" "$(command -v keytool 2>/dev/null)"; do
-  [ -n "$c" ] && [ -x "$c" ] && { KEYTOOL="$c"; break; }
-done
-[ -n "$KEYTOOL" ] || die "找不到 keytool。装 JDK 17(见 docs/01),或设好 JAVA_HOME。"
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/keytool" ]; then
+  KEYTOOL="$JAVA_HOME/bin/keytool"
+else
+  c="$(command -v keytool 2>/dev/null || true)"
+  [ -n "$c" ] && [ -x "$c" ] && KEYTOOL="$c"
+fi
+# ⚠️ 「找不到 keytool」**不能在这里就 die** —— 那样 `--help` 也打不开:
+#    没装 JDK 的机器上(Windows Git Bash 是常态)想查一下用法,看到的是
+#    「找不到 keytool」,而它其实只想知道怎么用。帮助信息不该有依赖。
+#    改成第一次真要调 keytool 时才报错。
+need_keytool(){
+  [ -n "$KEYTOOL" ] || die "找不到 keytool。装 JDK 17(见 docs/01),或设好 JAVA_HOME。"
+}
 
 # 统一用英文输出解析(keytool 的字段名会跟着 locale 变)
-kt(){ "$KEYTOOL" -J-Duser.language=en "$@"; }
+kt(){ need_keytool; "$KEYTOOL" -J-Duser.language=en "$@"; }
 
 # 从 keystore.properties 读一个字段
 prop_of_file(){ sed -n "s/^$2[[:space:]]*=[[:space:]]*//p" "$1" 2>/dev/null | tr -d '\r' | head -1; }
@@ -324,7 +342,7 @@ cmd_push_secret(){
   [ -n "$GH" ] || die "找不到 gh(GitHub CLI)。装一个: https://cli.github.com/"
 
   local repo="${1:-}"
-  [ -n "$repo" ] || repo="$(git -C "$_REPO_DIR" remote get-url origin 2>/dev/null \
+  [ -n "$repo" ] || repo="$(git -C "$(gitpath "$_REPO_DIR")" remote get-url origin 2>/dev/null \
       | sed 's#.*github\.com[:/]##;s#\.git$##')"
   [ -n "$repo" ] || die "推不出仓库 slug。用 --push-secret <owner/repo> 指定"
 
@@ -509,7 +527,14 @@ for dirpath, dirnames, filenames in os.walk(root):
                 size = os.path.getsize(full)
             except OSError:
                 size = 0
-            print(f"{os.path.relpath(full, root)}\t{size}\t{why}\t{int(size_of(full) and os.path.getmtime(full))}")
+            # ⚠️ 相对路径**必须归一化成 `/`**。Windows 上 os.path.relpath 给的是
+            #    `dist\xxx.b64`,而下面 bash 侧一律按 `dist/xxx`、`tools/keystore/...`
+            #    匹配 —— 分隔符不一致会让「预期内」全部落空,把本该 ✅ 的本体
+            #    和最新导出都报成「⚠️ 额外副本」,命令还会以 1 退出。
+            #    实测(2026-09-18 Windows):release.jks 与 dist/ 里的最新导出双双
+            #    被误报,verify-all 因此判「工作目录里有游离的密钥副本」。
+            rel = os.path.relpath(full, root).replace(os.sep, '/')
+            print(f"{rel}\t{size}\t{why}\t{int(size_of(full) and os.path.getmtime(full))}")
 PYEOF
   local prc=$?
   [ "$prc" = 0 ] || die "扫描器自己崩了(exit $prc)—— **不能当成「没找到」**,请先修它"
@@ -542,7 +567,19 @@ PYEOF
     [ -n "$_r" ] || continue
     IFS=$'\t' read -r rel size why mt <<< "$_r"
     ign=""
-    git -C "$root" check-ignore -q "$rel" 2>/dev/null && ign="gitignored" || ign="⚠️ 会被提交"
+    # ⚠️ 用「切进目录再跑 git」,不要写 `git -C "$root"`。
+    #    git 是**原生程序**,而有些环境会把「POSIX → Windows」的路径自动转换
+    #    关掉(MSYS_NO_PATHCONV=1 / MSYS2_ARG_CONV_EXCL=*,WorkBuddy 的沙箱就设了
+    #    这两个),那时 `git -C /e/...` 直接 `fatal: cannot change to '/e/...'`,
+    #    退出码非零 —— 于是**每个文件都被判成「会被提交」**。
+    #    这是安全扫描在说反话:它会把一份已 gitignore 的 `keystore.properties`
+    #    说成「一旦提交就无法收回」,也会让整个 --scan 以 1 退出。
+    #    `cd` 是 bash 自己的动作,不经过路径转换,带不带那两个变量都对。
+    #    (同一个根因就是 _common.sh 里 win_of/winpath 存在的理由。)
+    #    失败方向是安全的(只会误报「没忽略」,不会误报「已忽略」),但假警报
+    #    会让真警报被无视,所以照样得修。
+    ( cd "$root" 2>/dev/null && git check-ignore -q "$rel" ) 2>/dev/null \
+      && ign="gitignored" || ign="⚠️ 会被提交"
     [ "$ign" = "gitignored" ] || n_tracked=$((n_tracked+1))
     case "$expected" in
       *" $rel "*)
@@ -1115,6 +1152,18 @@ PROPS_EOF
 
 # ── 参数解析 ────────────────────────────────────────────────────────
 FORCE=0; DRILL_MODE=0; DRILL_SRC=""; DRILL_RECORD=0; DRILL_LABEL=""
+
+# 哪些命令**离不开 keytool** —— 在这里统一拦,别放各命令内部拿着空指纹往下走。
+# 踩过(2026-09-18,无 JDK 的 Windows):--manifest 从 keytool 拿不到指纹,
+# 于是走进「本机没有别名」分支,最终报「指纹**不一致** —— 别用它发版」。
+# **「查不出来」被说成了「不对」**,而两者的处置正好相反:前者去装 JDK,
+# 后者要导入/更换凭据 —— 换错签名等于让已装机用户无法升级。
+# 只有 --help 不需要任何依赖;--scan 靠文件名/大小/内容标志认副本,也不用 keytool。
+case "${1:-}" in
+  -h|--help|--scan) : ;;
+  *) need_keytool ;;
+esac
+
 case "${1:-}" in
   ""|--force)  [ "${1:-}" = "--force" ] && FORCE=1; cmd_init ;;
   --status)    cmd_status ;;
