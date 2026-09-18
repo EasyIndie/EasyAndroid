@@ -4,7 +4,7 @@
 
 ---
 
-## Windows 原生(Git Bash)跑脚本的四个坑
+## Windows 原生(Git Bash)跑脚本的六个坑
 
 仓库脚本已跨平台(2026-09 起),`tools/_common.sh` 统一抹平了这些差异。
 自己写新脚本时注意:
@@ -59,6 +59,42 @@ aapt2.exe…)收到这种字符串按相对路径解析,必然失败。
 **解法**:需要把字符串当正则用 → 用 `_common.sh` 的 `re_escape`(逐字符实现,
 无歧义);需要**纯字面量替换** → 根本别用 sed,用 python 的 `str.replace`
 (`new-app.sh` 里就是这么做的)。
+
+### 5. `sort` / `find` 命中 Windows 自带程序
+
+**症状**:`ls … | sort -V | tail -1` 返回**空**(不报错);或清理用的
+`find "$d" -delete` 什么都没删。
+
+**原因**:同第 1 条 —— `C:\Windows\system32` 在 PATH 前面,`sort` / `find` 命中的是
+**Windows 自带的 sort.exe / find.exe**:前者不认 `-V`(报中文「系统找不到指定的文件」),
+后者不认 `-mindepth` / `-delete`(报 `INVALID PARAMETER`)。
+
+**为什么危险**:失败是**静默**的 —— 取不到值之后,上层会把它当成业务结论
+(「找不到 aapt2」「版本号不一致」),方向完全指错。
+
+**解法**:版本比较用 `_ver_ge`(纯 bash,顺带修正 `"10" < "9"` 的字典序坑),
+递归找文件用 `$FIND`(绝对路径的 GNU find)。
+**判据**:报**中文**或 `INVALID PARAMETER` 就是命中了 Windows 那个
+(同类还有 `where` / `tree` / `more` / `fc`)。
+
+### 6. `sed` 表达式里的单引号
+
+**症状**:
+
+```
+/usr/bin/sed: -e expression #1, char 39: unterminated `s' command
+```
+
+而表达式本身没问题(`bash -n` 也通过)。典型场景是从 `aapt2 dump badging` 取字段:
+`sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p"`。
+
+**原因**:表达式里那对 `'` 要作为参数**跨进程**交给 `sed.exe`,途经 MSYS2 的参数还原时
+被当成引号,参数被重新分词 —— `sed` 收到的已经是另一个字符串。
+**换分隔符(`s|…|`)无效、报的 char 位置一模一样**,这就是判据。
+
+**解法**:从 badging 取字段统一走 `_common.sh` 的
+`badging_field <文本> <行前缀> [字段名]`(纯 bash 参数展开,不跨进程)。
+通用判据:**任何含字面单引号、又要交给原生程序的参数都有这个风险**。
 
 ---
 
