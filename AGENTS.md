@@ -60,6 +60,15 @@
    - 脚本开头调一次 `adb_connect_all`(沙箱/CI 里 daemon 不跨进程存活);
    - 判断设备在线用 `adb_online`,别手写 `adb devices | awk`。
    平台差异全表见 `tools/_common.sh` 头部注释和 [tools/README.md](tools/README.md) 的「跨平台速记」。
+10. **改 CI 时:runner 保持显式 pin,action 主版本不要往下调。**
+   `.github/workflows/` 里的 `runs-on` 写的是具体的 `ubuntu-24.04`,**不要换回
+   `ubuntu-latest`** —— 它 2026-10-19 起会迁到 Ubuntu 26.04,而两个 runner 镜像的
+   Android SDK 差别恰好落在 `cmdline-tools`(12.0 → 20.0),正是 `verify-all.sh` 会查的
+   东西。换 OS 等于换构建环境,要单独开一次、先在 CI 上验过,别夹在功能开发里。
+   同理,action 主版本要留在「跑 Node 24」的那一档(`checkout@v7` / `setup-java@v6` /
+   `upload-artifact@v7`);停在 Node 20 的旧主版本会让每次 CI 都刷一条弃用警告。
+   理由与迁移判据都写在 `.github/workflows/ci.yml` 的注释里,升级前先读那份 `action.yml`
+   确认用到的输入还在。
 
 ---
 
@@ -529,6 +538,7 @@ printf '%s\n' "$(git rev-parse HEAD)" > .git/refs/remotes/origin/main
 |---|---|
 | JDK | Temurin 17 —— Linux/CI: `/opt/jdk/jdk-17.0.20.1+1`;Windows 本机: `C:\Program Files\Eclipse Adoptium\jdk-17*`(`%JAVA_HOME%` 由 MSI 写入系统环境) |
 | Android SDK | Linux/CI: `/opt/android-sdk`;Windows 本机: `%LOCALAPPDATA%\Android\Sdk`(platform-34 / build-tools 34.0.0,基座自动探测,装法见 docs/01) |
+| CI runner | `ubuntu-24.04` —— **显式 pin,不用 `ubuntu-latest`**(理由与升 26.04 的判据见 `.github/workflows/ci.yml` 注释) |
 | Gradle | 8.11.1(wrapper 在工程里,不用全局装) |
 | 构建组合 | AGP 8.7.3 + Kotlin 2.0.21 + Compose BOM 2024.12.01 + tv-material 1.0.0 |
 | Python | 3.x(脚本用它解析 XML,平台自带) |
