@@ -187,6 +187,32 @@ PYEOF
 foreground(){ A dumpsys window 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' | sed 's/.*u0 //'; }
 installed_version(){ [ -n "$PKG" ] && A dumpsys package "$PKG" 2>/dev/null | sed -n 's/^ *versionName=//p' | head -1 | tr -d '\r'; }
 
+# ---- 失败诊断:签名是否一致 ----
+# 「装到的是 vX,不是目标 vY」这句本身不说明为什么。最常见的真因是签名冲突:
+# debug.keystore 由每台机器各自生成(~/.android/ 下没有就现建一份),于是换机器、
+# 或同一台机器换 WSL↔Windows 构建,调试包签名就不一样。
+# TGuard 会把包交给系统安装器,安装器弹「应用未安装」——而 pass_dialogs 是【盲按】
+# 过确认框的,看不见那个错误,只能从 versionName 没变倒推出失败,真因就丢了。
+# 这里在失败后补一次指纹对比,把话说清楚,省掉一轮「是不是我点错了」的怀疑。
+sig_mismatch_hint(){
+  [ -n "${PKG:-}" ] || return 0
+  local dev_path remote fp_dev fp_local
+  dev_path="$(A pm path "$PKG" 2>/dev/null | head -1 | tr -d '\r' | sed 's/^package://')"
+  [ -n "$dev_path" ] || return 0
+  remote="$TMP/tv-installed.apk"
+  # pull 不是 adb shell 的子命令,不能走 A;本机侧路径照样要过 win_of
+  run_timeout 60 "$ADB" -s "$TV" pull "$dev_path" "$(win_of "$remote")" </dev/null >/dev/null 2>&1 || return 0
+  fp_dev="$(apk_cert_fp "$remote" 2>/dev/null)"
+  fp_local="$(apk_cert_fp "$APK" 2>/dev/null)"
+  rm -f "$remote" 2>/dev/null
+  [ -n "$fp_dev" ] && [ -n "$fp_local" ] && [ "$fp_dev" != "$fp_local" ] || return 0
+  echo "   → 真因:签名不一致(安装器那个错误框被盲按过去了,所以只看到版本没变)" >&2
+  echo "       设备上: ${fp_dev:0:32}…" >&2
+  echo "       待装包: ${fp_local:0:32}…" >&2
+  echo "     debug.keystore 每台机器各生成一份,换环境构建就会撞。" >&2
+  echo "     先卸载再装:$ADB -s $TV uninstall $PKG" >&2
+}
+
 # ---- 把 APK 推到 U 盘 ----
 # 安装器的存储源叫 "SDCARD",但它扫的是【可移动存储】=U 盘,不是 /sdcard。
 # 缓存以文件路径为键,文件名要唯一(包名+版本+构建时间)。
@@ -371,6 +397,7 @@ if [ $rc -ne 0 ]; then
   open_install_page
   if ! attempt_once; then
     echo "!! 安装失败" >&2
+    sig_mismatch_hint
     echo "   当前焦点: $(focus_info)" >&2
     echo "   当前界面: $(ui_text | cut -c1-220)" >&2
     exit 1

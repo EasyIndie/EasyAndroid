@@ -253,10 +253,24 @@ step_pico(){
     return
   fi
   local apk="$APP_DIR/app/build/outputs/apk/debug/app-debug.apk"
-  if run_timeout 240 "$ADB" -s "$PICO_ADDR" install -r -t "$apk" </dev/null 2>&1 | grep -q Success; then
+  # ⚠️ adb.exe 是原生程序,不认 /e/... 形式(与 §6「本机侧路径必须显式转换」同理)。
+  #    漏掉这一步时 adb 只会回一句 `failed to stat ...: No such file or directory`,
+  #    而下面若只 grep Success,失败原因就被吞掉了 —— 看起来像「设备装不上」。
+  local apk_arg out
+  apk_arg="$(win_of "$apk")"
+  out="$(run_timeout 240 "$ADB" -s "$PICO_ADDR" install -r -t "$apk_arg" </dev/null 2>&1)"
+  if printf '%s' "$out" | grep -q Success; then
     ok "Pico 安装"
   else
-    bad "Pico 安装"; return
+    bad "Pico 安装"
+    printf '%s\n' "$out" | grep -vE '^[[:space:]]*$' | tail -3 | sed 's/^/       /'
+    # 最常见的一种:设备上那个包是【别的环境】构建的 debug 包。
+    # debug.keystore 每台机器各生成一份,换机器/换 WSL↔Windows 就会撞签名。
+    if printf '%s' "$out" | grep -q UPDATE_INCOMPATIBLE; then
+      echo "       → 签名不一致(设备上那个包是别的环境构建的),先卸载再装:" >&2
+      echo "         $ADB -s $PICO_ADDR uninstall $PKG" >&2
+    fi
+    return
   fi
   # 必须 --launch:装完应用不在前台,DebugHooks 拿不到 Activity,截不到图
   local log="$TMP/verify-pico.log" png="$TMP/verify-pico.png"
