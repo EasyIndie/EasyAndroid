@@ -509,25 +509,54 @@ for dirpath, dirnames, filenames in os.walk(root):
                 size = os.path.getsize(full)
             except OSError:
                 size = 0
-            print(f"{os.path.relpath(full, root)}\t{size}\t{why}")
+            print(f"{os.path.relpath(full, root)}\t{size}\t{why}\t{int(size_of(full) and os.path.getmtime(full))}")
 PYEOF
   local prc=$?
   [ "$prc" = 0 ] || die "扫描器自己崩了(exit $prc)—— **不能当成「没找到」**,请先修它"
 
   local n_exp=0 n_odd=0 n_tracked=0
-  local rel size why ign
-  # 预期内的三个位置
-  local expected=" tools/keystore/release.jks keystore.properties dist/signing-bundle.b64 "
-  while IFS=$'\t' read -r rel size why; do
-    [ -n "$rel" ] || continue
+  local rel size why mt ign
+
+  mapfile -t _rows < "$list"
+
+  # 导出目录里**只保留一份** —— 留最新的那份算「预期内」,更老的算额外副本。
+  #
+  # 为什么要这条规则:文档建议用带日期的文件名导出
+  # (`dist/EasyAndroid-签名凭据-<指纹>-<日期>.b64`),方便在飞书/密码管理器里搜到。
+  # 但每导出一次就多一份**含明文私钥的副本**堆在 dist/ 里。
+  # 早先的「预期内」是写死的三个路径,于是按建议命名的文件会被判成额外副本 ——
+  # **文档和检查互相矛盾**,而那种矛盾最后总是以「关掉检查」收场。
+  # 现在把它变成一条明确的不变量:dist/ 里最多一份导出。
+  local newest_dist="" _best=-1
+  for _r in "${_rows[@]}"; do
+    [ -n "$_r" ] || continue
+    IFS=$'\t' read -r rel size why mt <<< "$_r"
+    case "$rel" in
+      dist/*) [ "${mt:-0}" -gt "$_best" ] && { _best="${mt:-0}"; newest_dist="$rel"; } ;;
+    esac
+  done
+
+  # 固定预期:密钥库本体 + 密码文件(它们的位置由工具约定)
+  local expected=" tools/keystore/release.jks keystore.properties "
+  for _r in "${_rows[@]}"; do
+    [ -n "$_r" ] || continue
+    IFS=$'\t' read -r rel size why mt <<< "$_r"
     ign=""
     git -C "$root" check-ignore -q "$rel" 2>/dev/null && ign="gitignored" || ign="⚠️ 会被提交"
     [ "$ign" = "gitignored" ] || n_tracked=$((n_tracked+1))
     case "$expected" in
-      *" $rel "*) n_exp=$((n_exp+1)); printf '  ✅ 预期内   %-44s %8s B  %s\n' "$rel" "$size" "$ign" ;;
-      *)           n_odd=$((n_odd+1)); printf '  ⚠️  额外副本 %-44s %8s B  %s   ← %s\n' "$rel" "$size" "$ign" "$why" ;;
+      *" $rel "*)
+        n_exp=$((n_exp+1)); printf '  ✅ 预期内   %-44s %8s B  %s\n' "$rel" "$size" "$ign" ;;
+      *)
+        if [ "$rel" = "$newest_dist" ]; then
+          n_exp=$((n_exp+1)); printf '  ✅ 预期内   %-44s %8s B  %s   ← dist/ 里最新的导出\n' "$rel" "$size" "$ign"
+        elif [ -n "$newest_dist" ] && [ "${rel#dist/}" != "$rel" ]; then
+          n_odd=$((n_odd+1)); printf '  ⚠️  额外副本 %-44s %8s B  %s   ← dist/ 里有多份导出,只留最新的\n' "$rel" "$size" "$ign"
+        else
+          n_odd=$((n_odd+1)); printf '  ⚠️  额外副本 %-44s %8s B  %s   ← %s\n' "$rel" "$size" "$ign" "$why"
+        fi ;;
     esac
-  done < "$list"
+  done
 
   echo
   if [ "$n_exp" = 0 ] && [ "$n_odd" = 0 ]; then

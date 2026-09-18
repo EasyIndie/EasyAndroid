@@ -25,7 +25,7 @@
 default_alias=release
 alias.release=eb3bfaf6847264a0e696996fb02a91fa7e034ec3c42ef9a85c68168d4d573dbd
 
-drill.last=2026-09-17
+drill.last=2026-09-18
 drill.where=飞书个人聊天(文件消息)
-drill.file=feishu.b64
-drill.size=7303
+drill.file=EasyAndroid-签名凭据-release-eb3bfaf6-2026-09-18.b64
+drill.size=7389
