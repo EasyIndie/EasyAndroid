@@ -129,6 +129,36 @@ winpath(){
   else printf '%s' "$p"; fi
 }
 
+# gitpath <路径> —— 给 **git** 用的路径形式。
+#
+# git 和 adb / java 是同一类消费方:Windows 上是原生程序(不认 /e/...),
+# WSL2/Linux 上是 Linux 程序(POSIX 路径才对)。所以这里要**按需**转换,
+# 判断依据跟 win_of 一样 —— 不能用 winpath(那个是无条件的,给「永远是
+# Windows 版」的 gh.exe 用的),否则会把 WSL2 上的 Linux git 喂成 E:\...
+#
+# ⚠️ 为什么不用现成的 win_of:它给的是**反斜杠**形式(E:\EasyAndroid),
+#    而 $REPO 除了喂 `git -C`,还大量用于 `"$REPO/version.properties"` 这类
+#    **bash 侧**拼接 —— 会拼出 `E:\EasyAndroid/version.properties`,能用但很脆。
+#    这里用 `cygpath -m` 的**混合形式**(E:/EasyAndroid):git.exe 认,
+#    bash 自己的路径拼接也照常认。
+#    幂等:传进去已经是 E:/... 时原样返回。
+#
+# 为什么需要它:某些环境会把 MSYS2 的「POSIX → Windows」路径自动转换关掉
+# (MSYS_NO_PATHCONV=1 / MSYS2_ARG_CONV_EXCL=*,WorkBuddy 的沙箱就设了这两个)。
+# 那时 `git -C /e/...` 直接 `fatal: cannot change to '/e/...'`,而报出来的错
+# 还特别误导 —— release.sh 说「不是 git 仓库?」、release-apk.sh 说「tag 不存在」。
+# 转换开着的时候传 E:/... 同样正确,所以这条路径两种环境都安全。
+gitpath(){
+  local p="$1"
+  case "${PLATFORM:-}" in
+    windows)
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$p" 2>/dev/null || printf '%s' "$p"
+      else printf '%s' "$p"; fi ;;
+    *) printf '%s' "$p" ;;
+  esac
+}
+
 if _tmp_ok "${EASYANDROID_TMP:-}"; then
   TMP="$EASYANDROID_TMP"
 elif _tmp_ok "$_REPO_DIR/.tmp"; then
@@ -174,7 +204,7 @@ fi
 # 从 origin remote 推。release-apk.sh / release.sh 都要拿它拼 compare 链接,
 # 所以抽在这里 —— 不然就是第 N 份拷贝(上次差一点变成两份)。
 repo_slug(){
-  git -C "${1:-$_REPO_DIR}" remote get-url origin 2>/dev/null \
+  git -C "$(gitpath "${1:-$_REPO_DIR}")" remote get-url origin 2>/dev/null \
     | sed 's#.*github\.com[:/]##;s#\.git$##' | tr -d '\r'
 }
 
@@ -388,7 +418,7 @@ adb_online(){
   "$ADB" devices 2>/dev/null | awk -v d="$1" '$1==d && $2=="device"' | grep -q .
 }
 
-export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath pyfile run_py \
+export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath gitpath pyfile run_py \
          apk_cert_fp apk_cert_dn apk_cert_dump \
           re_escape adbx adb_connect_all adb_online bt_tool 2>/dev/null || true
 

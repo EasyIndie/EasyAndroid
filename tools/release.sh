@@ -52,7 +52,11 @@ set -uo pipefail
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-REPO="$_REPO_DIR"
+# ⚠️ 过 gitpath:git 在 Windows 上是原生程序,而某些环境关掉了 MSYS2 的路径
+#    自动转换(见 _common.sh 里 gitpath 的说明)——不过转换的后果是下面每一处
+#    `git -C "$REPO"` 都失败,而报错是「不是 git 仓库?」,方向完全指错。
+#    $REPO 同时用于 bash 侧拼路径,所以走 cygpath -m 的混合形式而不是反斜杠。
+REPO="$(gitpath "$_REPO_DIR")"
 VF="$REPO/version.properties"
 CLE="$REPO/CHANGELOG.md"
 SLUG="$(repo_slug "$REPO")"

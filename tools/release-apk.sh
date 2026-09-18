@@ -48,7 +48,9 @@ set -uo pipefail
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-REPO="$_REPO_DIR"
+# ⚠️ 过 gitpath —— 理由同 release.sh:$REPO 全喂给 `git -C`,
+#    而 git 在 Windows 上是原生程序,见 _common.sh 里 gitpath 的说明。
+REPO="$(gitpath "$_REPO_DIR")"
 DIST="$REPO/dist"
 
 VER=""; UPLOAD=0; WITH_DEBUG=0; IN_PLACE=0; CREATE_RELEASE=0; PRINT_NOTES=0; NOTES_FILE=""
@@ -125,7 +127,13 @@ if [ "$IN_PLACE" = 1 ]; then
   BUILD_ROOT="$REPO"
   echo "  in-place:HEAD == tag $VER,直接在当前检出上构建"
 else
-  WT="$TMP/release-$VER-$$"
+  # ⚠️ $WT 直接就用**混合形式**(E:/...)。它下面同时有三类消费方:
+  #      · bash 自己(cd / cp / rm -rf)—— 认
+  #      · git(worktree add/remove)—— git 在 Windows 上是原生程序,认
+  #      · apksigner / aapt2(后面校验产物时,路径由 BUILD_ROOT 推导)——
+  #        它们也是原生程序,认
+  #    统一成一种形式就一处都不用再转,而 POSIX 形式只有第一类能用。
+  WT="$(gitpath "$TMP")/release-$VER-$$"
   trap 'git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || rm -rf "$WT"' EXIT
   git -C "$REPO" worktree add --detach "$WT" "$TAG_SHA" >/dev/null 2>&1 \
     || die "创建 worktree 失败: $WT"

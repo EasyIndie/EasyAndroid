@@ -23,7 +23,8 @@
 **Windows 原生 python 的路径** —— Git Bash 的 `/e/foo` 对 Windows python 是
 不存在的路径。把路径传给 python 前过 `pyfile`(在 `_common.sh` 里)。
 
-**`win_of` 是「按需转换」,`winpath` 是「无条件转换」** —— 两者服务不同场景:
+**`win_of` 是「按需转换」,`winpath` 是「无条件转换」,`gitpath` 是「按需 + 混合形式」** ——
+三者服务不同场景:
 
 - **`win_of`**:只在 Windows 原生 shell 里转。它服务 `$ADB` / `$PY`,而那两个在
   WSL 上就是 Linux 版,**POSIX 路径才对** —— 在 WSL 上原样返回不是漏了 `wslpath`,
@@ -31,8 +32,21 @@
 - **`winpath`**:不做平台判断,**无条件**转成 Windows 路径。服务那些「无论如何
   都是 Windows 原生程序」的消费方,典型是 Windows 版 `gh.exe` 从 WSL 里调。
   踩过:把 `/mnt/e/.../x.apk` 直接传给 gh 上传,报 `no matches found for /mnt/e/...`。
+- **`gitpath`**:和 `win_of` 一样按平台判断(git 在 WSL 上是 Linux 程序),但给的是
+  **混合形式** `E:/EasyAndroid`(cygpath `-m`)而不是反斜杠。因为 `$REPO` 除了喂
+  `git -C`,还大量用于 `"$REPO/version.properties"` 这类 **bash 侧**拼接 ——
+  反斜杠会拼出 `E:\EasyAndroid/version.properties`,能用但很脆。
 
-判断标准就一句话:**消费路径的那个程序,会不会随平台换实现?** 会 → `win_of`;不会 → `winpath`。
+判断标准就两句话:**消费路径的那个程序,会不会随平台换实现?** 会 → `win_of` / `gitpath`;
+不会 → `winpath`。**转出来的路径还要不要给 bash 用?** 要 → 用 `gitpath` 的混合形式,
+避免反斜杠。
+
+**为什么必须显式转,不能靠 Git Bash 的自动转换**:平时 Git Bash 会把 POSIX 路径自动
+转成 Windows 路径再交给原生程序,但这个转换**可以被关掉**
+(`MSYS_NO_PATHCONV=1` + `MSYS2_ARG_CONV_EXCL=*` —— WorkBuddy 的沙箱就设了这两个)。
+关掉之后 bash 自带命令照样认 `/e/...`,而 `adb.exe` / `git.exe` 全都不认。
+**所以「原生程序不认 `/e/...`」是条件成立的** —— 你自己的 Git Bash 窗口里其实认,
+但在沙箱/部分 CI 里不认,报错还会指错方向(`git -C /e/...` 会让人以为仓库坏了)。
 
 ## 脚本
 

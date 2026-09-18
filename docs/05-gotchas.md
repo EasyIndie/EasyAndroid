@@ -29,6 +29,11 @@ coreutils 版(`/usr/bin/timeout` 或 `--version` 输出 coreutils)时才真的�
 **原因**:Git Bash 的 `/e/foo` 是 MSYS 虚拟路径,Windows 原生程序(python.exe、
 aapt2.exe…)收到这种字符串按相对路径解析,必然失败。
 
+> ⚠️ 严格说,这一条有个前提:**Git Bash 对原生程序的路径自动转换被关掉了**。
+> 默认的 Git Bash 窗口会自动把 `/e/foo` 转成 `E:\foo` 再交给原生程序,
+> 那种情况下其实能跑。所以这个坑是**条件成立**的 —— 原理和判别方法见本文件
+> 末尾「原生程序不认 `/e/...`」一节。结论不变:一律显式转,别依赖那个开关。
+
 **解法**:传给 python / 原生 exe 的路径一律过 `_common.sh` 的 `pyfile`(内部用
 `cygpath -w` 转成 `E:\foo` 形式)。反过来,从 Windows 程序拿到的路径(`C:\...`)
 在 bash 里用前先过 `posix_of`。
@@ -646,3 +651,53 @@ bash tools/gen-keystore.sh --drill dist/signing-bundle.b64 --record --label feis
 
 > 判断标准很简单:**参数里出现空格、括号、`&`、`;`、`$` 任何一个,就别在
 > PowerShell 里跑。** 换终端比调引号省事,也更安全。
+
+---
+
+## 原生程序不认 `/e/...` —— 而 Git Bash 的「自动转换」是可以被关掉的
+
+**症状**:同一个仓库,你自己的 Git Bash 窗口里一切正常;换到别的环境
+(agent 沙箱、部分 CI 的 shim、任何设了下面那两个变量的终端)就集体报错,
+而且**报错指向完全错误的方向**:
+
+```
+$ git -C /e/EasyAndroid rev-parse HEAD
+fatal: cannot change to '/e/EasyAndroid': No such file or directory
+
+$ bash tools/release.sh --check
+!! 不是 git 仓库?                                  ← 仓库明明好好的
+$ bash tools/release-apk.sh 0.5.0
+!! tag 0.5.0 不存在。先 bash tools/tag-release.sh   ← tag 明明存在
+```
+
+**原因**:`adb.exe` / `git.exe` / `java.exe` 都是 **Windows 原生程序**。它们的
+命令行参数不经过 bash,而是由 MSYS 运行时**自动**把 POSIX 路径(`/e/EasyAndroid`)
+转成 Windows 路径(`E:/EasyAndroid`)再交过去。问题是这个自动转换**能关**:
+
+| 变量 | 作用 |
+|---|---|
+| `MSYS_NO_PATHCONV=1` | 关掉全部路径自动转换 |
+| `MSYS2_ARG_CONV_EXCL=*` | 把**所有**参数排除在转换之外 |
+
+WorkBuddy 的沙箱就设了这两个 —— 它们**不在** shell 启动文件里,也**不在**
+Windows 用户环境里(`reg query HKCU\Environment` 查不到),是调用方直接注入的。
+
+所以「原生程序不认 `/e/...`」**是条件成立的**:默认的 Git Bash 窗口里其实认
+(实测 `adb.exe version` 用 `/e/...` 路径正常输出),只有转换被关掉之后才不认。
+而 bash **自带**的命令(`ls` / `cat` / 重定向 / `cd`)两种情况下都认 `/e/...` ——
+这正好解释了「为什么同一行命令里有的参数要转、有的不能转」。
+
+**为什么照样要显式转**:显式转出来的路径(`E:/EasyAndroid`)在**两种环境里都对** ——
+转换开着时它本来就是 Windows 路径,关掉时正好补上。所以别去依赖那个开关,
+一律显式转:`win_of` / `winpath` / `gitpath`(选哪个见 tools/README 的对照表)。
+
+**踩过的实例**:`release.sh` / `tag-release.sh` / `release-apk.sh` 早期处处写
+`git -C "$REPO"` 而 `$REPO` 是 POSIX 路径,于是三个发版脚本在转换关闭的环境里
+**完全不可用**,还把锅甩给仓库和 tag。修法是一行:
+
+```bash
+REPO="$(gitpath "$_REPO_DIR")"
+```
+
+**判断口诀**:凡是把路径交给**原生程序**的地方(adb / git / java / gh / python),
+都问一句「这里是不是假设了路径自动转换开着?」—— 是,就换成显式转换。

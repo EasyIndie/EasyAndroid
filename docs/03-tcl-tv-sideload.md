@@ -282,6 +282,9 @@ bash tools/tv-install.sh apps/<Name>/app/build/outputs/apk/debug/app-debug.apk
    焦点标签恒为空 → 定位 52 连 miss。所有 adb 的**本机侧**路径必须过
    `_common.sh` 的 `win_of`(POSIX→Windows);bash 自己的重定向( `> "$OUT"`)
    反而要保持 POSIX,两者不能混。
+   (⚠️ 「不认」有个前提 —— Git Bash 给原生程序的路径自动转换被关掉了。
+   详见 docs/05「原生程序不认 `/e/...`」。显式转换过的路径两种环境都对,
+   所以这条规则照旧适用。)
 2. **焦点项标签要用 `selected="true"` 取**。TGuard 的列表有两种渲染态:
    文本随选中卡片重排(卡片节点 focused=true、无 text、文本在卡片 bounds 内)和
    文本留在列表原位(focused 在无 text 的卡片容器上)。两种态下**只有

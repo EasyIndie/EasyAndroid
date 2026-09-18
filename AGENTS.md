@@ -327,19 +327,43 @@ A(){ adb -s "$DEV" shell "$@" </dev/null 2>&1; }
 
 不要硬编码设备地址或 SDK 路径。
 
-### adb 的本机侧路径必须过 `win_of`
+### 原生程序的路径必须人工转换
 
-`adb.exe` 是原生程序,**不认 Git Bash 的 POSIX 路径**(`/e/foo` 会静默失败),
-而 bash 自己的重定向/`test` 反而只认 POSIX 形式:
+**不只有 adb。** `git.exe` / `java.exe` / Windows 版 `gh.exe` 都是原生程序,
+在 Git Bash 里拿到 `/e/foo` 这种 POSIX 路径**要么静默失败、要么报一个指错方向的
+错**;而 bash 自己的重定向/`test`/`cd` 反而只认 POSIX 形式:
 
 ```bash
 "$ADB" -s "$TV" pull /sdcard/x "$(win_of "$TMP/x")"   # ✓ 转换
 something > "$TMP/x.log"                              # ✓ 保持 POSIX
 ```
 
-规则:凡是**传给 adb 的本机路径**(push 源、pull 目标)都要 `win_of`;
-凡是 **bash 内部使用**(重定向、`[ -f ]`、`cat`)保持 POSIX。两处不能混。
-同理,调 Windows 原生 python 时路径过 `pyfile`(= `win_of`)。
+规则:凡是**传给原生程序的本机路径**都要转,凡是 **bash 内部使用**(重定向、
+`[ -f ]`、`cat`、`cd`)保持 POSIX。两处不能混。按消费方选转换函数:
+
+| 消费方 | 用哪个 | 为什么 |
+|---|---|---|
+| `$ADB` / `$PY` / python | `win_of`(WSL 上是恒等) | 它们在 WSL 上就是 Linux 版,POSIX 才对 |
+| Windows 版 `gh.exe`(从 WSL 调) | `winpath`(无条件) | 消费方不随平台变 |
+| **`git`** | **`gitpath`**(WSL 上是恒等) | 同 adb:Win 原生 / WSL 是 Linux 版;且给**混合形式** `E:/...`,因为 `$REPO` 还要用于 bash 拼路径 |
+| 调 Windows 原生 python 时 | `pyfile`(= `win_of`) | — |
+
+为什么会有这个坑:Git Bash 平时会把 POSIX 路径**自动**转成 Windows 路径再交给
+原生程序,但这个转换**可以被关掉**(`MSYS_NO_PATHCONV=1` / `MSYS2_ARG_CONV_EXCL=*`,
+WorkBuddy 的沙箱就设了这两个)。所以「不认 `/e/...`」是**条件成立**的 ——
+在你自己的 Git Bash 窗口里 adb 和 git 其实都认,但**在自动转换被关掉的环境里
+(agent 沙箱、部分 CI shim)全都认不得**,而且报错长这样:
+
+```
+$ git -C /e/EasyAndroid rev-parse HEAD
+fatal: cannot change to '/e/EasyAndroid': No such file or directory
+$ bash tools/release.sh --check
+!! 不是 git 仓库?          ← 方向完全指错
+```
+
+显式转换过的路径(不管 `E:/...` 还是 `E:\...`)**两种环境都对** —— 所以一律显式转,
+不要依赖那个开关。踩过的实例:`release.sh` / `tag-release.sh` / `release-apk.sh`
+早期用 `git -C "$REPO"`($REPO 是 POSIX),在上述环境里三个脚本直接不可用。
 
 ### 改完脚本至少做语法检查
 

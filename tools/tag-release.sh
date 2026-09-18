@@ -22,7 +22,9 @@ set -uo pipefail
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-REPO="$(cd "$_TOOLS_DIR/.." && pwd)"
+# ⚠️ 过 gitpath:下面全是 `git -C "$REPO"`,而 git 在 Windows 上是原生程序
+#    (某些环境关掉了 MSYS2 的路径自动转换)。见 _common.sh 里 gitpath 的说明。
+REPO="$(gitpath "$(cd "$_TOOLS_DIR/.." && pwd)")"
 VF="$REPO/version.properties"
 
 CHECK=0; VERIFY=1; FORCE=0; BUMP=""
