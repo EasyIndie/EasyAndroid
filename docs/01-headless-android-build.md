@@ -28,6 +28,25 @@ ls -d /opt/jdk/jdk-17*          # → /opt/jdk/jdk-17.0.20.1+1
 **不要走 `apt install openjdk-17-jdk`** —— 实测在部分环境里 apt 源很慢,一次 900s 超时都没装完,
 而 Adoptium 直连稳定在 2.4 MB/s 左右。
 
+### Windows 原生(Git Bash)
+
+```powershell
+winget install --id EclipseAdoptium.Temurin.17.JDK --exact
+```
+
+装到 `C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot`,和上面 Linux 侧是**同一个
+版本号**(17.0.20.1+1)。MSI 会自动把 `JAVA_HOME` 与 `Path` 写进**系统**环境变量,所以:
+
+- `JAVA_HOME` 的值末尾带一个反斜杠(`...\hotspot\`),这是 MSI 的习惯 —— 拼
+  `"$JAVA_HOME/bin/keytool"` 照常可用,不用自己修。
+- **已经开着的终端要重开**才能拿到新变量(进程环境是启动时的快照)。`tools/` 脚本会先看
+  `$JAVA_HOME/bin/keytool`,再退回 PATH 里找 `keytool`。
+- 装完自己验一下:
+  ```bash
+  keytool -help | head -2                                  # → 密钥和证书管理工具
+  bash tools/gen-keystore.sh --status                      # → 应列出别名与 SHA-256 指纹
+  ```
+
 ## 2. 装 Android cmdline-tools
 
 ```bash
