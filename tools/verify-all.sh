@@ -46,17 +46,38 @@ echo "==> 平台 $PLATFORM"
 echo
 echo "════════════════ 1/4 环境 ════════════════"
 step_env(){
-  if command -v java >/dev/null && java -version 2>&1 | grep -q '"17'; then
-    ok "JDK 17 ($(java -version 2>&1 | head -1 | sed 's/.*"\(.*\)".*/\1/'))"
+  # JDK 17:AGP 8.x 的硬性要求。
+  #
+  # 这里验的是「Gradle 将要用的那个 java」,查找顺序与基座 §7 保持一致:
+  # 先 $JAVA_HOME,再退回 PATH。
+  # ⚠️ 不能只写 `command -v java`:$JAVA_HOME 才是 Gradle 的首选,而它指向的
+  #    JDK 未必同时进了 PATH(Windows 上 JDK 装在 Program Files 下,系统 Path
+  #    未必跟着更新)。只查 PATH 会把「装好且能用」的 JDK 误报成没装。
+  local _javabin=""
+  if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    _javabin="$JAVA_HOME/bin/java"
+  elif command -v java >/dev/null 2>&1; then
+    _javabin="$(command -v java)"
+  fi
+  if [ -n "$_javabin" ] && "$_javabin" -version 2>&1 | grep -q '"17'; then
+    ok "JDK 17 ($("$_javabin" -version 2>&1 | head -1 | sed 's/.*"\(.*\)".*/\1/'))"
   else
     bad "JDK 17 不可用(AGP 8.x 硬性要求)"
   fi
   [ -d "$ANDROID_HOME/platform-tools" ] \
     && ok "Android SDK platform-tools ($ANDROID_HOME)" \
     || bad "找不到 $ANDROID_HOME/platform-tools(设 ANDROID_HOME 或 ANDROID_SDK_DIR 指过去)"
-  [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ] \
-    || [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" ] \
-    && ok "cmdline-tools" || bad "cmdline-tools 缺失"
+  # ⚠️ 用 [ -f ] 而不是 [ -x ]:Windows 上 .bat **没有可执行位**(实测 -rw-r--r--,
+  #    Git Bash 只给 .exe 打 x 位),而 sdkmanager 在 Windows 上正是 .bat ——
+  #    用 -x 会把装好的 cmdline-tools 误报成「缺失」。(同 build-tools 那条。)
+  # 顺带把原来的 `A || B && ok || bad` 换成显式 if:那种写法依赖左结合的
+  # 优先级(等价于 `(A || B) && ok || bad`),读的人要停下来算一遍才知道对不对。
+  if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ] \
+     || [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" ]; then
+    ok "cmdline-tools"
+  else
+    bad "cmdline-tools 缺失"
+  fi
   # build-tools 里可能是 aapt2 或 aapt2.exe。逐个候选判断,不要用带多个
   # glob 参数的 `ls` —— 只要有一个路径不存在,ls 整体就返回非零(CI 上
   # 没有 aapt2.exe,老写法会恒判失败)。
@@ -160,9 +181,16 @@ step_build(){
       [ -f "$cand" ] && { aapt2="$cand"; break 2; }
     done
   done
+  # ⚠️ aapt2(.exe) 是**原生程序**,不认 Git Bash 的 POSIX 路径 —— 它要读的
+  #    APK 路径必须先过 win_of。否则 aapt2 找不到文件、往 stderr 报错后退出,
+  #    而 stdout 是空的:下面「钩子 / 版本号」两条会**一起误报**。实测 2026-09-18:
+  #    构建明明成功、APK 就在那儿,却同时报「没有自截图钩子」和「版本号不一致:APK=」。
+  #    (同类坑见 AGENTS.md 的「原生程序路径必须显式转换」。)
+  local apk_win
+  apk_win="$(win_of "$apk")"
   if [ -n "$aapt2" ]; then
     local n
-    n="$("$aapt2" dump xmltree --file AndroidManifest.xml "$apk" 2>/dev/null | grep -c UiDumpReceiver)"
+    n="$("$aapt2" dump xmltree --file AndroidManifest.xml "$apk_win" 2>/dev/null | grep -c UiDumpReceiver)"
     [ "$n" -ge 1 ] && ok "debug 包含自截图钩子" || bad "debug 包里没有自截图钩子"
   else
     skip "aapt2 校验钩子"
@@ -175,7 +203,7 @@ step_build(){
   if [ -z "$want" ]; then
     bad "读不到 $(basename "$vf") 里的 version=(版本号唯一来源,见 docs/06)"
   elif [ -n "$aapt2" ]; then
-    got="$("$aapt2" dump badging "$apk" 2>/dev/null \
+    got="$("$aapt2" dump badging "$apk_win" 2>/dev/null \
           | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)"
     [ "$got" = "$want" ] \
       && ok "版本号与 version.properties 一致 ($want)" \

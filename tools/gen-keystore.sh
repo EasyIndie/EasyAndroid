@@ -297,7 +297,11 @@ cmd_verify(){
 
   local mine theirs
   mine="$(fingerprint)"
-  theirs="$("$apksigner" verify --print-certs "$apk" 2>/dev/null \
+  # APK 路径过 win_of(apksigner 在原生侧);JAVA_HOME 交给 bt_run —— apksigner 是
+  # .bat,会硬校验 JAVA_HOME 是不是 Windows 有效目录,直接调会报
+  #   ERROR: JAVA_HOME is set to an invalid directory: /c/Program Files/...
+  # 取不到时 theirs 为空,下面会误报「它没签名?」,所以两处都不能省。
+  theirs="$(bt_run apksigner verify --print-certs "$(win_of "$apk")" 2>/dev/null \
             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr 'A-Z' 'a-z')"
   [ -n "$mine" ]   || die "本机读不出证书指纹(密钥库/密码不对?)"
   [ -n "$theirs" ] || die "读不出 $apk 的签名 —— 它没签名?"

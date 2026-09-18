@@ -294,11 +294,47 @@ for _p in "$ANDROID_HOME/platform-tools" "$ANDROID_HOME/cmdline-tools/latest/bin
   esac
 done
 
-# JDK(tv-install 用 aapt2 读 APK 信息)
+# JDK(AGP 8.x 硬性要求 17;tv-install 用 aapt2 读 APK 信息,keytool 走它)
+#
+# 有意让环境变量优先:一台机器上可能装了多套 JDK,靠 $JAVA_HOME 指定用哪套。
+#
+# ⚠️ 两个坑(2026-09-18 实测,Windows):
+#
+#   1. **刚装完的 JDK 不会出现在当前进程的环境里。** 环境变量是进程启动时的
+#      快照 —— 在已经开着的终端 / IDE / 沙箱里装完 JDK,这个进程的 $JAVA_HOME
+#      和 $PATH 里都找不到它。实测:系统级 JAVA_HOME 与 Path 都已写好,而当时
+#      的会话里两个都是空的,于是「明明装好了却报没 JDK」。
+#   2. **Windows 上 JDK 不在 Linux 那套惯例位置。** Temurin MSI 装到
+#      `C:\Program Files\Eclipse Adoptium\jdk-<版本>`,既不是 /usr/lib/jvm,
+#      也不在 Java 自己的 `Program Files\Java` —— 下面这份探测表必须显式列上,
+#      否则坑 1 发生时就没有兜底。
+#
+# 下面按平台列常见安装位置(路径不存在时 glob 不展开,匹配不到就跳过,无副作用)。
 if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME:-}/bin/java" ]; then
-  for _jh in /opt/jdk/jdk-17* /usr/lib/jvm/*17* "$HOME/AppData/Local/Programs/Android Studio/jbr"; do
+  # 原值无效就清掉,免得把一个坏路径传给 Gradle
+  JAVA_HOME=""
+  for _jh in \
+    /opt/jdk/jdk-17* \
+    /usr/lib/jvm/*17* \
+    "/c/Program Files/Eclipse Adoptium"/jdk-17* \
+    "/c/Program Files/Java"/jdk-17* \
+    "/c/Program Files/Microsoft"/jdk-17* \
+    "$HOME/.jdks"/*17* \
+    "$HOME/AppData/Local/Programs/Eclipse Adoptium"/jdk-17* \
+    "$HOME/AppData/Local/Programs/Android Studio/jbr"
+  do
     if [ -n "$_jh" ] && [ -x "$_jh/bin/java" ]; then JAVA_HOME="$_jh"; break; fi
   done
+fi
+
+# $JAVA_HOME/bin 补进 PATH。理由和上面补 SDK 工具一样:
+#   · 直接执行 java/keytool(不看 JAVA_HOME 的调用)也能用;
+#   · `command -v java` 这类存在性检查不会再误判成「没装 JDK」。
+if [ -n "${JAVA_HOME:-}" ] && [ -d "$JAVA_HOME/bin" ]; then
+  case ":$PATH:" in
+    *":$JAVA_HOME/bin:"*) ;;
+    *) PATH="$JAVA_HOME/bin:$PATH" ;;
+  esac
 fi
 
 # bt_tool <工具名> —— 解析 build-tools 里的可执行文件(aapt2 / apksigner / zipalign ...)
@@ -309,10 +345,33 @@ bt_tool(){
   [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME/build-tools" ] || return 1
   bt="$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
   [ -n "$bt" ] || return 1
+  # ⚠️ 判定用 [ -f ] 而不是 [ -x ]:Windows 上 .bat **没有可执行位**(实测
+  #    -rw-r--r--,Git Bash 只给 .exe 打 x 位),而 apksigner 恰好就是 .bat ——
+  #    用 -x 会报「找不到 apksigner」,把装好的 build-tools 判成坏的。
   for c in "$bt$name" "$bt$name.bat" "$bt$name.exe"; do
-    [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+    [ -f "$c" ] && { printf '%s' "$c"; return 0; }
   done
   return 1
+}
+
+# bt_run <工具名> [参数...] —— 调用 build-tools 里的工具,并处理好 JAVA_HOME。
+#
+# 为什么需要包一层:.bat 工具(apksigner;cmdline-tools 的 sdkmanager 同理)是
+# **批处理脚本**,开头就 `if not exist "%JAVA_HOME%\bin\java.exe"` 硬校验 ——
+# 而基座里的 $JAVA_HOME 是 POSIX 形式(/c/Program Files/...),批处理认不出,直接报:
+#     ERROR: JAVA_HOME is set to an invalid directory: /c/Program Files/...
+#
+# ⚠️ 为什么 keytool / java 没暴露这个问题:它们是**原生启动器**,JAVA_HOME 无效时
+#    会安静地回落注册表 / 自身所在目录,**只有 .bat 会硬校验**。所以这一条不是
+#    「JAVA_HOME 设错了」,而是「批处理脚本这个消费方需要另一种路径形式」。
+#
+# 转换只作用于这一次子进程,外部不受影响 —— bash 侧(gradlew 等)继续用 POSIX 的
+# $JAVA_HOME(见 §7)。WSL/Linux 上 win_of 是恒等,等于没转。
+bt_run(){
+  local name="$1"; shift
+  local tool
+  tool="$(bt_tool "$name")" || return 1
+  JAVA_HOME="$(win_of "${JAVA_HOME:-}")" "$tool" "$@"
 }
 
 # ── APK 签名证书信息 ───────────────────────────────────────────────
@@ -334,10 +393,11 @@ bt_tool(){
 #  3. 匹配放宽:只认 `... DN:` / `... SHA-256 digest:` 这两段后缀,
 #     前缀("Signer #1 certificate")变化不影响。
 apk_cert_fp(){
-  local apk="$1" signer out fp
-  signer="$(bt_tool apksigner)" || return 2
+  local apk="$1" out fp
+  bt_tool apksigner >/dev/null || return 2
   [ -f "$apk" ] || return 3
-  out="$("$signer" verify --print-certs "$apk" 2>&1)" || return 4
+  # APK 路径过 win_of(apksigner 是原生侧);JAVA_HOME 交给 bt_run 转 Windows 形式
+  out="$(bt_run apksigner verify --print-certs "$(win_of "$apk")" 2>&1)" || return 4
   fp="$(printf '%s\n' "$out" \
         | sed -n 's/.*SHA-256 digest:[[:space:]]*//p' | head -1 \
         | tr -d ':' | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
@@ -346,10 +406,11 @@ apk_cert_fp(){
 }
 
 apk_cert_dn(){
-  local apk="$1" signer out dn
-  signer="$(bt_tool apksigner)" || return 2
+  local apk="$1" out dn
+  bt_tool apksigner >/dev/null || return 2
   [ -f "$apk" ] || return 3
-  out="$("$signer" verify --print-certs "$apk" 2>&1)" || return 4
+  # APK 路径过 win_of(apksigner 是原生侧);JAVA_HOME 交给 bt_run 转 Windows 形式
+  out="$(bt_run apksigner verify --print-certs "$(win_of "$apk")" 2>&1)" || return 4
   dn="$(printf '%s\n' "$out" | sed -n 's/.*certificate DN:[[:space:]]*//p' | head -1)"
   [ -n "$dn" ] || return 5
   printf '%s' "$dn"
@@ -357,9 +418,9 @@ apk_cert_dn(){
 
 # 取不到时的诊断输出,交给调用方打到 stderr
 apk_cert_dump(){
-  local apk="$1" signer
-  signer="$(bt_tool apksigner)" || { echo "(找不到 apksigner)"; return 0; }
-  "$signer" verify --print-certs "$apk" 2>&1
+  local apk="$1"
+  bt_tool apksigner >/dev/null || { echo "(找不到 apksigner)"; return 0; }
+  bt_run apksigner verify --print-certs "$(win_of "$apk")" 2>&1
 }
 
 export PLATFORM IS_WINDOWS TMP TMP_WIN ADB PY
@@ -420,7 +481,7 @@ adb_online(){
 
 export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath gitpath pyfile run_py \
          apk_cert_fp apk_cert_dn apk_cert_dump \
-          re_escape adbx adb_connect_all adb_online bt_tool 2>/dev/null || true
+          re_escape adbx adb_connect_all adb_online bt_tool bt_run 2>/dev/null || true
 
 # ── 10. 提示 ────────────────────────────────────────────────────────
 if [ ! -f "$_TOOLS_DIR/device.env" ] && [ -z "${EASYANDROID_QUIET:-}" ]; then

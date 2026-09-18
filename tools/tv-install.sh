@@ -100,7 +100,11 @@ key_rep(){ local k="$1" n="$2" d="${3:-0.5}"
 # aapt2 是捷径不是硬依赖:机器上没装 build-tools 时,可用环境变量手动给元信息
 #   PKG=... VER=... ACTIVITY=... [LABEL=...] bash tools/tv-install.sh <apk>
 # PKG 必须给(缺它没法装);VER 缺省则跳过装后版本校验;ACTIVITY 缺省则装完不自动启动。
-badging(){ [ -n "$AAPT2" ] && "$AAPT2" dump badging "$APK" 2>/dev/null; return 0; }
+# ⚠️ aapt2 是**原生程序**(Windows 上是 aapt2.exe),不认 Git Bash 的 POSIX 路径 ——
+#    APK 路径要过 win_of(相对路径原样返回,不受影响)。
+#    注意这里的失败是**静默**的(2>/dev/null + return 0):路径给错读不到元信息时,
+#    下面会一路用默认值(LABEL 退成「双端演示」之类)而不报错,所以路径必须一次给对。
+badging(){ [ -n "$AAPT2" ] && "$AAPT2" dump badging "$(win_of "$APK")" 2>/dev/null; return 0; }
 [ -n "$AAPT2" ] || [ -n "${PKG:-}" ] || {
   echo "!! 找不到 aapt2,也没有手动指定 PKG。二选一:" >&2
   echo "   a. 装 Android SDK build-tools,或设 ANDROID_HOME 指向 SDK;" >&2

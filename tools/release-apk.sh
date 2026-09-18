@@ -221,8 +221,14 @@ AAPT2="$(bt_tool aapt2)"
 fail=0
 for apk in "${BUILT[@]}"; do
   n="$(basename "$apk")"
+  # aapt2 / apksigner 都是**原生程序**(Windows 上分别是 .exe 和 .bat),不认
+  # Git Bash 的 POSIX 路径 —— 凡是要它们读的 APK 路径统一走 apk_win。
+  # ⚠️ 只换喂给它们的那一份:[ -f ] / basename / cp 是 bash 侧,继续用 $apk。
+  apk_win="$(win_of "$apk")"
   # 4.1 签名
-  if "$APKSIGNER" verify "$apk" >"$TMP/release-verify.log" 2>&1; then
+  # bt_run 而非直接调 $APKSIGNER:apksigner 在 Windows 上是 .bat,会硬校验
+  # JAVA_HOME(见 _common.sh 里 bt_run 的说明)。
+  if bt_run apksigner verify "$apk_win" >"$TMP/release-verify.log" 2>&1; then
     # ⚠️ 指纹/DN 走 apk_cert_* —— 它们**取不到就返回非 0**,不会给出空字符串。
     #    以前是就地 sed:取不到时得到 "",而下面的守护检查是
     #    `grep -qF "" manifest` —— **匹配任何非空文件** → 静默通过 + 打 ✅。
@@ -263,7 +269,7 @@ for apk in "${BUILT[@]}"; do
 
 
   # 4.2 版本号
-  badging="$("$AAPT2" dump badging "$apk" 2>/dev/null)"
+  badging="$("$AAPT2" dump badging "$apk_win" 2>/dev/null)"
   got_ver="$(printf '%s' "$badging" | head -1 | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
   got_code="$(printf '%s' "$badging" | head -1 | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
   if [ "$got_ver" = "$VER" ] && [ "$got_code" = "$WANT_CODE" ]; then
@@ -275,7 +281,7 @@ for apk in "${BUILT[@]}"; do
 
   # 4.3 release 包里不该有 debug 自截图钩子
   if [ "$(printf '%s' "$badging" | grep -c UiDumpReceiver)" != "0" ] \
-     || [ "$("$AAPT2" dump xmltree --file AndroidManifest.xml "$apk" 2>/dev/null | grep -c UiDumpReceiver)" != "0" ]; then
+     || [ "$("$AAPT2" dump xmltree --file AndroidManifest.xml "$apk_win" 2>/dev/null | grep -c UiDumpReceiver)" != "0" ]; then
     echo "  ❌ $n 里混进了 debug 钩子(UiDumpReceiver)—— 构建类型不对" >&2; fail=1
   fi
 
