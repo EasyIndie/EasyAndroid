@@ -568,12 +568,23 @@ cmd_manifest(){
       echo "#"
       echo "# 生成时间:$(date '+%Y-%m-%d %H:%M:%S %z')"
       echo "# 指纹格式:小写无冒号(与 apksigner 一致)"
+      echo "#"
+      echo "# drill.* 是恢复演练的记录,由 --drill <文件> --record 写入:"
+      echo "#   drill.last    上次演练日期(超过半年 --status 会提醒重跑)"
+      echo "#   drill.where   **那份副本放在哪**(持久位置:飞书/密码管理器/U 盘…)"
+      echo "#   drill.file    演练时本地那个文件叫什么(可能只是临时下载,验完就删)"
+      echo "#   drill.size    字节数 —— 用来说明「验的到底是哪一份」"
       echo
       echo "default_alias=$(prop_of keyAlias)"
       local a
       for a in $(list_aliases); do echo "alias.$a=$(fp_of "$KS" "$pw" "$a")"; done
       for a in $(list_app_aliases); do echo "app.$a=$(alias_of_app "$a")"; done
-    } > "$MANIFEST"
+      # ⚠️ 保留已有的 drill.* —— 重建「期望指纹」不该抹掉「演练历史」。
+      #    踩过:重建一次,验证记录就没了,而没人会注意到(那个字段本来就少人看)。
+      echo
+      grep -E '^drill\.' "$MANIFEST" 2>/dev/null || true
+    } > "$MANIFEST.tmp"
+    mv "$MANIFEST.tmp" "$MANIFEST"
     echo "==> 已更新 $MANIFEST"
     grep -vE '^#|^$' "$MANIFEST" | sed 's/^/     /'
     return 0
