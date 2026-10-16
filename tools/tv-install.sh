@@ -256,25 +256,32 @@ push_apk(){
   # APK 路径同样过 win_of(用户传 /e/... 绝对路径时 adb.exe 才能读)
   run_timeout 120 "$ADB" -s "$TV" push "$(win_of "$APK")" "$APK_DIR/$name" </dev/null 2>&1 | tail -1
 
-  # ⚠️ U 盘卫生检查 —— 这里是「装得慢 / 列表里找不到」最常见的真因。
-  #    安装器冷缓存时会把目录里的**每一个 APK 全量解析一遍**,而且会把 macOS 的
-  #    AppleDouble 垃圾(`._xxx.apk`,4KB 存根,本体通常早就不在了)也当 APK 去解析:
-  #    那些永远解析不出名字,于是列表里堆满幽灵项、甚至同一条重复十几次,
-  #    扫描自然又慢又飘。
-  #    实测 2026-09-18:AndroidTV/ 里 19 个「APK」中 11 个是 `._*`,另有 470MB
-  #    真 APK(其中 com.android.chrome_old.apk 单个 236MB),脚本扫 26 项都找不到目标。
+  # ⚠️ U 盘卫生检查。两件真会咬人的事(都实测过):
+  #
+  #   ① 安装器扫的是**整个可移动卷、而且递归** —— 把 APK 挪到二级目录
+  #      或者 AndroidTV/ 外面都躲不掉(两面都验过)。
+  #      唯一有效的是**不让名字以 .apk 结尾**:改成 `xxx.apk.off` 就不会被当安装源。
+  #
+  #   ② macOS 的 AppleDouble 垃圾(`._xxx.apk`,4KB 存根,本体通常早就不在了)
+  #      也会被当 APK 解析,而那些永远解析不出名字 —— 列表里就堆满僵尸条目,
+  #      甚至同一条重复十几次(实测 `._lark_feishu_...apk` 连续出现 12 次)。
+  #
+  # ⚠️ 注意别把「慢」都归到这个上:实测热缓存 52s、冷缓存 292s,
+  #    把 470MB 归档、顶层只剩 183MB 后耗时几乎没有变化 ——
+  #    真正在变的是**当次是不是冷缓存**。这只卫生检查防的是「列表里堆垃圾 +
+  #    僵尸条目把安装搞成假的成功」,不是主要耗时。
   local n_all n_junk
   n_all="$(A "ls -a $APK_DIR" 2>/dev/null | grep -c .)"
   n_junk="$(A "ls -a $APK_DIR" 2>/dev/null | grep -c '^\._')"
   if [ "${n_junk:-0}" -gt 0 ]; then
     echo "   ⚠️ U 盘 $APK_DIR 里有 $n_junk 个 macOS 的 \`._*\` 垃圾文件" >&2
-    echo "      安装器会把它们当 APK 解析(必然失败),列表里就堆满幽灵项 ——" >&2
-    echo "      这正是「装得慢 / 列表里找不到」最常见的原因。清掉:" >&2
+    echo "      它们会被当成 APK 解析(必然失败),列表里就堆满僵尸条目。清掉:" >&2
     echo "        \"$ADB\" -s $TV shell \"rm -f $APK_DIR/._*\"" >&2
   fi
   if [ "${n_all:-0}" -gt 12 ]; then
-    echo "   ⚠️ 该目录有 $n_all 个条目,安装器冷缓存时要**全部解析一遍**(实测 470MB 会扫到分钟级)。" >&2
-    echo "      只留本次要装的那个 APK 会快很多。" >&2
+    echo "   ⚠️ 该目录有 $n_all 个条目 —— 安装器扫的是**整个可移动卷、且递归**," >&2
+    echo "      这里只是个信号。用不到的 APK 改成 \`xxx.apk.off\` 就不会被当安装源:" >&2
+    echo "        \"$ADB\" -s $TV shell \"cd $APK_DIR; for f in *.apk; do mv \\\"\$f\\\" \\\"\$f.off\\\"; done\"" >&2
   fi
 }
 
