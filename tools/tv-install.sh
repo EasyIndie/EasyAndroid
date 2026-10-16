@@ -116,8 +116,17 @@ badging(){ [ -n "$AAPT2" ] && "$AAPT2" dump badging "$(win_of "$APK")" 2>/dev/nu
 #    `unterminated `s' command` → 取值变空 → 脚本一路用默认值/空包名(不报错)。
 #    详见 _common.sh 里 badging_field 的注释。
 BADGING="$(badging)"
+# TGuard 列表里显示的是**本地化后的应用名** —— 中文电视上常是 application-label-zh,
+# 而 aapt2 的 `application-label:` 给的是默认语言那份,两者经常不一样
+# (实测 2026-09-18:TV Bro 默认是 "TV Bro: TV Web Browser",列表里却是
+#  "TV Bro: 电视网络浏览器")。只比一个字符串就会「列表里永远找不到」,
+# 而那个现象看起来像列表没刷新 / 安装器坏了,方向完全指错。
+# 所以留四个候选:默认名 / 中文名 / 各自冒号前的那一段。
 LABEL="${LABEL:-$(badging_field "$BADGING" "application-label:" "")}"
+LABEL_ZH="${LABEL_ZH:-$(badging_field "$BADGING" "application-label-zh:" "")}"
 LABEL="${LABEL:-双端演示}"
+LABEL_SHORT="${LABEL%%:*}"
+LABEL_ZH_SHORT="${LABEL_ZH%%:*}"
 PKG="${PKG:-$(badging_field "$BADGING" "package:" name)}"
 VER="${VER:-$(badging_field "$BADGING" "package:" versionName)}"
 ACTIVITY="${ACTIVITY:-$(badging_field "$BADGING" "launchable-activity:" name)}"
@@ -234,6 +243,27 @@ push_apk(){
   echo "==> 推送 APK 到 $APK_DIR/$name"
   # APK 路径同样过 win_of(用户传 /e/... 绝对路径时 adb.exe 才能读)
   run_timeout 120 "$ADB" -s "$TV" push "$(win_of "$APK")" "$APK_DIR/$name" </dev/null 2>&1 | tail -1
+
+  # ⚠️ U 盘卫生检查 —— 这里是「装得慢 / 列表里找不到」最常见的真因。
+  #    安装器冷缓存时会把目录里的**每一个 APK 全量解析一遍**,而且会把 macOS 的
+  #    AppleDouble 垃圾(`._xxx.apk`,4KB 存根,本体通常早就不在了)也当 APK 去解析:
+  #    那些永远解析不出名字,于是列表里堆满幽灵项、甚至同一条重复十几次,
+  #    扫描自然又慢又飘。
+  #    实测 2026-09-18:AndroidTV/ 里 19 个「APK」中 11 个是 `._*`,另有 470MB
+  #    真 APK(其中 com.android.chrome_old.apk 单个 236MB),脚本扫 26 项都找不到目标。
+  local n_all n_junk
+  n_all="$(A "ls -a $APK_DIR" 2>/dev/null | grep -c .)"
+  n_junk="$(A "ls -a $APK_DIR" 2>/dev/null | grep -c '^\._')"
+  if [ "${n_junk:-0}" -gt 0 ]; then
+    echo "   ⚠️ U 盘 $APK_DIR 里有 $n_junk 个 macOS 的 \`._*\` 垃圾文件" >&2
+    echo "      安装器会把它们当 APK 解析(必然失败),列表里就堆满幽灵项 ——" >&2
+    echo "      这正是「装得慢 / 列表里找不到」最常见的原因。清掉:" >&2
+    echo "        \"$ADB\" -s $TV shell \"rm -f $APK_DIR/._*\"" >&2
+  fi
+  if [ "${n_all:-0}" -gt 12 ]; then
+    echo "   ⚠️ 该目录有 $n_all 个条目,安装器冷缓存时要**全部解析一遍**(实测 470MB 会扫到分钟级)。" >&2
+    echo "      只留本次要装的那个 APK 会快很多。" >&2
+  fi
 }
 
 # ---- 屏保判断 ----
@@ -290,15 +320,22 @@ open_install_page(){
 # 下次直接一次批量按到那个位置,省掉十几轮 dump(每轮 2.5 秒)。
 POS_FILE="$_TOOLS_DIR/.tv-pos-${PKG:-app}"
 match_here(){
-  local info label ver
+  local info label ver ok=0 c
   info="$(focus_info)"
   label="${info%%|*}"; ver="${info##*|}"
   # label 可能是解析完成的应用名(双端演示),也可能是解析前的文件名
   # (TGuard 渐进解析,见文件头「实测补充」)。两种都认,解析没完成也能点。
   case "$label" in
-    "$LABEL"|${PKG:-__none__}-*.apk|._${PKG:-__none__}-*.apk) ;;
-    *) return 1 ;;
+    ${PKG:-__none__}-*.apk|._${PKG:-__none__}-*.apk) ok=1 ;;
   esac
+  # 应用名有多个变体(默认语言 / 中文 / 冒号前那一段),逐个比;
+  # 列表里常见「主名: 副标题」形式,所以额外允许 前缀+冒号 形式的匹配。
+  for c in "$LABEL" "$LABEL_ZH" "$LABEL_SHORT" "$LABEL_ZH_SHORT"; do
+    [ -n "$c" ] || continue
+    [ "$label" = "$c" ] && ok=1
+    case "$label" in "$c":*) ok=1 ;; esac
+  done
+  [ "$ok" = 1 ] || return 1
   # ver 为空或 "/"(详情面板还没解析出来的占位符)都放行,
   # 装完有 versionName 校验兜底;只有 ver 非空且对不上才跳过同名旧版本。
   if [ -n "$VER" ] && [ -n "$ver" ] && [ "$ver" != "/" ] && [ "$ver" != "$VER" ]; then
@@ -376,14 +413,54 @@ locate_and_trigger(){
   return 1
 }
 
-# ---- 盲过两道确认框 ----
-# 两个对话框的默认焦点都在「取消」,RIGHT 移到确认位再按 OK。
-# 不 dump 判断(每次 2.5s),装完用 versionName 校验兜底。
+# ---- 点掉安装确认框 ----
+# ⚠️ 这两个框的按钮是 **focusable=true 但 focused=false**(实测 2026-09-18),
+#    也就是说 **D-pad 根本没接管焦点** —— `input keyevent DPAD_RIGHT/CENTER`
+#    打上去毫无作用,安装静默失败。表现是「装到的是 v?」(包名查不到),
+#    看起来像版本校验的毛病,方向完全指错。
+#    真正有效的是**指针事件点按钮坐标** —— TCL 遥控本身就能当空鼠用
+#    (`gIrTouch_Mouse`,带 MOUSE|TOUCHPAD|POINTER),用户手点走的也是这条路。
+#    所以这里改成 dump 出按钮坐标再 tap,不再盲按。
+#    实测两个框:
+#      ① 「应用未被认证,是否继续安装?」→ 继 续
+#      ② 「要安装此应用吗?它将涉及以下权限:」→ 安 装
+#    两个框的默认焦点都在「取消」上,但既然没焦点,索性一律点肯定按钮。
+dialog_ok_xy(){
+  dumpui
+  "$PY" - "$(pyfile "$UI_XML")" <<'PYEOF'
+import re, sys
+try: s = open(sys.argv[1], encoding='utf-8').read()
+except Exception: raise SystemExit(1)
+# 肯定按钮的文案(去空格后比);「取消/卸载/删除」一律不碰
+YES = ('继续', '安装', '确定', '完成', '立即体验', '允许')
+NO  = ('取消', '卸载', '删除', '拒绝')
+for x in re.findall(r'<node[^>]*>', s):
+    if 'clickable="true"' not in x: continue
+    t = (re.search(r'text="([^"]*)"', x) or [None, ''])[1]
+    if not t: continue
+    key = t.replace(' ', '')
+    if key not in YES or any(n in key for n in NO): continue
+    b = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', x)
+    if not b: continue
+    x1, y1, x2, y2 = map(int, b.groups())
+    print((x1 + x2) // 2, (y1 + y2) // 2)
+    raise SystemExit(0)
+raise SystemExit(1)
+PYEOF
+}
 pass_dialogs(){
-  sleep 1.8
-  keys "KEYCODE_DPAD_RIGHT KEYCODE_DPAD_CENTER" 2.5
-  keys "KEYCODE_DPAD_RIGHT KEYCODE_DPAD_CENTER" 3.5
-  keys "KEYCODE_BACK" 0.5          # 关掉「应用安装已完成,是否立即体验?」
+  local i xy
+  # 最多处理 3 个框:未被认证 → 权限确认 → 安装完成
+  for i in 1 2 3; do
+    sleep 2
+    xy="$(dialog_ok_xy 2>/dev/null)" || { sleep 2; xy="$(dialog_ok_xy 2>/dev/null)" || break; }
+    [ -n "$xy" ] || break
+    echo "   点「继续/安装」@ $xy"
+    A "input tap $xy" >/dev/null
+  done
+  sleep 1
+  A input keyevent KEYCODE_BACK >/dev/null   # 关掉「应用安装已完成,是否立即体验?」
+  sleep 1
 }
 
 # ================= 主流程 =================

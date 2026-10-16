@@ -443,9 +443,17 @@ badging_field(){
     else
       v="${line#"$prefix"}"
     fi
-    v="${v%% *}"                                   # 值到第一个空格为止
-    case "$v" in \"*) v="${v#\"}" ;; \'*) v="${v#\'}" ;; esac
-    case "$v" in *\") v="${v%\"}" ;; *\') v="${v%\'}" ;; esac
+    # ⚠️ **带引号的值要整段取到闭合引号,不能截到第一个空格。**
+    #    `application-label:'TV Bro: TV Web Browser'` 按空格截出来是 `'TV`
+    #    —— 于是 tv-install.sh 拿着 "TV" 去 TGuard 列表里找,永远找不到,
+    #    而现象是「安装器列表里没有这个 APK」,看着像列表没刷新 / 安装器坏了。
+    #    实测 2026-09-18:凡是**应用名里带空格**的 APK 一律装不上。
+    #    不带引号的(如 `package:` 行里的 name=xxx)仍然截到第一个空格。
+    case "$v" in
+      \"*) v="${v#\"}"; v="${v%%\"*}" ;;
+      \'*) v="${v#\'}"; v="${v%%\'*}" ;;
+      *)   v="${v%% *}" ;;
+    esac
     printf '%s' "$v"
     return 0
   done <<< "$text"
