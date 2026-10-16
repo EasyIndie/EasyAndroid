@@ -12,7 +12,7 @@
 | [06-app-conventions.md](06-app-conventions.md) | **工程目录约定**:新增应用的结构、命名、**版本号唯一来源(`version.properties` + SemVer)与发版流程**、版本组合、README 要求 |
 | [07-debug-ui-capture.md](07-debug-ui-capture.md) | **应用自截图**:让 `FLAG_SECURE` 设备(Pico 4)也能被 `adb` 看见 |
 | [08-jvm-screenshot-testing.md](08-jvm-screenshot-testing.md) | **JVM 截图测试**:不碰设备看 UI,最快的迭代档位 |
-| [09-tv-web-and-pwa.md](09-tv-web-and-pwa.md) | **在电视上跑现代 Web 应用**:自带浏览器是老引擎、系统 WebView 是 Chromium 83(丢 `@layer` 整份样式表),以及 **TV Bro 必须先切 GeckoView 引擎**;含「怎么判断当下用的哪个引擎」 |
+| [09-tv-remote-dev.md](09-tv-remote-dev.md) | **把电视当远程开发终端(两套方案)**:A = TV Bro + **必须先切 GeckoView 引擎**(系统 WebView 是 Chromium 83,会丢 `@layer` 整份样式表)跑自建 PWA;B = **Termux + ssh + tmux**(已实测跨机连通)。含电视能力清单、对齐的输入习惯、`run-as` 驱动 Termux 的自动化技巧 |
 
 ## 实测设备
 
