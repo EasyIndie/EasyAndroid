@@ -200,13 +200,23 @@ PYEOF
 # 界面状态用 dumpsys 判断(0.12s),不花 dump
 foreground(){ A dumpsys window 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' | sed 's/.*u0 //'; }
 installed_version(){ [ -n "$PKG" ] && A dumpsys package "$PKG" 2>/dev/null | sed -n 's/^ *versionName=//p' | head -1 | tr -d '\r'; }
+# 设备上那份 APK 的字节数 —— 用来区分「同一个版本号的另一份构建」。
+# versionName/versionCode 完全相同的两个 APK 可以有天差地别的体积
+# (实测:TV Bro 2.1.6 的 WebView 版 6.8MB vs GeckoView 版 143MB)。
+installed_apk_size(){
+  [ -n "$PKG" ] || return 1
+  local p
+  p="$(A pm path "$PKG" 2>/dev/null | head -1 | tr -d '\r' | sed 's/^package://')"
+  [ -n "$p" ] || return 1
+  A "stat -c %s '$p'" 2>/dev/null | tr -d ' \r'
+}
 
 # ---- 失败诊断:签名是否一致 ----
 # 「装到的是 vX,不是目标 vY」这句本身不说明为什么。最常见的真因是签名冲突:
 # debug.keystore 由每台机器各自生成(~/.android/ 下没有就现建一份),于是换机器、
 # 或同一台机器换 WSL↔Windows 构建,调试包签名就不一样。
-# TGuard 会把包交给系统安装器,安装器弹「应用未安装」——而 pass_dialogs 是【盲按】
-# 过确认框的,看不见那个错误,只能从 versionName 没变倒推出失败,真因就丢了。
+# TGuard 会把包交给系统安装器,安装器弹「应用未安装」——而 pass_dialogs 现在会点按钮,
+# 但错误框里的文案它看不到,只能从 versionName/字节数没变倒推出失败,真因就丢了。
 # 这里在失败后补一次指纹对比,把话说清楚,省掉一轮「是不是我点错了」的怀疑。
 sig_mismatch_hint(){
   [ -n "${PKG:-}" ] || return 0
@@ -238,7 +248,9 @@ push_apk(){
   APK_DIR="/storage/$VOL/AndroidTV"
   A "mkdir -p $APK_DIR" >/dev/null 2>&1
   local stamp; stamp="$(file_mtime "$APK")"
-  local name="${PKG:-app}-${VER:-0}-${stamp}.apk"
+  # 全局(非 local)—— match_here 要靠它判断「列表里那条是不是我们刚推的那个文件」
+  PUSHED_NAME="${PKG:-app}-${VER:-0}-${stamp}.apk"
+  local name="$PUSHED_NAME"
   A "rm -f $APK_DIR/${PKG:-app}-*.apk" >/dev/null 2>&1 || true
   echo "==> 推送 APK 到 $APK_DIR/$name"
   # APK 路径同样过 win_of(用户传 /e/... 绝对路径时 adb.exe 才能读)
@@ -325,8 +337,18 @@ match_here(){
   label="${info%%|*}"; ver="${info##*|}"
   # label 可能是解析完成的应用名(双端演示),也可能是解析前的文件名
   # (TGuard 渐进解析,见文件头「实测补充」)。两种都认,解析没完成也能点。
+  # ⚠️ 文件名形式的条目必须**正好是刚推上去那个**。
+  #    TGuard 的缓存以【文件路径】为键:旧文件被删之后它的条目还留在列表里,
+  #    而且因为文件不在了**永远解析不出应用名**(一直显示文件名)。
+  #    匹配到那个失效条目就会点了没反应 —— 而 versionName 校验看不出来
+  #    (装的是**同一个版本号的另一份构建**)。
+  #    实测 2026-09-18:目标 143MB 的 gecko 构建,匹配到已删除的旧文件名,装了个寂寞。
   case "$label" in
-    ${PKG:-__none__}-*.apk|._${PKG:-__none__}-*.apk) ok=1 ;;
+    ${PKG:-__none__}-*.apk|._${PKG:-__none__}-*.apk)
+      if [ -n "${PUSHED_NAME:-}" ]; then
+        [ "$label" = "$PUSHED_NAME" ] || [ "$label" = "._$PUSHED_NAME" ] || return 1
+      fi
+      ok=1 ;;
   esac
   # 应用名有多个变体(默认语言 / 中文 / 冒号前那一段),逐个比;
   # 列表里常见「主名: 副标题」形式,所以额外允许 前缀+冒号 形式的匹配。
@@ -471,6 +493,40 @@ sleep 2   # 给 TGuard 一点时间把新文件插进列表(按修改时间倒�
 
 echo "==> 打开 安全卫士 / 应用管理器"
 open_install_page
+
+# TGuard 的列表缓存以【文件路径】为键。上一版 APK 被 push_apk 删掉之后,
+# 它的条目还留在列表里 —— 而且**永远解析不出应用名**(文件不在了)。
+# 这时列表里只有那个失效的旧文件名,新推的文件一个字都看不到。
+#
+# 解法不是 pm clear(那会让整个列表重扫 1~2 分钟、顺序一直在变,定位必失败,
+# 见下面那段注释),而是**把新版放到那个缓存里的路径上** —— TGuard 会重新解析它
+# (实测 2026-09-18:改完名几秒后,条目就从文件名变成了应用名)。
+list_stale_name(){
+  dumpui
+  "$PY" - "$(pyfile "$UI_XML")" "${PKG:-}" "${PUSHED_NAME:-}" <<'PYEOF'
+import re, sys
+pkg, pushed = sys.argv[2], sys.argv[3]
+if not pkg or not pushed: raise SystemExit(1)
+try: s = open(sys.argv[1], encoding='utf-8').read()
+except Exception: raise SystemExit(1)
+pat = re.compile(r'^\.?' + re.escape(pkg) + r'-.*\.apk$')
+for x in re.findall(r'<node[^>]*>', s):
+    t = (re.search(r'text="([^"]*)"', x) or [None, ''])[1]
+    if t and pat.match(t) and t.lstrip('.') != pushed:
+        print(t.lstrip('.'))    # 去掉 AppleDouble 的 ._ 前缀
+        raise SystemExit(0)
+raise SystemExit(1)
+PYEOF
+}
+stale="$(list_stale_name 2>/dev/null)"
+if [ -n "$stale" ] && [ "$stale" != "${PUSHED_NAME:-}" ]; then
+  echo "   列表里的条目指向旧路径 $stale(缓存以路径为键)"
+  echo "   → 把新版放到该路径上,让缓存条目重新生效"
+  A "mv '$APK_DIR/$PUSHED_NAME' '$APK_DIR/$stale'" >/dev/null 2>&1
+  PUSHED_NAME="$stale"
+  sleep 2
+  open_install_page
+fi
 # 注意:这里【不做】pm clear。清了缓存 TGuard 会把 U 盘全部 APK 重新解析+重排,
 # 约 1~2 分钟内列表条目全是文件名且顺序在变,定位必失败(2026-09-16 实测)。
 # 热缓存下新文件插在列表顶部,从顶扫 1~2 项就能命中。pm clear 留给重试轮兜底。
@@ -483,6 +539,18 @@ attempt_once(){
   if [ -n "$VER" ]; then
     local v; v="$(installed_version)"
     [ "$v" = "$VER" ] || { echo "   装到的是 v${v:-?},不是目标 v$VER"; return 2; }
+  fi
+  # ⚠️ 版本号对得上**不代表装的是这个 APK**。
+  #    同一个 versionCode 完全可以有多个构建(实测:TV Bro 2.1.6 有 6.8MB 的 WebView 版
+  #    和 143MB 的 GeckoView 版,versionName/versionCode 完全一样)。
+  #    只看版本号会把「装了个寂寞」报成成功。比一下**实际落地文件的大小**,
+  #    它俩必然不同。
+  local want got
+  want="$(stat -c %s "$APK" 2>/dev/null)"
+  got="$(installed_apk_size)"
+  if [ -n "$want" ] && [ -n "$got" ] && [ "$want" != "$got" ]; then
+    echo "   落地的是 $got 字节,目标是 $want 字节 —— 不是同一个包(版本号相同也会这样)"
+    return 3
   fi
   return 0
 }

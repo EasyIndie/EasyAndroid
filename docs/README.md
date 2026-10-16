@@ -12,6 +12,7 @@
 | [06-app-conventions.md](06-app-conventions.md) | **工程目录约定**:新增应用的结构、命名、**版本号唯一来源(`version.properties` + SemVer)与发版流程**、版本组合、README 要求 |
 | [07-debug-ui-capture.md](07-debug-ui-capture.md) | **应用自截图**:让 `FLAG_SECURE` 设备(Pico 4)也能被 `adb` 看见 |
 | [08-jvm-screenshot-testing.md](08-jvm-screenshot-testing.md) | **JVM 截图测试**:不碰设备看 UI,最快的迭代档位 |
+| [09-tv-web-and-pwa.md](09-tv-web-and-pwa.md) | **在电视上跑现代 Web 应用**:自带浏览器是老引擎、系统 WebView 是 Chromium 83(丢 `@layer` 整份样式表),以及 **TV Bro 必须先切 GeckoView 引擎**;含「怎么判断当下用的哪个引擎」 |
 
 ## 实测设备
 

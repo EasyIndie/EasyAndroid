@@ -557,3 +557,8 @@ adb -s "$TV_ADDR" shell "rm -f /storage/<volId>/AndroidTV/._*"
   (`View.draw(Canvas)` / `PixelCopy` 不受 `FLAG_SECURE` 影响,因为那是应用自己的 surface),
   再用广播触发 + `adb pull`。这样 Pico 就变成「装得快 + 看得到」的迭代设备,
   电视只在里程碑做验收。
+
+### 如果目标不是自己的应用,而是「在电视上用某个网页应用」
+
+就不必走侧载安装器了 —— 电视上装一个 TV Bro 即可,而且它的 **GeckoView 引擎**
+能跑现代 Web 应用。细节见 [09-tv-web-and-pwa.md](09-tv-web-and-pwa.md)。
