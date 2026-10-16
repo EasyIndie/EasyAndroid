@@ -311,8 +311,15 @@ match_here(){
 # 等列表稳定:连续两次 dump 的可见文本集合一致才算稳定。
 # am start 会重建 Activity 触发列表重载,条目渐进出现、顺序漂移,
 # 不稳定时扫了白扫(2026-09-16 实测:重载期 3 轮×26 项全部 miss)。
+#
+# ⚠️ 上界必须按**墙钟**算,不能只按轮数。
+#    踩过(2026-09-18):屏保期间 uiautomator 返回的是**屏保界面**的 XML,而屏保里的
+#    时钟一直在跳 —— 文本集合永远不可能稳定。每轮 dump+pull 各带 run_timeout 40/30,
+#    于是 30 轮最坏 ≈ 36 分钟,而且中途一行输出都没有。看起来像卡死(verify-all
+#    因此被挂住过 26 分钟),实际只是上界太大。
 wait_list_settled(){
-  local prev="" cur="" i
+  local prev="" cur="" i t0=$SECONDS
+  local max=45                     # 总时长上界(秒);单轮耗时不可控,所以不能按轮数算
   for i in $(seq 1 30); do
     dumpui
     cur="$("$PY" - "$(pyfile "$UI_XML")" <<'PYEOF'
@@ -328,6 +335,16 @@ PYEOF
 )"
     if [ -n "$cur" ] && [ "$cur" = "$prev" ]; then return 0; fi
     prev="$cur"
+    if [ $((SECONDS - t0)) -ge "$max" ]; then
+      echo "   列表 ${max}s 内没稳定,放弃等待(后面扫描自带多轮兜底)"
+      # 把真原因直接说出来 —— 不然下次还是会被当成「脚本卡死」
+      if is_dreaming; then
+        echo "   ⚠️ 现在是**屏保画面** —— 屏保里的时钟一直在跳,文本集合永远不会稳定。"
+        echo "      电视看着是亮的,实际却在屏保:用实体遥控按一下唤醒,确认前台不是" \
+             "DreamActivity,再重跑。"
+      fi
+      return 0
+    fi
     sleep 3
   done
   return 0   # 超时放弃等待,扫描自带多轮兜底
