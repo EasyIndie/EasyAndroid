@@ -260,7 +260,7 @@ push_apk(){
   #
   #   ① 安装器扫的是**整个可移动卷、而且递归** —— 把 APK 挪到二级目录
   #      或者 AndroidTV/ 外面都躲不掉(两面都验过)。
-  #      唯一有效的是**不让名字以 .apk 结尾**:改成 `xxx.apk.off` 就不会被当安装源。
+  #      唯一有效的是**不让名字以 .apk 结尾**:改成 `xxx.apk.disabled` 就不会被当安装源。
   #
   #   ② macOS 的 AppleDouble 垃圾(`._xxx.apk`,4KB 存根,本体通常早就不在了)
   #      也会被当 APK 解析,而那些永远解析不出名字 —— 列表里就堆满僵尸条目,
@@ -280,7 +280,7 @@ push_apk(){
   fi
   if [ "${n_all:-0}" -gt 12 ]; then
     echo "   ⚠️ 该目录有 $n_all 个条目 —— 安装器扫的是**整个可移动卷、且递归**," >&2
-    echo "      这里只是个信号。用不到的 APK 改成 \`xxx.apk.off\` 就不会被当安装源:" >&2
+    echo "      这里只是个信号。用不到的 APK 改成 \`xxx.apk.disabled\` 就不会被当安装源:" >&2
     echo "        \"$ADB\" -s $TV shell \"cd $APK_DIR; for f in *.apk; do mv \\\"\$f\\\" \\\"\$f.off\\\"; done\"" >&2
   fi
 }

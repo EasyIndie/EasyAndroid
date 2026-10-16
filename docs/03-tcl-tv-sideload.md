@@ -537,7 +537,7 @@ adb -s $TV shell settings put global package_verifier_enable 1
 - 把 APK 挪到 `AndroidTV/_unused-archive/` → **列表里照样全在**(递归扫描)
 - 再挪到 `AndroidTV/` **外面**的卷根 → **照样全在**(扫的是整卷不是那个目录)
 
-唯一有效的是**不让它的名字以 `.apk` 结尾**:实测把归档文件改成 `xxx.apk.off`,
+唯一有效的是**不让它的名字以 `.apk` 结尾**:实测把归档文件改成 `xxx.apk.disabled`,
 清掉缓存全量重扫后,列表里就**只剩真正要用的那两个**了。
 (`readme.txt` / PDF 从头到尾就没进过列表,也印证了它是按后缀找的。)
 
