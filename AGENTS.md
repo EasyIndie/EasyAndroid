@@ -292,6 +292,12 @@ adb -s "$TV_ADDR" shell input keyevent KEYCODE_HOME         # 3
 
 **`input tap` 在 TCL 的很多界面里不生效**(那些界面不是触摸式的),优先用按键。
 
+⚠️ **但有例外:标准 AOSP 对话框(如系统安装器的两个确认框)只能用 `tap`。**
+那两个框的按钮 `clickable=true` 但 **`focused=false`** —— 没有任何节点持有焦点,
+所以 `DPAD_RIGHT` / `DPAD_CENTER` 打上去**完全没反应**,安装静默失败。
+判据:`clickable` 说明它响应 pointer,`focused` 说明它响应 D-pad,两栏都要看。
+细节和实测数据见 [docs/03](docs/03-tcl-tv-sideload.md#-但系统安装器的-alertdialog-必须用-tap2026-09-18-实测)。
+
 ### ⚠️ Pico 不是这样:必须定向到应用自己的虚拟 display
 
 ```bash
