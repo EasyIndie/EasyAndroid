@@ -138,18 +138,56 @@ if [ "$ok" != 1 ]; then
 fi
 
 rm -f "$OUT"
-# 先试外部目录(Android 10 及更早可以直接 pull)
-# pull 目标过 win_of:adb.exe 不认 Git Bash 的 /e/... 形式;下面的 > "$OUT"
-# 重定向由 bash 处理,保持 POSIX 形式即可,两者不能混
-if ! run_timeout 60 "$ADB" -s "$DEV" pull "$EXT_PNG" "$(win_of "$OUT")" </dev/null >/dev/null 2>&1; then
-  # Android 11+ 只能用 run-as 把内部那份流出来
-  if ! run_timeout 60 "$ADB" -s "$DEV" exec-out run-as "$PKG" cat "$INT_REL" \
-       > "$OUT" 2>/dev/null; then
-    echo "!! 取图失败" >&2; exit 1
-  fi
+
+# 两条取图路径:
+#   pull  —— 外部目录(Android 10 及更早,shell 可以直接读)
+#   run-as —— 把应用私有目录那份流出来(Android 11+ /sdcard/Android/data
+#             对 shell 不可读)
+# pull 目标过 win_of:adb.exe 不认 Git Bash 的 /e/... 形式;run-as 的
+# 重定向由 bash 处理,保持 POSIX 形式即可,两者不能混。
+fetch_pull()  { run_timeout 60 "$ADB" -s "$DEV" pull "$EXT_PNG" "$(win_of "$OUT")" </dev/null >/dev/null 2>&1; }
+fetch_runas() { run_timeout 60 "$ADB" -s "$DEV" exec-out run-as "$PKG" cat "$INT_REL" > "$OUT" 2>/dev/null; }
+
+# ⚠️ 判据是**本地文件非空**,不是退出码。
+#    踩过:`adb pull` 在 Android 11+ 上会失败得"半途而废" —— 本地文件已经建好,
+#    内容是 0 字节,而脚本只看退出码就往下走了,最后报一句
+#    「取到的文件是空的」,看着像钩子坏了(设备端明明有图,上面 newer_exists
+#    已经用 `test -s` 验过非空)。现在:一条路拿到空文件就换另一条再试一次。
+fetch_pull  || true
+[ -s "$OUT" ] || { rm -f "$OUT"; fetch_runas || true; }
+
+# 还是空 → 很可能撞上了「应用刚被拉起、首帧还没画完」。
+# 实测:verify-all 刚拉起应用后紧接着调本脚本,设备端写出的是 0 字节图;
+# 隔几秒重跑就正常,而且此后一直正常(瞬态,不是钩子坏了)。
+# 与其让调用方去猜,这里直接重播一次广播再等一会儿。
+if [ ! -s "$OUT" ]; then
+  echo "   首次取到空图,重播一次广播…" >&2
+  A "am broadcast -a ${PKG}.DUMP_UI -p ${PKG}" >/dev/null 2>&1
+  sleep 2
+  rm -f "$OUT"
+  fetch_pull  || true
+  [ -s "$OUT" ] || { rm -f "$OUT"; fetch_runas || true; }
 fi
 
-[ -s "$OUT" ] || { echo "!! 取到的文件是空的" >&2; exit 1; }
+if [ ! -s "$OUT" ]; then
+  echo "!! 取图失败:本地拿到的是空文件" >&2
+  devsz="$(A "run-as $PKG stat -c %s $INT_REL" 2>/dev/null | tr -d '\r' | head -1)"
+  if [ -n "$devsz" ] && [ "$devsz" -gt 0 ] 2>/dev/null; then
+    echo "   设备上那份其实是好的($devsz 字节),坏在**取回来**这一步" >&2
+    echo "   重跑一次通常就好(已知瞬态);仍不行就手动取:" >&2
+    echo "       \"$ADB\" -s $DEV exec-out run-as $PKG cat $INT_REL > /tmp/ui.png" >&2
+  elif [ -n "$devsz" ]; then
+    echo "   设备上那份也是空的(0 字节)—— 应用没画出画面" >&2
+    echo "   · 应用不在前台(View 已停止重绘)?加上 --launch 试" >&2
+    [ "$(is_pico && echo y)" = y ] && \
+      echo "   · 头显睡了 —— 先跑 tools/pico-panel.sh <pkg> awake" >&2
+  else
+    echo "   设备上读不到那份图 —— 应用可能刚崩了" >&2
+  fi
+  A "logcat -d -t 80" 2>/dev/null | grep -iE 'UiDump|AndroidRuntime' | tail -6 >&2
+  echo "   详解见 docs/07-debug-ui-capture.md" >&2
+  exit 1
+fi
 
 if [ -n "$PY" ]; then
   # 传 Windows 形式路径:Windows 原生 python 不认 Git Bash 的 /e/... 形式
