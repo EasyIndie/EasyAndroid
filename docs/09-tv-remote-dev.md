@@ -479,14 +479,44 @@ setsid nohup ssh -N -L 7317:127.0.0.1:7317 \
 两个单元的环境里 **`PATH` 必须写全**(`~/.local/bin` + `~/.bun/bin` + `~/.n/bin`),
 原因见上面那个坑。
 
-**电视(Termux)**
+**电视(Termux)** —— 用**守护脚本**,而不是一次性 ssh
 
-- `~/.termux/boot/10-herdr-tunnel.sh` —— 开机后 `ping` 等网络 → `termux-wake-lock` → 起隧道。
+一次性 `ssh -N -L` **不会自己重连**:开发机一重启,隧道就静默死掉(实测)。
+`~/.termux/herdr-tunnel.sh`:
+
+```sh
+#!/data/data/com.termux/files/usr/bin/sh
+H=/data/data/com.termux/files/home
+PREFIX=/data/data/com.termux/files/usr
+PATH=$PREFIX/bin:$PATH; export PATH
+PIDFILE=$H/.ssh/herdr-tunnel.pid
+# 单实例 —— Android 的 ps -A 只显示进程名、不显示完整命令行,
+# 所以不能用 `ps -A | grep herdr-tunnel` 判重,必须用 pidfile + kill -0
+if [ -f "$PIDFILE" ]; then
+  old=$(cat "$PIDFILE" 2>/dev/null)
+  [ -n "$old" ] && kill -0 "$old" 2>/dev/null && { echo "已在运行 ($old)"; exit 0; }
+fi
+echo $$ > "$PIDFILE"; trap 'rm -f "$PIDFILE"' EXIT INT TERM
+"$PREFIX/bin/termux-wake-lock" 2>/dev/null
+while :; do
+  ssh -N -L 7317:127.0.0.1:7317 \
+    -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 \
+    -i "$H/.ssh/id_ed25519" bot@192.0.2.35
+  echo "[$(date '+%F %T')] ssh 退出 rc=$?，5 秒后重连" >> "$H/.ssh/tunnel.log"
+  sleep 5
+done
+```
+
+拉起它的一处或两处:
+
+- `~/.bashrc` —— **不需要 Termux:Boot**,打开 Termux 就起(同样用 pidfile 判重)。
+  记得 `~/.bash_profile` 里加 `. ~/.bashrc`,
+  否则 **login shell 不会加载 .bashrc**(实测这台 Termux 没有 .bash_profile)。
+- `~/.termux/boot/10-herdr-tunnel.sh` —— `ping` 等网络后 `exec` 同一个守护脚本。
   **需要装 [`Termux:Boot`](https://f-droid.org/packages/com.termux.boot/) 并启动一次**才生效
   (纯 Java 包,**不受 32 位限制**)。
-- `~/.bashrc` 里放同样的逻辑(用 `ps -A | grep` 判重)—— **这条不需要 Termux:Boot**,
-  打开 Termux 就把隧道拉起来。记得 `~/.bash_profile` 里加 `. ~/.bashrc`,
-  否则 **login shell 不会加载 .bashrc**(实测这台 Termux 没有 .bash_profile)。
 
 ### ⚠️ 实测踩到的坑
 
@@ -496,6 +526,9 @@ setsid nohup ssh -N -L 7317:127.0.0.1:7317 \
 | **终端报「服务器无法启动 herdr」** | 聊天能看、终端连不上 | 起服务时 PATH 少了 `~/.local/bin`。补上,或设 `HERDR_WEB_HERDR_BIN` |
 | **隧道"起不来"** | 反复 `Address already in use` | ①`ps -A` 在 Android 上**不显示 ssh 的完整命令行**(只显示 `ssh`),据此判断会误判;②`pkill -f "ssh -N -L"` **匹配不到 `ssh -v -N -L`**(中间多一个 `-v`)。清场用 `pkill -9 -f ssh` |
 | **密钥在但 `Permission denied`** | 隧道秒退 | 密钥被写到了 `/data/data/com.termux/.ssh/` 而不是 `files/home/.ssh/` —— 见下面 $HOME 那个坑 |
+| **开发机重启后隧道不恢复** | 电视上页面打不开,`ssh` 进程数 0 | 一次性 `ssh -N -L` **不会自己重连**。改成守护循环(见步骤 3),配 `ServerAliveInterval=15 / ServerAliveCountMax=3` |
+| **`ps -A \| grep` 判重永远匹配不到** | 每开一次 Termux 就多一个守护 | Android 的 `ps -A` **只显示进程名**,不显示完整命令行。用 **pidfile + `kill -0`** |
+| **`pkill -f ssh` 会把自己杀掉** | 命令只打一行 `Killed`,后面全不执行 | `pkill -f` 匹配**整条命令行**,而 `sh -c '...pkill -f ssh...'` 自己就含 `ssh`。用 `[s]sh` 括号技巧,或按 pidfile 精确 `kill` |
 
 ### 电视上跑命令的三个 bash 限制(写脚本必先知道)
 
@@ -513,6 +546,9 @@ setsid nohup ssh -N -L 7317:127.0.0.1:7317 \
    `/data/data/com.termux/.ssh/`,导致后来隧道一直 `Permission denied`)。
    **一律用绝对路径**,或显式 `HOME=/data/data/com.termux/files/home`。
 3. **`adb shell` 不转发 stdin 到 `run-as`** —— `adb shell 'run-as ...' < file` 拿不到内容。
+4. **每条 `adb shell` 都要 `</dev/null`** —— 非交互环境下 adb 会占住 stdin,
+   **把脚本后续命令的输入流吃掉**(现象很误导:第一条命令有输出,后面全部静默无输出)。
+   这个坑仓库 AGENTS.md §6 早就记了,但这里还是踩了一次。
 
 ### 实测证据
 
@@ -522,8 +558,26 @@ setsid nohup ssh -N -L 7317:127.0.0.1:7317 \
 渲染        : TV Bro(GeckoView)→ 「EasyXAgentOPS · herdr」「OrzMC · /Users/bot/OrzMC」
 终端 attach : 修好 PATH 后终端格不再报错,接上 pi 代理
 中文输入    : 实体键盘 nihao → ni'hao → 候选「你好 你号 泥嚎 拟好 倪好」→ 上屏 → 回车发送 ✅
-持久化      : launchd 两单元(herdr server 已在跑时自动跳过,不动用户的 3 个 pane)+ Termux .bashrc 钩子
+持久化      : launchd 两单元(herdr server 已在跑时自动跳过,不动用户的 3 个 pane)+ Termux 守护脚本
 ```
+
+### 重启后的复验(实测)
+
+```
+开发机 reboot 后 2 分钟:
+  launchctl  : 491 dev.herdr.server / 495 dev.herdr.webui   ← 两个都在运行
+  herdr server: pid 491, PPID=1 ← 由 launchd 起,已脱离终端
+  它的 PATH  : ~/.local/bin:~/.bun/bin:~/.n/bin:...        ← 完整(这就是为什么要写全)
+  health     : {"ok":true,...}
+
+电视侧:
+  一次性 ssh  → bot 重启后进程数变 0,页面打不开(不重连)← 这就是加守护脚本的原因
+  守护脚本后 → 杀 ssh 子进程,12 秒内自动重连并发新页 ✅
+  终端里中文  → ni'hao → 候选「你好」→ 上屏(重启后依然成立)
+```
+
+> ⚠️ **重启会丢掉 herdr 的所有 pane** —— 这是重启本身的后果,不是持久化方案的问题。
+> 想要"重启也保留工作区",那要另外做(把 herdr 的 session 落盘/恢复),不在本文范围。
 
 ### 和"PC 一样"到什么程度
 

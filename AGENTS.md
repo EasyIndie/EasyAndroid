@@ -349,6 +349,29 @@ adb shell wm density
 A(){ adb -s "$DEV" shell "$@" </dev/null 2>&1; }
 ```
 
+> 这个坑的症状很误导:**第一条命令正常输出,后面全部静默无输出**。
+> 同样的道理,`adb shell 'run-as ...' < file` 也**拿不到内容**(stdin 不往 `run-as` 里转),
+> 要传文件进设备用 base64 内联(见 [docs/09](docs/09-tv-remote-dev.md#-扫时走过的弯路别重走))。
+
+### `pkill -f <模式>` 会把自己的 shell 一起杀掉
+
+`pkill -f` 匹配的是**整条命令行**,而你那条 `sh -c '... pkill -f ssh ...'` **自己就含 `ssh`**
+⇒ 进程把自己杀了。症状:命令只打一行 `Killed`,**后面什么都没执行**(看起来像"命令没写对")。
+
+实测踩了两次(清电视上的 ssh 隧道时)。两种正确写法:
+
+```bash
+# ✓ 括号技巧：命令行里是 `[s]sh`,不匹配正则 `[s]sh`(= "ssh")
+pkill -9 -f '[s]sh -N -L 7317'
+
+# ✓ 更稳：按 pidfile 精确杀
+kill -9 "$(cat ~/.ssh/herdr-tunnel.pid)"
+```
+
+另一个相关的设备事实:**Android 的 `ps -A` 只显示进程名,不显示完整命令行**。
+所以 `ps -A | grep herdr-tunnel` **永远匹配不到** —— 单实例判重要用 **pidfile + `kill -0`**,
+不能靠 `ps` + 模式。`grep -c '[s]sh'` 能数到 `ssh`(因为进程名就叫 `ssh`)。
+
 ### 所有脚本都要 source `_common.sh`
 
 它负责载入 `device.env`、补 PATH、解析 `WINADB`:
