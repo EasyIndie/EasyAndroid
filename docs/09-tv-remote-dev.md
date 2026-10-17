@@ -98,7 +98,7 @@ adb -s "$TV_ADDR" shell "dumpsys SurfaceFlinger" | grep -A14 'Sprite#0' \
 #   要看到 `composition type=CURSOR` —— 这是 SurfaceFlinger 的光标层,做不了假
 ```
 
-## ⚠️ 为什么「截图看光标」不可靠(重要)
+#### ⚠️ 为什么「截图看光标」不可靠(重要)
 
 **Android 的光标会在静止几秒后自动淡出**,淡到几乎全透明。实测:
 
@@ -117,7 +117,7 @@ adb -s "$TV_ADDR" shell "dumpsys SurfaceFlinger" | grep -A14 'Sprite#0' \
 **判据要选不依赖「画面上看得见」的那一条**:`composition type=CURSOR` 在,
 就说明光标系统在跑、鼠标被当作指针设备。**让用户自己看屏幕比截图可靠。**
 
-## 实测结果(两轮)
+#### 实测结果(两轮)
 
 | 设备 | 结果 |
 |---|---|
@@ -360,8 +360,11 @@ adb -s "$TV_ADDR" shell "wm density reset"   # 还原
 
 > ❗ **别靠肉眼判字号变化。** 本机没有 PIL/numpy,而截图内容是会变的 ——
 > 我先后被「功能键行的字变大」和「前后画面内容不同」各骗了一次。
-> 可靠做法:**控住内容**(删掉 `current_session` 逼出固定内容的欢迎横幅)
-> 再量文字行距。
+> 可靠做法是**先控住内容**(删掉 `current_session` 逼出固定内容的欢迎横幅)
+> 再量文字行距:用 [`tools/png-rowpitch.py`](../tools/README.md) 
+> —— `python3 tools/png-rowpitch.py 截图.png 0 700` 会给出
+> **文字行数 / 平均行距 / 文字块总高** 三个数,一样就是没变,不用猜。
+> (它自带 `--selftest`,已接进 `verify-all.sh`。)
 
 ### 实测证据
 
@@ -377,6 +380,95 @@ ssh + tmux  : demo: 1 windows (created ...)        ← 就是 herdr 的用法
 
 ---
 
+## herdr 的操作方式(接上之后怎么用)
+
+### 最重要的一条:Herdr 是**鼠标原生**的
+
+官方 Keyboard 指南第一句:
+
+> Herdr is mouse-native. You can click panes, tabs, workspaces, and agents,
+> drag split borders, and use right-click menus **without learning a single
+> keybinding. Keyboard control is optional.**
+
+所以**电视上有鼠标就已经能用了**,键盘快捷键是加成。这条直接决定了电视上的体验
+下限 —— 不用背键位也能干活。
+
+### 前缀模型(像 tmux)
+
+默认前缀 `ctrl+b`。`prefix+c` = 按 `ctrl+b` 松开,再按 `c`。
+
+**`prefix+?` 随时弹出帮助面板列出所有生效键位**,里面按 `/` 还能过滤动作 ——
+这是最好的发现途径,**不用记本文这张表**。
+
+**官方建议先学这五个:**
+
+| 动作 | 键 |
+|---|---|
+| 新标签页 | `prefix+c` |
+| 向右 / 向下分屏 | `prefix+v` / `prefix+minus` |
+| 在 pane 间移动 | `prefix+h/j/k/l` |
+| 工作区导航 | `prefix+w` |
+| Detach(全都留着继续跑) | `prefix+q` |
+
+**其余按任务分:**
+
+| 分类 | 键 |
+|---|---|
+| Pane | `prefix+z` 缩放 · `prefix+x` 关闭 · `prefix+shift+h/j/k/l` 交换 · `prefix+r` 调大小 · `prefix+[` 复制模式 |
+| Tab | `prefix+n` / `prefix+p` 上/下一个 · `prefix+1..9` 跳转 · `prefix+shift+t` 重命名 · `prefix+shift+x` 关闭 |
+| 工作区 / 会话 | `prefix+shift+n` 新建 · `prefix+shift+w` 重命名 · `prefix+shift+d` 关闭 · `prefix+g` Goto 面板 · `prefix+b` 侧栏 |
+
+**Goto 面板(`prefix+g`)在电视上特别值得记** —— 它把每个 agent/终端列成一行、
+按工作区分组:`/` 搜索(名字 / agent 类型 / tab / 工作区 / 分支 / 路径),
+`j/k` 或上下移动,左右跳到上/下一个工作区分组(不绕回),
+`b/w/i/d` 过滤 阻塞 / 工作中 / 空闲 / 完成,`a` 全显示。**鼠标滚轮/拖滚动条也能滚。**
+
+**复制模式(`prefix+[`)**:`h/j/k/l` + tmux 风格 `w/b/e`、`{}`、`PageUp/Down`、
+`/` `?` 前后搜索、`n`/`N` 重复、`v` 或 Space 选区、`y` 或 Enter 复制、`q`/Esc 退出。
+**鼠标拖选直接复制,根本不进复制模式。**
+
+### ⚠️ 在 Termux 里跑 herdr:`ctrl+alt` 会和 Termux 抢键
+
+herdr 官方推荐的「免 prefix」方案**全用 `ctrl+alt` 家族** —— 它把 Ghostty / iTerm2 /
+kitty / WezTerm / Alacritty / GNOME Terminal / Konsole 以及 GNOME/KDE 的默认键位
+都过了一遍,结论是 `ctrl+alt` 几乎没人占。
+
+**但 Termux 自己就占了一大片**(从 `TermuxTerminalViewClient.onKeyDown` 抄出来的):
+
+| Termux 占用的 `ctrl+alt+…` | 干什么 |
+|---|---|
+| `n` / `↓` | 下一个会话 |
+| `p` / `↑` | 上一个会话 |
+| `→` / `←` | 开 / 关抽屉 |
+| `k` | 开关软键盘 |
+| `m` | 菜单 |
+| `r` | 重命名会话 |
+| `c` | 新会话 |
+| `u` | URL 选择 |
+| `v` | 粘贴 |
+| **`+` / `-`** | **终端字号** |
+| `1`~`9` | 切到第 N 个会话 |
+
+所以 herdr 那份「免 prefix」配置里 `ctrl+alt+c`(新标签页)、`ctrl+alt+n/p`、
+`ctrl+alt+arrows` 等等**根本到不了 herdr**。两条出路:
+
+**① 用 prefix 模型(推荐)。** herdr 默认走 `ctrl+b`,和 Termux 的 `ctrl+alt` 不冲突,
+上面那几张表照用就行。
+
+**② 让 Termux 把 `ctrl+alt` 让出来。** `~/.termux/termux.properties`:
+
+```properties
+disable-hardware-keyboard-shortcuts = true
+```
+
+代价是**连 `ctrl+alt+= / -` 调字号也一起没了**(它和那些会话快捷键在源码里受
+同一个开关管),那就改用 `fontsize` 偏好设字号(见上一节)。
+`shortcut.create-session` / `shortcut.next-session` / `shortcut.previous-session` /
+`shortcut.rename-session` 只能重绑那四个会话快捷键,**不解决 `+`/`-`**。
+
+> ⚠️ 上面这两条**来自源码,未在真机上实测** —— 没有能注入 Ctrl+Alt 组合键的手段
+> (Android 的 `input` 不支持 `keycombination`),得用手按着验。
+
 ## 对齐体验
 
 两套的**操作习惯是同一套**,不用分别学:
@@ -387,6 +479,8 @@ ssh + tmux  : demo: 1 windows (created ...)        ← 就是 herdr 的用法
 | 回车/确认 | 遥控 OK 键(在输入法上是 ⏎) |
 | 翻页/滚动 | Termux 用功能键行的 `PGUP/PGDN`;PWA 用遥控方向键 |
 | 返回 | `BACK` 在 Termux = 收输入法;在 TV Bro = 呼出工具栏 |
+| **键盘快捷键** | Termux:`ctrl+alt+=` / `ctrl+alt+-` 调字号,`ctrl+alt+k/m/r/c/v` 开关键盘/菜单/重命名/新会话/粘贴 |
+| herdr 键位 | `prefix`(默认 `ctrl+b`)后跟一个键;**`prefix+?` 弹出全部键位**;没鼠标也能 `prefix+h/j/k/l` 移动 |
 | 切换 | 两个应用都在 TV 桌面(`LEANBACK_LAUNCHER` 都有),直接切 |
 | 装 / 卸 | 都是 `tools/tv-install.sh`;卸载 `adb uninstall <包名>`(卸载不受 TCL 拦截) |
 

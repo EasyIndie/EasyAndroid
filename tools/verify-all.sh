@@ -346,6 +346,20 @@ step_build(){
       apk_cert_dump "$apk" 2>&1 | sed 's/^/         /' >&2
     fi
   fi
+
+  # 截图量化工具(量文字行距)。它存在的理由:"字号变没变"用肉眼看不住 ——
+  # 实测被坑过两次(把「功能键行的字变大」当成终端字号变了;把「前后画面内容
+  # 不同」当成字号变了),只能靠「控住内容 + 量行距」这个硬判据。
+  # 它自己错了就会得出**相反**的结论,所以每次推送都验一下。
+  # 自检不碰设备:现场造几张已知行距的图再量回来,必须对得上。
+  if [ -f "$_TOOLS_DIR/png-rowpitch.py" ]; then
+    if out="$("$PY" "$_TOOLS_DIR/png-rowpitch.py" --selftest 2>&1)"; then
+      ok "截图行距量化工具自检通过"
+    else
+      bad "tools/png-rowpitch.py --selftest 失败(量行距的判据不可信了)"
+      printf '%s\n' "$out" | sed 's/^/       /' >&2
+    fi
+  fi
 }
 step_build
 
