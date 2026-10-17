@@ -268,6 +268,8 @@ Termux 自带的**功能键行**(`ESC / CTRL / ALT / ←↓→ / HOME / END / PG
 
 ### 终端字号:能改 —— 但有两条不能踩的坑
 
+> **用方案 C 不用看这节** —— 浏览器缩放就够了。下面是方案 B(Termux)的办法。
+
 电视上默认字号很小(1920×1080、240dpi 下 `stty size` = 43×173)。Termux 支持改,
 **三条路,只有在电视上能用的那条最省事**:
 
@@ -384,8 +386,8 @@ ssh + tmux  : demo: 1 windows (created ...)        ← 就是 herdr 的用法
 
 ## 方案 C:herdr 的 WebUI + SSH 隧道(**要打中文就用这个**)
 
-方案 A 的短板是"Collie 要自建实例";方案 B 的死结是 **Termux 里实体键盘打不了中文**。
-方案 C 用 herdr 生态里现成的 **herdr-web-ui**(浏览器客户端),把这两件事一起解决:
+方案 A 要自建 Collie 实例;方案 B 的死结是 Termux 里实体键盘打不了中文。
+方案 C 用 herdr 生态现成的 [herdr-web-ui](https://github.com/devswha/herdr-web-ui)(浏览器客户端):
 
 ```
 [电视]   TV Bro (GeckoView) → http://127.0.0.1:7317
@@ -395,40 +397,23 @@ ssh + tmux  : demo: 1 windows (created ...)        ← 就是 herdr 的用法
                                herdr server(同一批 pane,TUI 仍可 attach)
 ```
 
-### 为什么是它(三个硬理由)
+**为什么是它**:① 中文输入实测可用(方案 B 的死结是 Termux 把硬件键直接喂 PTY,
+不是电视的限制);② 电视上零安装(复用 TV Bro + Termux);③ 浏览器缩放顺手解决
+字号/滚动/选中。
 
-1. **中文输入真的能用** —— 实测 `ni'hao` → 候选「你好」→ 上屏 → 回车发送。
-   方案 B 的死结是 Termux 把硬件键直接喂 PTY(上游 bug 仍 open),不是电视的问题。
-2. **电视上不用装新东西** —— 复用已有的 TV Bro + Termux(Termux 只用来起隧道)。
-3. **顺手解决字号/滚动/选中** —— 浏览器缩放一键搞定,不用 `wm density` 去动整机。
+**为什么用隧道而不是 `HOST=0.0.0.0`**:隧道进来的连接服务端判成 `via:"local"`,
+**不需要配对码也不需要 token**;直连则必须配 `HERDR_WEB_TOKEN`,而明文 http 上的
+token 会被同网段任何人嗅到。
 
-### 步骤 1. 开发机上起服务
+### 1. 开发机:起服务
 
-先跑这组**只读**体检:
-
-```bash
-uname -m                 # 需要 x86_64 或 aarch64；armv7l 官方没有构建
-bun --version            # 需要 ≥1.4(没有就先装：curl -fsSL https://bun.sh/install | bash)
-node --version           # 需要 ≥18(终端 attach 的 sidecar 用)
-herdr --version          # 需要 ≥0.9.0
-herdr status server      # 需要 running
-git --version
-```
-
-> ⚠️ **别用 `herdr plugin install`,除非 herdr 是用完整 PATH 启动的。**
-> 实测坑:herdr server 从 GUI 终端(Ghostty)启动时,PATH 是
-> `/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Ghostty.app/Contents/MacOS` ——
-> **`~/.local/bin`(herdr 自己)、`~/.bun/bin`、`~/.n/bin` 全都不在**。
-> 插件的 build 步骤用的是 **herdr 自己的环境** ⇒ 必然报 `bun not found`,
-> 而官方 INSTALL.md 又明确"不要重启用户的 herdr server"。
-
-所以走源码安装(官方 INSTALL.md 的方法 3B),它只依赖你**当前 shell** 的 PATH:
+前提:`uname -m` 为 x86_64/aarch64(**armv7l 官方没构建**)、`bun ≥1.4`、
+`node ≥18`、`herdr ≥0.9.0` 且 `herdr status server` 为 running、`git`。
 
 ```bash
 git clone https://github.com/devswha/herdr-web-ui.git ~/herdr-web-ui
 cd ~/herdr-web-ui && bun install
 
-# 起服务：只绑 127.0.0.1，且把 herdr 和 node 放进 PATH
 export PATH="$HOME/.local/bin:$HOME/.n/bin:$HOME/.bun/bin:$PATH"
 export HERDR_WEB_HERDR_BIN="$HOME/.local/bin/herdr"
 HOST=127.0.0.1 PORT=7317 bun run start
@@ -438,56 +423,16 @@ HOST=127.0.0.1 PORT=7317 bun run start
 
 ```bash
 curl -s http://127.0.0.1:7317/api/health
-# {"ok":true,"herdr":{"version":"0.9.3",...,"terminal_attach":true},
-#  "auth":{"required":false,"authenticated":true,"via":"local","role":"drive"},...}
+# {"ok":true,"herdr":{"terminal_attach":true},"auth":{"via":"local","role":"drive"},...}
 ```
 
-> **`via":"local"` 是隧道路线的关键** —— 隧道进来的连接会被服务端当成"本机",
-> 所以**不需要配对码、不需要 token**,局域网也完全不暴露。
-> 反过来如果选 `HOST=0.0.0.0`:必须配 `HERDR_WEB_TOKEN`,而**明文 http 上的
-> token 会被同网段任何人嗅到**(官方明说)。这就是隧道优于直连的理由。
+> **别用 `herdr plugin install`**,除非 herdr 是用完整 PATH 启动的:插件的 build 跑在
+> **herdr 自己的环境**里,而 GUI 终端起的 herdr 通常看不到 `~/.bun/bin`,
+> 会报 `bun not found`。源码安装只依赖你当前 shell 的 PATH。
 
-### 步骤 2. 电视上建隧道
+### 2. 电视:隧道守护脚本
 
-```bash
-# 生成专用密钥(一次)
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-ssh-keygen -t ed25519 -N "" -C "tv-termux@tcl" -f ~/.ssh/id_ed25519
-cat ~/.ssh/id_ed25519.pub        # 把这行加到开发机的 ~/.ssh/authorized_keys
-
-# 起隧道
-termux-wake-lock
-setsid nohup ssh -N -L 7317:127.0.0.1:7317 \
-  -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-  -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 \
-  -i ~/.ssh/id_ed25519 bot@192.0.2.35 > ~/.ssh/tunnel.log 2>&1 &
-```
-
-然后 TV Bro 打开 `http://127.0.0.1:7317`。
-
-### 步骤 3. 让它开机/开 Termux 就在
-
-**开发机(macOS 用 launchd,Linux 用 `systemctl --user`)**:
-
-两个用户级单元(或合并成一个启动器脚本):
-
-- `dev.herdr.server` —— 跑 `herdr server`。启动器先探 `herdr status server`,
-  **已在跑就 `exit 0`**;配合 `KeepAlive { SuccessfulExit: false }`,
-  这样**不需要立刻重启用户正在跑的 herdr**,下次登录/重启才接管。
-  ⚠️ **要给 daemon 套一个 PTY**:`exec script -q /dev/null herdr server`。
-  直接用 launchd 跑 `herdr server` 时,它自报的能力里**没有 `direct_terminal_attach`**
-  (且 `detached_server_daemon:false`)⇒ web ui 只能降级到 mirror 模式。
-  套上 `script` 后两个都恢复(见下面实测评据)。
-- `dev.herdr.webui` —— 等 herdr 就绪后跑 `bun run server/managed.ts`。
-  ⚠️ 它的**能力探测是启动时只算一次**(`sidecarAvailable()` 有缓存),
-  所以改完 herdr 那边必须**重启 web ui**才能看到 `terminal_attach:true`。
-
-两个单元的环境里 **`PATH` 必须写全**(`~/.local/bin` + `~/.bun/bin` + `~/.n/bin`),
-原因见上面那个坑。
-
-**电视(Termux)** —— 用**守护脚本**,而不是一次性 ssh
-
-一次性 `ssh -N -L` **不会自己重连**:开发机一重启,隧道就静默死掉(实测)。
+一次性 `ssh -N -L` **不会自己重连**(开发机一重启就静默死掉),要守护循环。
 `~/.termux/herdr-tunnel.sh`:
 
 ```sh
@@ -496,18 +441,16 @@ H=/data/data/com.termux/files/home
 PREFIX=/data/data/com.termux/files/usr
 PATH=$PREFIX/bin:$PATH; export PATH
 PIDFILE=$H/.ssh/herdr-tunnel.pid
-# 单实例 —— Android 的 ps -A 只显示进程名、不显示完整命令行,
-# 所以不能用 `ps -A | grep herdr-tunnel` 判重,必须用 pidfile + kill -0
+# 单实例:Android 的 ps -A 只显示进程名,不能用它判重 → pidfile + kill -0
 if [ -f "$PIDFILE" ]; then
   old=$(cat "$PIDFILE" 2>/dev/null)
-  [ -n "$old" ] && kill -0 "$old" 2>/dev/null && { echo "已在运行 ($old)"; exit 0; }
+  [ -n "$old" ] && kill -0 "$old" 2>/dev/null && exit 0
 fi
 echo $$ > "$PIDFILE"; trap 'rm -f "$PIDFILE"' EXIT INT TERM
 "$PREFIX/bin/termux-wake-lock" 2>/dev/null
 while :; do
   ssh -N -L 7317:127.0.0.1:7317 \
-    -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-    -o ExitOnForwardFailure=yes \
+    -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 \
     -i "$H/.ssh/id_ed25519" bot@192.0.2.35
   echo "[$(date '+%F %T')] ssh 退出 rc=$?，5 秒后重连" >> "$H/.ssh/tunnel.log"
@@ -515,127 +458,93 @@ while :; do
 done
 ```
 
-拉起它的一处或两处:
+密钥(一次):
 
-- `~/.bashrc` —— **不需要 Termux:Boot**,打开 Termux 就起(同样用 pidfile 判重)。
-  记得 `~/.bash_profile` 里加 `. ~/.bashrc`,
-  否则 **login shell 不会加载 .bashrc**(实测这台 Termux 没有 .bash_profile)。
-- `~/.termux/boot/10-herdr-tunnel.sh` —— `ping` 等网络后 `exec` 同一个守护脚本。
-  **需要装 [`Termux:Boot`](https://f-droid.org/packages/com.termux.boot/) 并启动一次**才生效
-  (纯 Java 包,**不受 32 位限制**)。
+```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+ssh-keygen -t ed25519 -N "" -C "tv-termux@tcl" -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub        # 加到开发机的 ~/.ssh/authorized_keys
+```
 
-### 日常操作(给使用者的一页纸)
+挂到 `~/.bashrc` —— 打开 Termux 就起隧道,顺手把页面拉起来:
 
-> **Termux = 隧道的开关**(打开就行,不用在里面干活)
-> **TV Bro = 真正使用的界面**(隧道刚起时会被自动拉到前台)
+```sh
+PF=$HOME/.ssh/herdr-tunnel.pid
+if ! { [ -f "$PF" ] && kill -0 "$(cat "$PF")" 2>/dev/null; }; then
+  ( setsid nohup "$HOME/.termux/herdr-tunnel.sh" </dev/null >/dev/null 2>&1 & )
+  echo "[herdr] 隧道已启动 → TV Bro 打开 http://127.0.0.1:7317"
+  ( sleep 6; am start -n com.phlox.tvwebbrowser/.activity.main.MainActivity \
+      -a android.intent.action.VIEW -d http://127.0.0.1:7317/ >/dev/null 2>&1 ) &
+fi
+```
 
-**每次用只有一个动作:打开 Termux。** 它会把隧道拉起来,并在 6 秒后自动把
-`http://127.0.0.1:7317` 开在 TV Bro 里(等同于一键书签;不想让它抢前台就设
-`HERDR_WEBUI_NOOPEN=1`)。
+并在 `~/.bash_profile` 里加 `. ~/.bashrc` —— 否则 **login shell 不加载 .bashrc**
+(实测这台 Termux 没有 .bash_profile)。不想自动抢前台就设 `HERDR_WEBUI_NOOPEN=1`。
+
+可选:`~/.termux/boot/10-herdr-tunnel.sh` 里 `ping` 等网络后 `exec` 同一个脚本,
+需要装 [Termux:Boot](https://f-droid.org/packages/com.termux.boot/)(纯 Java,不受 32 位限制)。
+
+### 3. 开发机:开机自启
+
+macOS 用 launchd(用户级 `~/Library/LaunchAgents/`),Linux 用 `systemctl --user`。
+两个单元,环境里 **`PATH` 必须写全**,`RunAtLoad=true` +
+`KeepAlive { SuccessfulExit: false }`。
+
+- **herdr server** 的启动器:先 `herdr status server`,已在跑就 `exit 0`
+  (配合 `SuccessfulExit:false` 不会重拉)⇒ **不用立刻重启你正在跑的 herdr**。
+  启动命令要写成 **`exec script -q /dev/null herdr server`** 套一层 PTY ——
+  否则 herdr 不报 `direct_terminal_attach`,终端会降级成 mirror。
+- **web ui** 的启动器:等 herdr 就绪后跑 `bun run server/managed.ts`。
+  ⚠️ 它的能力探测**启动时只算一次**,改完 herdr 那边必须重启 **web ui**。
+
+### 日常操作
+
+**只有一个动作:打开 Termux。** 隧道起来 + 页面自动打开(见上)。
 
 | 情况 | 你要做什么 |
 |---|---|
-| **电视开机 / 重启** | 打开一次 Termux |
-| **从屏保/待机回来** | 遥控唤醒 → 切回 TV Bro(刷新一下) |
-| **开发机重启** | **什么都不用做**(守护脚本 5 秒后自动重连) |
-| **网络抖一下** | **什么都不用做** |
-| 页面报 `ERROR_CONNECTION_REFUSED` | 打开 Termux,等 5~10 秒 → 刷新 |
-| 页面一直转圈 | 开发机上 `launchctl list \| grep herdr` 看服务是否在跑 |
+| 电视开机 / 重启 | 打开一次 Termux |
+| 从屏保回来 | 遥控唤醒 → 切回 TV Bro 刷新 |
+| 开发机重启 / 网络抖动 | **什么都不用做**(自动重连) |
+| `ERROR_CONNECTION_REFUSED` | 打开 Termux,等 5~10 秒 → 刷新 |
 
-**唯一软肋**:Android 内存紧张时可能杀掉 Termux ⇒ 隧道断 ⇒ 再打开一次 Termux。
+唯一软肋:Android 内存紧张时可能杀掉 Termux ⇒ 隧道断 ⇒ 再打开一次 Termux。
 
-刷字口诀:**拼音 → 空格/数字/点候选选词 → 回车发送**;`Shift` 切中英。
-候选栏还在时直接回车只会把拼音上屏(标准 IME 语义,PC 上也一样)。
+**打字**:拼音 → `空格/数字/点候选` 选词 → `回车` 发送;`Shift` 切中英。
+候选栏还在时直接回车只会把拼音上屏(标准 IME 语义,PC 上一样)。
 
-⚠️ TV Bro 的工具栏在当前布局下是**隐藏的**(全屏),`MENU` / D-pad / 顶边下拉 /
-长按都唤不出,所以书签 UI 够不着。`am` 拉起页面是最可行的等价做法;
-而且 TV Bro 本身会**恢复上次页面**,所以大多数时候连拉都不用拉。
+### 坑(会让人做错的)
 
-### ⚠️ 实测踩到的坑
-
-| 坑 | 现象 | 真因 / 修法 |
+| 坑 | 现象 | 修法 |
 |---|---|---|
-| **插件装不上** | `bun not found` | herdr server 的 PATH 里没有 bun。走源码安装,或先把 herdr 改成带完整 PATH 的 launchd/systemd 启动 |
-| **终端报「服务器无法启动 herdr」** | 聊天能看、终端连不上 | 起服务时 PATH 少了 `~/.local/bin`。补上,或设 `HERDR_WEB_HERDR_BIN` |
-| **隧道"起不来"** | 反复 `Address already in use` | ①`ps -A` 在 Android 上**不显示 ssh 的完整命令行**(只显示 `ssh`),据此判断会误判;②`pkill -f "ssh -N -L"` **匹配不到 `ssh -v -N -L`**(中间多一个 `-v`)。清场用 `pkill -9 -f ssh` |
-| **密钥在但 `Permission denied`** | 隧道秒退 | 密钥被写到了 `/data/data/com.termux/.ssh/` 而不是 `files/home/.ssh/` —— 见下面 $HOME 那个坑 |
-| **开发机重启后隧道不恢复** | 电视上页面打不开,`ssh` 进程数 0 | 一次性 `ssh -N -L` **不会自己重连**。改成守护循环(见步骤 3),配 `ServerAliveInterval=15 / ServerAliveCountMax=3` |
-| **`ps -A \| grep` 判重永远匹配不到** | 每开一次 Termux 就多一个守护 | Android 的 `ps -A` **只显示进程名**,不显示完整命令行。用 **pidfile + `kill -0`** |
-| **`pkill -f ssh` 会把自己杀掉** | 命令只打一行 `Killed`,后面全不执行 | `pkill -f` 匹配**整条命令行**,而 `sh -c '...pkill -f ssh...'` 自己就含 `ssh`。用 `[s]sh` 括号技巧,或按 pidfile 精确 `kill` |
-| **launchd 起的 herdr 丢能力** | `terminal_attach:false`,终端降级成 mirror | launchd 起的 `herdr server` **不报 `direct_terminal_attach`**(也没 `detached_server_daemon`)。启动器改成 `exec script -q /dev/null herdr server` 套 PTY 就恢复 |
-| **改完 herdr 那边没生效** | 仍是 `terminal_attach:false` | web ui 的能力探测**启动时只算一次**。重启 **web ui**(不是 herdr server)就会重新探测 |
+| 插件装不上 | `bun not found` | herdr 的 PATH 里没有 bun → 走源码安装 |
+| 终端报「服务器无法启动 herdr」 | 聊天能看、终端连不上 | PATH 少了 `~/.local/bin`,或设 `HERDR_WEB_HERDR_BIN` |
+| launchd 起的 herdr 丢能力 | `terminal_attach:false`,终端变 mirror | 启动器套 `script -q /dev/null`;再**重启 web ui** |
+| 隧道起不来 | 反复 `Address already in use` | 有残留进程:`pkill -9 -f '[s]sh -N -L 7317'` |
+| 密钥在却 `Permission denied` | 隧道秒退 | 密钥写到了 `/data/data/com.termux/.ssh/`,不是 `files/home/.ssh/` |
+| 多开几个守护 | 每开一次 Termux 多一个 | `ps -A` 看不到完整命令行 → pidfile + `kill -0` |
 
-### 电视上跑命令的三个 bash 限制(写脚本必先知道)
-
-在 `run-as com.termux` 下:
-
-1. **heredoc 会失败** —— `can't create temporary file /data/local/xxx.tmp: Permission denied`
-   (它要往 `/data/local/` 写临时文件)。改成**主机侧 base64 后内联**:
-   ```bash
-   B=$(base64 -w0 file)
-   adb shell "run-as com.termux sh -c 'export PATH=/data/data/com.termux/files/usr/bin:\$PATH; printf %s $B | base64 -d > files/home/xxx'"
-   ```
-   `PATH` 必须显式给,否则 `base64`/`mkdir` 这些外部程序找不到,**管道会静默失败**。
-2. **`$HOME` 是 `/data/user/0/com.termux`,不是 Termux 的家目录 `files/home/`。**
-   用 `$HOME` 拼路径会把密钥/配置写到错误位置(实测把密钥写到了
-   `/data/data/com.termux/.ssh/`,导致后来隧道一直 `Permission denied`)。
-   **一律用绝对路径**,或显式 `HOME=/data/data/com.termux/files/home`。
-3. **`adb shell` 不转发 stdin 到 `run-as`** —— `adb shell 'run-as ...' < file` 拿不到内容。
-4. **每条 `adb shell` 都要 `</dev/null`** —— 非交互环境下 adb 会占住 stdin,
-   **把脚本后续命令的输入流吃掉**(现象很误导:第一条命令有输出,后面全部静默无输出)。
-   这个坑仓库 AGENTS.md §6 早就记了,但这里还是踩了一次。
-
-### 实测证据
+### 实测
 
 ```
-机器        : x86_64 / macOS 13.7.8(Ventura) · herdr 0.9.3 running · node v24.18.0 · bun 1.4.3
-健康检查    : {"ok":true,"herdr":{"terminal_attach":true},"auth":{"via":"local","role":"drive"}}
-渲染        : TV Bro(GeckoView)→ 「EasyXAgentOPS · herdr」「OrzMC · /Users/bot/OrzMC」
-终端 attach : 修好 PATH 后终端格不再报错,接上 pi 代理
-中文输入    : 实体键盘 nihao → ni'hao → 候选「你好 你号 泥嚎 拟好 倪好」→ 上屏 → 回车发送 ✅
-持久化      : launchd 两单元(herdr server 已在跑时自动跳过,不动用户的 3 个 pane)+ Termux 守护脚本
+机器    x86_64 / macOS 13.7.8 · herdr 0.9.3 · node v24.18.0 · bun 1.4.3
+渲染    TV Bro(GeckoView)完整渲染真实工作区
+终端    terminal_attach:true,终端可交互(提示符 bot@bot:~)
+中文    实体键盘 nihao → ni'hao → 候选「你好 你号 泥嚎 拟好 倪好」→ 上屏 → 回车发送
+持久化  开发机 reboot 后 launchd 自动起两单元(PPID=1、PATH 完整);
+        电视侧守护脚本 12 秒内自动重连;重启后中文依然可用
 ```
 
-### 重启后的复验(实测)
-
-```
-开发机 reboot 后 2 分钟:
-  launchctl  : 491 dev.herdr.server / 495 dev.herdr.webui   ← 两个都在运行
-  herdr server: pid 491, PPID=1 ← 由 launchd 起,已脱离终端
-  它的 PATH  : ~/.local/bin:~/.bun/bin:~/.n/bin:...        ← 完整(这就是为什么要写全)
-  health     : {"ok":true,...}
-
-电视侧:
-  一次性 ssh  → bot 重启后进程数变 0,页面打不开(不重连)← 这就是加守护脚本的原因
-  守护脚本后 → 杀 ssh 子进程,12 秒内自动重连并发新页 ✅
-  终端里中文  → ni'hao → 候选「你好」→ 上屏(重启后依然成立)
-```
-
-把 herdr 交给 launchd 后补上的一步(实测):
-
-```
-直接 launchd 跑    : capabilities 里无 direct_terminal_attach · detached_server_daemon=false
-                     → health {"terminal_attach":false} ⇒ web ui 降级 mirror 模式
-套 script PTY 后  : detached_server_daemon=true
-重启 web ui 后    : health {"terminal_attach":true} ✅
-                     终端提示符也从 bot@localhost 变成 bot@bot(真 PTY 的证据)
-```
-
-> ⚠️ **重启会丢掉 herdr 的所有 pane** —— 这是重启本身的后果,不是持久化方案的问题。
-> 想要"重启也保留工作区",那要另外做(把 herdr 的 session 落盘/恢复),不在本文范围。
+> ⚠️ **重启会丢掉 herdr 的所有 pane** —— 那是重启本身的后果,不是方案的问题。
+> 要"重启也保留工作区"得另外做 session 落盘/恢复,不在本文范围。
 
 ### 和"PC 一样"到什么程度
 
-- **单按 `Shift` 切中英** ✅(IME 层行为,全平台一致)
-- **回车**:候选栏还在时第一次回车是「上屏」,第二次才是发送 ——
-  这是**标准 IME 语义,PC 上一样**。正常习惯是 `空格/数字选词 → 回车发送`。
-  (Termux 里这个感觉更糟:它的"发送"绑在 `imeOptions=actionSend` 上,
-  第一次回车会把**英文原码**上屏,看起来就像"没发出去"。)
-- **切输入法**(多个 IME 之间):**Android 没有这个快捷键** ——
-  `Ctrl+Space` 在 `PhoneWindowManager` 里就被吃掉了,用来切的是**物理键盘布局**。
-  要的话得上 `Key Mapper` 这类按键映射应用。
-
----
+- `Shift` 切中英 ✅
+- 回车要"先选词、再回车"(标准 IME 语义)
+- **切输入法**(多个 IME 之间):Android **没有**这个快捷键 —— `Ctrl+Space` 在
+  `PhoneWindowManager` 里被吃掉,用来切的是**物理键盘布局**。要的话得上
+  Key Mapper 这类按键映射应用。
 
 ## herdr 的操作方式(接上之后怎么用)
 
@@ -686,6 +595,9 @@ done
 
 ### ⚠️ 在 Termux 里跑 herdr:`ctrl+alt` 会和 Termux 抢键
 
+> 只影响**方案 B**(在电视的 Termux 里跑 herdr TUI)。
+> 用**方案 C** 时 herdr 跑在开发机上,没这个冲突。
+
 herdr 官方推荐的「免 prefix」方案**全用 `ctrl+alt` 家族** —— 它把 Ghostty / iTerm2 /
 kitty / WezTerm / Alacritty / GNOME Terminal / Konsole 以及 GNOME/KDE 的默认键位
 都过了一遍,结论是 `ctrl+alt` 几乎没人占。
@@ -728,22 +640,17 @@ disable-hardware-keyboard-shortcuts = true
 
 ## 对齐体验
 
-两套的**操作习惯是同一套**,不用分别学:
+三套的**操作习惯是同一套**:电视输入法、遥控、装包/卸载全共用。差别只在“打字和字号”:
 
-| 环节 | 两套共用 |
-|---|---|
-| 键入文字 | 电视的搜狗 TV 输入法(遥控 D-pad);需要长打字就上「跨屏输入」或实体键盘 |
-| 回车/确认 | 遥控 OK 键(在输入法上是 ⏎) |
-| 翻页/滚动 | Termux 用功能键行的 `PGUP/PGDN`;PWA 用遥控方向键 |
-| 返回 | `BACK` 在 Termux = 收输入法;在 TV Bro = 呼出工具栏 |
-| **键盘快捷键** | Termux:`ctrl+alt+=` / `ctrl+alt+-` 调字号,`ctrl+alt+k/m/r/c/v` 开关键盘/菜单/重命名/新会话/粘贴 |
-| herdr 键位 | `prefix`(默认 `ctrl+b`)后跟一个键;**`prefix+?` 弹出全部键位**;没鼠标也能 `prefix+h/j/k/l` 移动 |
-| 切换 | 两个应用都在 TV 桌面(`LEANBACK_LAUNCHER` 都有),直接切 |
-| 装 / 卸 | 都是 `tools/tv-install.sh`;卸载 `adb uninstall <包名>`(卸载不受 TCL 拦截) |
+| 环节 | A 自建 PWA | B Termux | **C herdr WebUI** |
+|---|---|---|---|
+| 打字 | 网页输入框 | 终端(**实体键盘打不了中文**) | 网页输入框/终端(**实体键盘可打中文**) |
+| 字号 | 网页自定 | `ctrl+alt+=/-`,或改 `fontsize` | **浏览器缩放即可** |
+| 切中英 | — | — | **单按 `Shift`** |
+| 装 / 卸 | 都是 `tools/tv-install.sh`;卸载 `adb uninstall <包名>`(不受 TCL 拦截) | | |
 
-**一个建议的分工**:A 挂在电视上常驻(看谁在等我),B 需要动手时切过去。
-两者指向**同一台开发机上的同一个 herdr 会话** —— Collie 读的是 panes,
-Termux 是直接 attach,看到的是同一批会话。
+三套指向**同一台开发机上的同一个 herdr 会话**(A/C 读 panes,B 直接 attach)——
+看到的是同一批 pane,可以混用。
 
 ---
 
@@ -766,6 +673,25 @@ EOS
 "$ADB" -s "$TV" shell "run-as com.termux cp /data/local/tmp/t.sh files/home/t.sh"
 "$ADB" -s "$TV" shell "run-as com.termux sh files/home/t.sh"
 ```
+
+### `run-as` 下的三个限制(写脚本必先知道)
+
+1. **heredoc 会失败** —— `can't create temporary file /data/local/xxx.tmp: Permission denied`
+   (它要往 `/data/local/` 写临时文件)。用上面的 push + cp,或 base64 内联:
+   ```bash
+   B=$(base64 -w0 file)
+   adb shell "run-as com.termux sh -c 'export PATH=/data/data/com.termux/files/usr/bin:\$PATH; printf %s $B | base64 -d > files/home/xxx'"
+   ```
+   `PATH` 必须显式给,否则 `base64`/`mkdir` 这些外部程序找不到,**管道会静默失败**。
+2. **`$HOME` 是 `/data/user/0/com.termux`,不是 Termux 的家目录 `files/home/`。**
+   用 `$HOME` 拼路径会把密钥/配置写到错地方(实测把 ssh 密钥写到了
+   `/data/data/com.termux/.ssh/`,导致后来隧道一直 `Permission denied`)。
+   一律用**绝对路径**,或显式 `HOME=/data/data/com.termux/files/home`。
+3. **`adb shell` 不转发 stdin 到 `run-as`** —— `adb shell 'run-as ...' < file` 拿不到内容。
+
+另加一条(不属于 `run-as`,但同一次踩的):**每条 `adb shell` 都要 `</dev/null`**
+(AGENTS.md §6)。非交互环境下 adb 会占住 stdin,把**脚本后续命令**的输入流吃掉,
+现象是“第一条命令有输出、后面全部静默无输出”。
 
 ### 往 Termux 里「打字」的两个坑
 
