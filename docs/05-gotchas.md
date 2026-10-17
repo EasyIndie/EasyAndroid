@@ -819,3 +819,76 @@ REPO="$(gitpath "$_REPO_DIR")"
 
 **判断口诀**:凡是把路径交给**原生程序**的地方(adb / git / java / gh / python),
 都问一句「这里是不是假设了路径自动转换开着?」—— 是,就换成显式转换。
+
+## Session 0 读不到 Session 1 的凭据 —— `gh` 和 `git push` 一起哑
+
+**症状**
+
+```
+gh auth status        → "The token in default is invalid."
+gh auth token         → no oauth token found for github.com
+git push              → fatal: could not read Username for 'https://github.com'
+```
+
+而你在自己的终端里 `gh` 一切正常。**换个上下文就全坏**:服务方式启动的 agent、
+session 0 的进程、没有加载用户配置文件的环境。
+
+**真因(两个叠加)**
+
+1. token 存在 **Windows 凭据库**里(`gh auth status` 会显示 `(keyring)`)。凭据库条目
+   用 **DPAPI 按用户加密**,非交互会话里解不开。
+2. **git 的凭据助手就是 gh**:
+
+   ```
+   credential.https://github.com.helper = !"…/gh.exe" auth git-credential
+   ```
+
+   ⇒ gh 读不到 token,git 也拿不到凭据,连 `git push` 一起坏。
+   **这是同一个故障,别分开排查。**
+
+**三个会带偏方向的假象**
+
+| 现象 | 为什么不能当证据 |
+|---|---|
+| `git ls-remote origin` 成功 | 公开仓库**匿名就能读**,这条根本不测认证 |
+| `gh auth status` 说 "invalid" | 措辞是"无效",实际是**读不到**;`gh auth token` 的 `no oauth token found` 才准确 |
+| `git credential fill` 迟迟不返回 | 它卡在凭据助手那儿。加 `timeout 20` 才看得出是**挂住**而不是慢 |
+
+**修法(推荐):把 token 从凭据库迁到文件**
+
+在**能读凭据的那个会话**里跑一次:
+
+```powershell
+gh auth token | gh auth login --with-token --insecure-storage
+```
+
+`--insecure-storage` 让 gh 把 token 写进 `%APPDATA%\GitHub CLI\hosts.yml`(明文),
+**任何 session 都能读**。`gh auth status` 的来源会从 `(keyring)` 变成那个文件路径:
+
+```
+✓ Logged in to github.com account <you> (C:\Users\<你>\AppData\Roaming\GitHub CLI\hosts.yml)
+```
+
+不用重新授权、不用新建 PAT、不用浏览器。
+
+**修法(临时):环境变量**
+
+`gh` 和 `gh auth git-credential` 都**优先读 `GH_TOKEN`**:
+
+```bash
+export GH_TOKEN=gho_xxx        # 当前会话立刻生效
+```
+
+持久化就写进 `~/.bashrc`(仓库之外)。**永远不要写进被跟踪的文件** ——
+`.gitignore` 拦不住手滑。
+
+**安全取舍**:明文 token。单用户自己的机器可接受;若 `AppData` 会同步到云或进备份,
+要意识到这一点。想退回凭据库就删掉 `hosts.yml` 里的 `oauth_token` 再 `gh auth login`。
+
+**验证三条(缺一不可)**
+
+```bash
+gh auth status                    # 来源应是 hosts.yml(或 keyring)
+git push --dry-run origin main    # 必须过 —— 这条才是真认证
+gh run list --limit 1
+```
