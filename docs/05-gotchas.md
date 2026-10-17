@@ -329,7 +329,7 @@ adb uninstall com.example.dualdemo
 ## 设备掉线时,`adb ... >/dev/null 2>&1` 会「成功」地什么都不做
 
 **现象**:一串设备侧操作全部"正常返回",但结果一个都没生效;直到某一步的输出
-恰好被打印出来,才看到 `error: device '192.168.0.11:5555' not found`。
+恰好被打印出来,才看到 `error: device '192.0.2.11:5555' not found`。
 
 **真因**:`A(){ adb shell "$@" 2>&1; }` 这类包装把输出收进了变量或 `/dev/null`,
 而**离线时 adb 的退出码不一定会让上层察觉**,于是 `rm -f xxx` 变成空操作。

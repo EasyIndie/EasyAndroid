@@ -594,4 +594,4 @@ adb -s "$TV_ADDR" shell "rm -f $D/._*"                        # 清(先确认没
 ### 如果目标不是自己的应用,而是「在电视上用某个网页应用」
 
 就不必走侧载安装器了 —— 电视上装一个 TV Bro 即可,而且它的 **GeckoView 引擎**
-能跑现代 Web 应用。完整的两套方案见 [09-tv-remote-dev.md](09-tv-remote-dev.md)。
+能跑现代 Web 应用。完整的三套方案见 [09-tv-remote-dev.md](09-tv-remote-dev.md)。

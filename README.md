@@ -20,7 +20,7 @@ Android 开发实践沉淀。
 - **ADB 多设备管理**:WSL2 mirrored 网络下的端口冲突、网络 ADB 的持久性差异、USB→TCP 引导
 - **厂商侧载封锁**:TCL 电视固件级 `INSTALL_FAILED_VERIFICATION_FAILURE` 的完整分析与绕行
 - **Pico 4 开发约束**:`FLAG_SECURE` 截屏限制、ABI、无线调试持久性
-- **把电视当远程开发终端**:两套方案 —— TV Bro + GeckoView 跑自建 PWA,或 Termux + ssh + tmux(见 [docs/09](docs/09-tv-remote-dev.md))
+- **把电视当远程开发终端**:三套方案 —— TV Bro + GeckoView 跑自建 PWA;Termux + ssh + tmux;或 **herdr 的 WebUI 走 SSH 隧道**(电视上零安装,实体键盘打中文最顺,见 [docs/09](docs/09-tv-remote-dev.md))
 
 ## 示例工程
 

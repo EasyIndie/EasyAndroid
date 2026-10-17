@@ -1,21 +1,23 @@
-# 把电视当远程开发终端:两套方案
+# 把电视当远程开发终端:三套方案
 
 在 TCL 电视(Android 11 / **无 Google Play** / 只有遥控)上远程连到开发机干活。
-两套方案**都已在本仓库的实机上跑通**,互相补充:
+三套方案**都已在本仓库的实机上跑通**,互相补充:
 
-| | **方案 A:自建 PWA** | **方案 B:Termux + SSH** |
-|---|---|---|
-| 跑什么 | [ColliePWA](https://colliepwa.dev)(herdr 的手机客户端) | Termux 里的 `ssh` + `tmux`/herdr 的 TUI |
-| 电视上装什么 | **TV Bro**(带 GeckoView 的构建) | **Termux** + `openssh` + `tmux` |
-| 开发机上要什么 | 起一个 Collie 实例(自建 Web 应用) | **什么都不用装**(只要有 sshd) |
-| 打字 | 网页输入框 → 搜狗 TV 输入法 | 终端 → 搜狗 TV 输入法(**实测可用**) |
-| 实体键盘 | 不需要 | 不需要,但强烈建议 |
-| 屏幕利用 | 卡片/按钮式 UI,**为遥控优化** | 真终端,TUI 原样渲染 —— 信息密度高 |
-| 装一次耗时 | ~90 s(143 MB 包) | ~330 s(32 MB 包 + apt) |
-| 适合 | "看哪个 agent 在等我、回一句话" | "真的要敲命令、看日志、改代码" |
+| | **方案 A:自建 PWA** | **方案 B:Termux + SSH** | **方案 C:herdr WebUI + 隧道** |
+|---|---|---|---|
+| 跑什么 | [ColliePWA](https://colliepwa.dev)(herdr 的手机客户端) | Termux 里的 `ssh` + `tmux`/herdr 的 TUI | [herdr-web-ui](https://github.com/devswha/herdr-web-ui)(官方生态的浏览器客户端) |
+| 电视上装什么 | **TV Bro**(带 GeckoView 的构建) | **Termux** + `openssh` + `tmux` | 复用已有的 **TV Bro + Termux**(Termux 只用来起隧道) |
+| 开发机上要什么 | 起一个 Collie 实例(自建 Web 应用) | **什么都不用装**(只要有 sshd) | herdr ≥0.9 + Bun + 源码版 herdr-web-ui |
+| 打字 | 网页输入框 → 搜狗 TV 输入法 | 终端 → 搜狗 TV 输入法(软键盘**实测可用**) | 网页输入框 / 终端(xterm.js) |
+| **实体键盘打中文** | 未实测 | ❌ **不行**(Termux 上游 bug [#5290](https://github.com/termux/termux-app/issues/5290)) | ✅ **实测通过** |
+| 屏幕利用 | 卡片/按钮式 UI,**为遥控优化** | 真终端,TUI 原样渲染 —— 信息密度高 | 工作区 + 聊天卡片 + 真终端,**信息密度最高** |
+| 装一次耗时 | ~90 s(143 MB 包) | ~330 s(32 MB 包 + apt) | 开发机上 ~5 分钟 + 电视侧 **0** |
+| 适合 | "看哪个 agent 在等我、回一句话" | "真的要敲命令、看日志、改代码" | **长期主力**(尤其要打中文时) |
 
-> **建议两个都装。** A 用来快速瞥一眼 + 回话(遥控友好),B 用来干正事。
-> 它们共用同一套安装通道、输入法和验收手段,见下面「对齐体验」。
+> **建议:A 和 C 都装,B 视需要。**
+> A 用来快速瞥一眼 + 回话(遥控友好);C 用来长期干活(中文输入 + 字号/滚动都好);
+> B 是"开发机上什么都不能装"时的兜底 —— 但**它打不了中文**,见下面的死结。
+> 它们共用同一套安装通道、输入法和验收手段,见「对齐体验」。
 
 ---
 
@@ -361,7 +363,7 @@ adb -s "$TV_ADDR" shell "wm density reset"   # 还原
 > ❗ **别靠肉眼判字号变化。** 本机没有 PIL/numpy,而截图内容是会变的 ——
 > 我先后被「功能键行的字变大」和「前后画面内容不同」各骗了一次。
 > 可靠做法是**先控住内容**(删掉 `current_session` 逼出固定内容的欢迎横幅)
-> 再量文字行距:用 [`tools/png-rowpitch.py`](../tools/README.md) 
+> 再量文字行距:用 [`tools/png-rowpitch.py`](../tools/README.md)
 > —— `python3 tools/png-rowpitch.py 截图.png 0 700` 会给出
 > **文字行数 / 平均行距 / 文字块总高** 三个数,一样就是没变,不用猜。
 > (它自带 `--selftest`,已接进 `verify-all.sh`。)
@@ -377,6 +379,162 @@ ssh + tmux  : demo: 1 windows (created ...)        ← 就是 herdr 的用法
 跨机 sshd    : 从 WSL 连电视的 8022 → TV-SSH-OK / uid=10092(u0_a92)
 屏幕上的 TUI : [demo] 0:sleep*   "localhost" 22:12 16-Oct-2026   ← 1920x1080 正常渲染
 ```
+
+---
+
+## 方案 C:herdr 的 WebUI + SSH 隧道(**要打中文就用这个**)
+
+方案 A 的短板是"Collie 要自建实例";方案 B 的死结是 **Termux 里实体键盘打不了中文**。
+方案 C 用 herdr 生态里现成的 **herdr-web-ui**(浏览器客户端),把这两件事一起解决:
+
+```
+[电视]   TV Bro (GeckoView) → http://127.0.0.1:7317
+                                 ↑  SSH 隧道(Termux 里起)
+[开发机]                       herdr-web-ui(只绑 127.0.0.1)
+                                 ↓
+                               herdr server(同一批 pane,TUI 仍可 attach)
+```
+
+### 为什么是它(三个硬理由)
+
+1. **中文输入真的能用** —— 实测 `ni'hao` → 候选「你好」→ 上屏 → 回车发送。
+   方案 B 的死结是 Termux 把硬件键直接喂 PTY(上游 bug 仍 open),不是电视的问题。
+2. **电视上不用装新东西** —— 复用已有的 TV Bro + Termux(Termux 只用来起隧道)。
+3. **顺手解决字号/滚动/选中** —— 浏览器缩放一键搞定,不用 `wm density` 去动整机。
+
+### 步骤 1. 开发机上起服务
+
+先跑这组**只读**体检:
+
+```bash
+uname -m                 # 需要 x86_64 或 aarch64；armv7l 官方没有构建
+bun --version            # 需要 ≥1.4(没有就先装：curl -fsSL https://bun.sh/install | bash)
+node --version           # 需要 ≥18(终端 attach 的 sidecar 用)
+herdr --version          # 需要 ≥0.9.0
+herdr status server      # 需要 running
+git --version
+```
+
+> ⚠️ **别用 `herdr plugin install`,除非 herdr 是用完整 PATH 启动的。**
+> 实测坑:herdr server 从 GUI 终端(Ghostty)启动时,PATH 是
+> `/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Ghostty.app/Contents/MacOS` ——
+> **`~/.local/bin`(herdr 自己)、`~/.bun/bin`、`~/.n/bin` 全都不在**。
+> 插件的 build 步骤用的是 **herdr 自己的环境** ⇒ 必然报 `bun not found`,
+> 而官方 INSTALL.md 又明确"不要重启用户的 herdr server"。
+
+所以走源码安装(官方 INSTALL.md 的方法 3B),它只依赖你**当前 shell** 的 PATH:
+
+```bash
+git clone https://github.com/devswha/herdr-web-ui.git ~/herdr-web-ui
+cd ~/herdr-web-ui && bun install
+
+# 起服务：只绑 127.0.0.1，且把 herdr 和 node 放进 PATH
+export PATH="$HOME/.local/bin:$HOME/.n/bin:$HOME/.bun/bin:$PATH"
+export HERDR_WEB_HERDR_BIN="$HOME/.local/bin/herdr"
+HOST=127.0.0.1 PORT=7317 bun run start
+```
+
+自检(必须看到 `"ok":true`):
+
+```bash
+curl -s http://127.0.0.1:7317/api/health
+# {"ok":true,"herdr":{"version":"0.9.3",...,"terminal_attach":true},
+#  "auth":{"required":false,"authenticated":true,"via":"local","role":"drive"},...}
+```
+
+> **`via":"local"` 是隧道路线的关键** —— 隧道进来的连接会被服务端当成"本机",
+> 所以**不需要配对码、不需要 token**,局域网也完全不暴露。
+> 反过来如果选 `HOST=0.0.0.0`:必须配 `HERDR_WEB_TOKEN`,而**明文 http 上的
+> token 会被同网段任何人嗅到**(官方明说)。这就是隧道优于直连的理由。
+
+### 步骤 2. 电视上建隧道
+
+```bash
+# 生成专用密钥(一次)
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+ssh-keygen -t ed25519 -N "" -C "tv-termux@tcl" -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub        # 把这行加到开发机的 ~/.ssh/authorized_keys
+
+# 起隧道
+termux-wake-lock
+setsid nohup ssh -N -L 7317:127.0.0.1:7317 \
+  -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+  -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 \
+  -i ~/.ssh/id_ed25519 bot@192.0.2.35 > ~/.ssh/tunnel.log 2>&1 &
+```
+
+然后 TV Bro 打开 `http://127.0.0.1:7317`。
+
+### 步骤 3. 让它开机/开 Termux 就在
+
+**开发机(macOS 用 launchd,Linux 用 `systemctl --user`)**:
+
+两个用户级单元(或合并成一个启动器脚本):
+
+- `dev.herdr.server` —— 跑 `herdr server`。启动器先探 `herdr status server`,
+  **已在跑就 `exit 0`**;配合 `KeepAlive { SuccessfulExit: false }`,
+  这样**不需要立刻重启用户正在跑的 herdr**,下次登录/重启才接管。
+- `dev.herdr.webui` —— 等 herdr 就绪后跑 `bun run server/managed.ts`。
+
+两个单元的环境里 **`PATH` 必须写全**(`~/.local/bin` + `~/.bun/bin` + `~/.n/bin`),
+原因见上面那个坑。
+
+**电视(Termux)**
+
+- `~/.termux/boot/10-herdr-tunnel.sh` —— 开机后 `ping` 等网络 → `termux-wake-lock` → 起隧道。
+  **需要装 [`Termux:Boot`](https://f-droid.org/packages/com.termux.boot/) 并启动一次**才生效
+  (纯 Java 包,**不受 32 位限制**)。
+- `~/.bashrc` 里放同样的逻辑(用 `ps -A | grep` 判重)—— **这条不需要 Termux:Boot**,
+  打开 Termux 就把隧道拉起来。记得 `~/.bash_profile` 里加 `. ~/.bashrc`,
+  否则 **login shell 不会加载 .bashrc**(实测这台 Termux 没有 .bash_profile)。
+
+### ⚠️ 实测踩到的坑
+
+| 坑 | 现象 | 真因 / 修法 |
+|---|---|---|
+| **插件装不上** | `bun not found` | herdr server 的 PATH 里没有 bun。走源码安装,或先把 herdr 改成带完整 PATH 的 launchd/systemd 启动 |
+| **终端报「服务器无法启动 herdr」** | 聊天能看、终端连不上 | 起服务时 PATH 少了 `~/.local/bin`。补上,或设 `HERDR_WEB_HERDR_BIN` |
+| **隧道"起不来"** | 反复 `Address already in use` | ①`ps -A` 在 Android 上**不显示 ssh 的完整命令行**(只显示 `ssh`),据此判断会误判;②`pkill -f "ssh -N -L"` **匹配不到 `ssh -v -N -L`**(中间多一个 `-v`)。清场用 `pkill -9 -f ssh` |
+| **密钥在但 `Permission denied`** | 隧道秒退 | 密钥被写到了 `/data/data/com.termux/.ssh/` 而不是 `files/home/.ssh/` —— 见下面 $HOME 那个坑 |
+
+### 电视上跑命令的三个 bash 限制(写脚本必先知道)
+
+在 `run-as com.termux` 下:
+
+1. **heredoc 会失败** —— `can't create temporary file /data/local/xxx.tmp: Permission denied`
+   (它要往 `/data/local/` 写临时文件)。改成**主机侧 base64 后内联**:
+   ```bash
+   B=$(base64 -w0 file)
+   adb shell "run-as com.termux sh -c 'export PATH=/data/data/com.termux/files/usr/bin:\$PATH; printf %s $B | base64 -d > files/home/xxx'"
+   ```
+   `PATH` 必须显式给,否则 `base64`/`mkdir` 这些外部程序找不到,**管道会静默失败**。
+2. **`$HOME` 是 `/data/user/0/com.termux`,不是 Termux 的家目录 `files/home/`。**
+   用 `$HOME` 拼路径会把密钥/配置写到错误位置(实测把密钥写到了
+   `/data/data/com.termux/.ssh/`,导致后来隧道一直 `Permission denied`)。
+   **一律用绝对路径**,或显式 `HOME=/data/data/com.termux/files/home`。
+3. **`adb shell` 不转发 stdin 到 `run-as`** —— `adb shell 'run-as ...' < file` 拿不到内容。
+
+### 实测证据
+
+```
+机器        : x86_64 / macOS 13.7.8(Ventura) · herdr 0.9.3 running · node v24.18.0 · bun 1.4.3
+健康检查    : {"ok":true,"herdr":{"terminal_attach":true},"auth":{"via":"local","role":"drive"}}
+渲染        : TV Bro(GeckoView)→ 「EasyXAgentOPS · herdr」「OrzMC · /Users/bot/OrzMC」
+终端 attach : 修好 PATH 后终端格不再报错,接上 pi 代理
+中文输入    : 实体键盘 nihao → ni'hao → 候选「你好 你号 泥嚎 拟好 倪好」→ 上屏 → 回车发送 ✅
+持久化      : launchd 两单元(herdr server 已在跑时自动跳过,不动用户的 3 个 pane)+ Termux .bashrc 钩子
+```
+
+### 和"PC 一样"到什么程度
+
+- **单按 `Shift` 切中英** ✅(IME 层行为,全平台一致)
+- **回车**:候选栏还在时第一次回车是「上屏」,第二次才是发送 ——
+  这是**标准 IME 语义,PC 上一样**。正常习惯是 `空格/数字选词 → 回车发送`。
+  (Termux 里这个感觉更糟:它的"发送"绑在 `imeOptions=actionSend` 上,
+  第一次回车会把**英文原码**上屏,看起来就像"没发出去"。)
+- **切输入法**(多个 IME 之间):**Android 没有这个快捷键** ——
+  `Ctrl+Space` 在 `PhoneWindowManager` 里就被吃掉了,用来切的是**物理键盘布局**。
+  要的话得上 `Key Mapper` 这类按键映射应用。
 
 ---
 
