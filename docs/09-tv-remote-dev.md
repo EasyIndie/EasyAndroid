@@ -32,7 +32,81 @@
 | 输入法 | `com.sohu.inputmethod.sogou.tv`(搜狗 TV 输入法) | 遥控 D-pad 就能打字,应用走标准 `InputConnection` 就吃得到 |
 | 遥控 | `gIrTouch_Mouse`,`SOURCE_MOUSE\|SOURCE_TOUCHPAD\|SOURCE_POINTER` | 带**指针**能力,标准控件可以 tap |
 | 触摸屏 | 没有 | TCL 自有界面不把 touch 当 click |
-| 外设 | `android.hardware.usb.host` ✅、蓝牙 ON ✅ | USB / 蓝牙键鼠都行 |
+| 外设 | `android.hardware.usb.host` ✅、蓝牙 ON ✅ | 见下面「键盘 / 鼠标」 |
+
+### 键盘 / 鼠标:接哪种、接哪个口
+
+实测过三种输入设备(2026-09-18)。**结论:长期用选蓝牙。**
+
+#### USB:能用,但有两个坑
+
+**坑 ①:不是每个 USB 口都是主机口。** 实测把 2.4G 接收器插在
+U 盘那个口上 → 立刻枚举成功;插在另一个口上 →
+`dumpsys usb` 的 host_manager 里**一个设备都没多**。
+
+怎么判断当前用的是不是主机口(不需要 root):
+
+```bash
+adb -s "$TV_ADDR" shell "dumpsys usb" | grep -A40 host_manager
+# 主机口:会列出 name=/dev/bus/usb/... + 厂商/产品名
+# 非主机口:列表里什么都没有
+```
+
+判据不是 `/sys/bus/usb/devices/`(**shell 读不了,是 Permission denied,
+不是空**;别把它当成"没有设备"),也不是 `dumpsys usb` 的
+`device_manager.connected`(那是**设备模式** = 电视当从设备接电脑,和主机模式无关)。
+
+**坑 ②:2.4G 接收器距离短。** 实测离开一两米就不工作 —— 电视场景下基本不好用。
+而且那个主机口就是 U 盘侧载要用的口,两个设备互斥(要 Hub,而且电视的 USB 口
+供电常常带不动 Hub + U 盘,得用**带供电的** Hub)。
+
+驱动侧完全具备,不是"声称支持但没实现":
+
+```
+/sys/bus/usb/drivers/ 里有: usbhid(U 键盘/鼠标) hub(U 扩展坞) xpad(Xbox 手柄)
+```
+
+`xpad` 在,说明厂商确实考虑过 "USB 输入类外设" 这个场景。
+
+#### 蓝牙:推荐
+
+**已经被证明可用 —— 一台蓝牙键盘(K380)接上就直接出输入设备。**
+
+```
+Profile: HidHostService                                 ← 蓝牙 HID 主机功能在
+HID_HOST=100                                            ← 已配对设备被当作 HID 接纳
+feature:android.hardware.bluetooth_le                    ← BLE 鼠标也支持
+```
+
+配对:电视 `设置 → 蓝牙 → 添加设备`,鼠标先进配对模式。
+
+#### 怎么确认「接上了」(三层证据,都不需要 root)
+
+```bash
+# ① 内核认到设备了吗 —— 看设备名和能力
+adb -s "$TV_ADDR" shell "getevent -pl" | grep -E 'add device|name:'
+#    鼠标的特征:REL_X / REL_Y / WHEEL + BTN_LEFT/RIGHT/MIDDLE
+
+# ② framework 认成鼠标了吗 —— 看 Sources 和 Cursor Input Mapper
+adb -s "$TV_ADDR" shell "dumpsys input" | grep -A24 'Device [0-9]*: <设备名>'
+#    ★ Sources 里要含 0x00002000(SOURCE_MOUSE)
+#    ★ 而且应该有 `Cursor Input Mapper:` 这一段 —— 只有鼠标才会有
+
+# ③ ★ 最硬的一条:屏幕上真的出现光标、动鼠标它跟着动
+adb -s "$TV_ADDR" exec-out screencap -p > mouse.png
+```
+
+实测罗技 2.4G 鼠标的结果:①②全过(X/Y 到 1919×1079、`Sources: 0x01002313` 含
+`0x2000`、有 `Cursor Input Mapper`);③ 未做终确认——**用户反馈实际可用**。
+
+> ⚠️ **不能靠 `sendevent` 代你动鼠标来验。** 鼠标的 event 节点是
+> `crw-rw---- root input`,而 Android 11 的 SELinux 不允许 shell 写输入设备
+> (`sendevent: Permission denied`)——shell 虽然在 `input` 组里也没用。
+> 这一步必须物理动一下鼠标。
+
+> 另一个容易搞混的:系统里原本就有一个鼠标类设备 `gIrTouch_Mouse`
+> (`REL_X/REL_Y/WHEEL` + `SOURCE_MOUSE|TOUCHPAD|POINTER`),那是**遥控的红外指针**。
+> 所以"电视上有鼠标类设备"不等于"插的鼠标被认了",要看**设备名**。
 
 ### 装法:只有一条路
 
@@ -41,8 +115,12 @@
 细节见 [03-tcl-tv-sideload.md](03-tcl-tv-sideload.md)。
 
 ```bash
+```bash
 bash tools/tv-install.sh <apk>          # 约 90 s;U 盘越干净越快
 ```
+
+> 💡 **用蓝牙键鼠的另一个好处:U 盘那个主机口就空出来了。** 如果用 2.4G 接收器,
+> 它和 U 盘抢**同一个**主机口 —— 装应用时得把鼠标拔下来。蓝牙不占口。
 
 > ⚠️ 安装器扫的是**整个可移动卷、而且是递归的** —— 把 APK 挪到二级目录
 > 或 `AndroidTV/` 外面都躲不掉(实测两面都验过)。唯一有效的是**不让名字以 `.apk` 结尾**:
