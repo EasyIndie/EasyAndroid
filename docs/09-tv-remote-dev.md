@@ -115,7 +115,6 @@ adb -s "$TV_ADDR" exec-out screencap -p > mouse.png
 细节见 [03-tcl-tv-sideload.md](03-tcl-tv-sideload.md)。
 
 ```bash
-```bash
 bash tools/tv-install.sh <apk>          # 约 90 s;U 盘越干净越快
 ```
 
