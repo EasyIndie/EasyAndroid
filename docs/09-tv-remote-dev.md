@@ -472,14 +472,19 @@ cat ~/.ssh/id_ed25519.pub        # 加到开发机的 ~/.ssh/authorized_keys
 PF=$HOME/.ssh/herdr-tunnel.pid
 if ! { [ -f "$PF" ] && kill -0 "$(cat "$PF")" 2>/dev/null; }; then
   ( setsid nohup "$HOME/.termux/herdr-tunnel.sh" </dev/null >/dev/null 2>&1 & )
-  echo "[herdr] 隧道已启动 → TV Bro 打开 http://127.0.0.1:7317"
-  ( sleep 6; am start -n com.phlox.tvwebbrowser/.activity.main.MainActivity \
-      -a android.intent.action.VIEW -d http://127.0.0.1:7317/ >/dev/null 2>&1 ) &
+  echo "[herdr] 隧道已启动（切到 TV Bro 即可）"
 fi
 ```
 
 并在 `~/.bash_profile` 里加 `. ~/.bashrc` —— 否则 **login shell 不加载 .bashrc**
-(实测这台 Termux 没有 .bash_profile)。不想自动抢前台就设 `HERDR_WEBUI_NOOPEN=1`。
+(实测这台 Termux 没有 .bash_profile)。
+
+> **页面交给 TV Bro 的主页，不要在 `.bashrc` 里 `am start`。**
+> 实测过自动打开确实能用，但有两个副作用：① 你打开 Termux 只为干别的时，
+> TV Bro 会在 6 秒后抢焦台盖掉它；② TV Bro 已经开着页面时被 VIEW intent 重新拉起，
+> 可能重新加载、丢掉当前 UI 状态。
+> 改为主页：TV Bro 里打开 `http://127.0.0.1:7317` 设为主页 ——
+> force-stop 后只启动也直奔该页（实测）。
 
 可选:`~/.termux/boot/10-herdr-tunnel.sh` 里 `ping` 等网络后 `exec` 同一个脚本,
 需要装 [Termux:Boot](https://f-droid.org/packages/com.termux.boot/)(纯 Java,不受 32 位限制)。
@@ -499,14 +504,14 @@ macOS 用 launchd(用户级 `~/Library/LaunchAgents/`),Linux 用 `systemctl --us
 
 ### 日常操作
 
-**只有一个动作:打开 Termux。** 隧道起来 + 页面自动打开(见上)。
+**两个动作：打开 Termux（起隧道）→ 打开 TV Bro（主页就是 herdr 页面）。**
 
 | 情况 | 你要做什么 |
 |---|---|
-| 电视开机 / 重启 | 打开一次 Termux |
+| 电视开机 / 重启 | 开 Termux → 开 TV Bro |
 | 从屏保回来 | 遥控唤醒 → 切回 TV Bro 刷新 |
-| 开发机重启 / 网络抖动 | **什么都不用做**(自动重连) |
-| `ERROR_CONNECTION_REFUSED` | 打开 Termux,等 5~10 秒 → 刷新 |
+| 开发机重启 / 网络抖动 | **什么都不用做**（自动重连） |
+| `ERROR_CONNECTION_REFUSED` | 打开 Termux，等 5~10 秒 → 刷新 |
 
 唯一软肋:Android 内存紧张时可能杀掉 Termux ⇒ 隧道断 ⇒ 再打开一次 Termux。
 
