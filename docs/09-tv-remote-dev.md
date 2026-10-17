@@ -70,7 +70,7 @@ adb -s "$TV_ADDR" shell "dumpsys usb" | grep -A40 host_manager
 
 #### 蓝牙:推荐
 
-**已经被证明可用 —— 一台蓝牙键盘(K380)接上就直接出输入设备。**
+**已被证明可用** —— 蓝牙键盘(K380)和蓝牙鼠标(M585/M590)接上就直接出输入设备。
 
 ```
 Profile: HidHostService                                 ← 蓝牙 HID 主机功能在
@@ -92,12 +92,40 @@ adb -s "$TV_ADDR" shell "dumpsys input" | grep -A24 'Device [0-9]*: <设备名>'
 #    ★ Sources 里要含 0x00002000(SOURCE_MOUSE)
 #    ★ 而且应该有 `Cursor Input Mapper:` 这一段 —— 只有鼠标才会有
 
-# ③ ★ 最硬的一条:屏幕上真的出现光标、动鼠标它跟着动
-adb -s "$TV_ADDR" exec-out screencap -p > mouse.png
+# ③ ★★ 最硬的一条:SurfaceFlinger 里真的有一个「光标图层」
+adb -s "$TV_ADDR" shell "dumpsys SurfaceFlinger" | grep -A14 'Sprite#0' \
+  | grep -E 'type=CURSOR|geomLayerBounds|alpha='
+#   要看到 `composition type=CURSOR` —— 这是 SurfaceFlinger 的光标层,做不了假
 ```
 
-实测罗技 2.4G 鼠标的结果:①②全过(X/Y 到 1919×1079、`Sources: 0x01002313` 含
-`0x2000`、有 `Cursor Input Mapper`);③ 未做终确认——**用户反馈实际可用**。
+## ⚠️ 为什么「截图看光标」不可靠(重要)
+
+**Android 的光标会在静止几秒后自动淡出**,淡到几乎全透明。实测:
+
+```
+* Layer 0xf2ce5000 (Sprite#0)
+      composition type=CURSOR (4)        ← 光标层确实在
+      geomLayerBounds=[0 0 33 42]        ← 33x42 的箭头
+      transform: (81.29, 775.49)         ← 当前坐标
+      alpha=0.017197                     ← 但只有 1.7% 不透明 = 已淡出
+```
+
+所以**静止时截图里根本看不见光标**,而你会误判成「鼠标没生效」。
+`alpha` 会在鼠标移动时回到 1.0,停一会儿又掉回 ~0.02 —— 我连采 5 次
+`screencap` + 反复读这个图层,只要没人碰鼠标,`alpha` 就一直是 0.017197。
+
+**判据要选不依赖「画面上看得见」的那一条**:`composition type=CURSOR` 在,
+就说明光标系统在跑、鼠标被当作指针设备。**让用户自己看屏幕比截图可靠。**
+
+## 实测结果(两轮)
+
+| 设备 | 结果 |
+|---|---|
+| **罗技 2.4G(B330/M330/M3)** | ①②③ 全过。`Sources: 0x01002313` 含 `0x2000`;有 `Cursor Input Mapper`;光标层 `type=CURSOR` 在 (81,775)。**但接收距离短,一两米就失效** |
+| **罗技蓝牙(M585/M590)** | ①②③ 全过,`UniqueId: d2:be:b4:bd:58:0c`,`bus=0x0005`(= 蓝牙总线),`Sources: 0x00002303` 含 `0x2000`,有 `Cursor Input Mapper`。**推荐** |
+
+> 换一个口/换一种连接方式,**要重新跑一遍 ①②③** —— 我这次就是靠
+> 「host_manager 里一个设备都没多」才发现另一个 USB 口不是主机口。
 
 > ⚠️ **不能靠 `sendevent` 代你动鼠标来验。** 鼠标的 event 节点是
 > `crw-rw---- root input`,而 Android 11 的 SELinux 不允许 shell 写输入设备
