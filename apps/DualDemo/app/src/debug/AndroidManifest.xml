@@ -30,5 +30,14 @@
             </intent-filter>
         </receiver>
 
+        <!-- 输入法探针:判断实体键盘的按键会不会被交给 IME。
+             独立 Activity,不污染 DeviceInspector 的 D-pad 焦点演示。
+             启动:adb shell am start -n <applicationId>/.debug.ImeProbeActivity -->
+        <activity
+            android:name=".debug.ImeProbeActivity"
+            android:exported="true"
+            android:label="IME 探针"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 </manifest>
