@@ -474,7 +474,13 @@ setsid nohup ssh -N -L 7317:127.0.0.1:7317 \
 - `dev.herdr.server` —— 跑 `herdr server`。启动器先探 `herdr status server`,
   **已在跑就 `exit 0`**;配合 `KeepAlive { SuccessfulExit: false }`,
   这样**不需要立刻重启用户正在跑的 herdr**,下次登录/重启才接管。
+  ⚠️ **要给 daemon 套一个 PTY**:`exec script -q /dev/null herdr server`。
+  直接用 launchd 跑 `herdr server` 时,它自报的能力里**没有 `direct_terminal_attach`**
+  (且 `detached_server_daemon:false`)⇒ web ui 只能降级到 mirror 模式。
+  套上 `script` 后两个都恢复(见下面实测评据)。
 - `dev.herdr.webui` —— 等 herdr 就绪后跑 `bun run server/managed.ts`。
+  ⚠️ 它的**能力探测是启动时只算一次**(`sidecarAvailable()` 有缓存),
+  所以改完 herdr 那边必须**重启 web ui**才能看到 `terminal_attach:true`。
 
 两个单元的环境里 **`PATH` 必须写全**(`~/.local/bin` + `~/.bun/bin` + `~/.n/bin`),
 原因见上面那个坑。
@@ -529,6 +535,8 @@ done
 | **开发机重启后隧道不恢复** | 电视上页面打不开,`ssh` 进程数 0 | 一次性 `ssh -N -L` **不会自己重连**。改成守护循环(见步骤 3),配 `ServerAliveInterval=15 / ServerAliveCountMax=3` |
 | **`ps -A \| grep` 判重永远匹配不到** | 每开一次 Termux 就多一个守护 | Android 的 `ps -A` **只显示进程名**,不显示完整命令行。用 **pidfile + `kill -0`** |
 | **`pkill -f ssh` 会把自己杀掉** | 命令只打一行 `Killed`,后面全不执行 | `pkill -f` 匹配**整条命令行**,而 `sh -c '...pkill -f ssh...'` 自己就含 `ssh`。用 `[s]sh` 括号技巧,或按 pidfile 精确 `kill` |
+| **launchd 起的 herdr 丢能力** | `terminal_attach:false`,终端降级成 mirror | launchd 起的 `herdr server` **不报 `direct_terminal_attach`**(也没 `detached_server_daemon`)。启动器改成 `exec script -q /dev/null herdr server` 套 PTY 就恢复 |
+| **改完 herdr 那边没生效** | 仍是 `terminal_attach:false` | web ui 的能力探测**启动时只算一次**。重启 **web ui**(不是 herdr server)就会重新探测 |
 
 ### 电视上跑命令的三个 bash 限制(写脚本必先知道)
 
@@ -574,6 +582,16 @@ done
   一次性 ssh  → bot 重启后进程数变 0,页面打不开(不重连)← 这就是加守护脚本的原因
   守护脚本后 → 杀 ssh 子进程,12 秒内自动重连并发新页 ✅
   终端里中文  → ni'hao → 候选「你好」→ 上屏(重启后依然成立)
+```
+
+把 herdr 交给 launchd 后补上的一步(实测):
+
+```
+直接 launchd 跑    : capabilities 里无 direct_terminal_attach · detached_server_daemon=false
+                     → health {"terminal_attach":false} ⇒ web ui 降级 mirror 模式
+套 script PTY 后  : detached_server_daemon=true
+重启 web ui 后    : health {"terminal_attach":true} ✅
+                     终端提示符也从 bot@localhost 变成 bot@bot(真 PTY 的证据)
 ```
 
 > ⚠️ **重启会丢掉 herdr 的所有 pane** —— 这是重启本身的后果,不是持久化方案的问题。
