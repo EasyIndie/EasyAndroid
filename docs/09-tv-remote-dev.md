@@ -264,47 +264,104 @@ ssh -t <开发机> 'herdr attach'        # 或 tmux new -A -s work
 Termux 自带的**功能键行**(`ESC / CTRL / ALT / ←↓→ / HOME / END / PGUP / PGDN`)
 正好补上遥控没有的键 —— 配合第 2 条很好用。
 
-### 终端字号:Termux 自己的设置在电视上全部无效
+### 终端字号:能改 —— 但有两条不能踩的坑
 
-电视上默认字很小(1920×1080、240dpi 下 `stty size` = 43×173)。实测了五条路,
-**全部走不通**(2026-09-18):
+电视上默认字号很小(1920×1080、240dpi 下 `stty size` = 43×173)。Termux 支持改,
+**三条路,只有在电视上能用的那条最省事**:
+
+#### ① 键盘快捷键(推荐)—— `Ctrl + Alt + +` / `Ctrl + Alt + -`
+
+源码(`TermuxTerminalViewClient.onKeyDown`)里写得很清楚:
+
+```java
+} else if (!...areHardwareKeyboardShortcutsDisabled() &&
+    e.isCtrlPressed() && e.isAltPressed()) {
+    int unicodeChar = e.getUnicodeChar(0);
+    ...
+    } else if (unicodeChar == '+' || e.getUnicodeChar(KeyEvent.META_SHIFT_ON) == '+') {
+        changeFontSize(true);      // 放大
+    } else if (unicodeChar == '-') {
+        changeFontSize(false);     // 缩小
+    }
+```
+
+**步进 2、实时生效、自动持久。** 有硬件键盘(USB / 蓝牙)就能用 —— 这也是
+电视上唯一顺手的方式。同一段里还有 `Ctrl+Alt+` 加别的键:`k` 开关软键盘、
+`m` 菜单、`r` 重命名会话、`c` 新会话、`v` 粘贴、`1`~`9` 切会话。
+
+#### ② 两指捏合 —— 电视用不了
+
+`onScale()` 里判断缩放系数 → `changeFontSize()`。**但这台电视没有触摸屏**,
+鼠标也做不了捏合。
+
+#### ③ 直接改偏好 —— ⚠️ 必须存成 `<string>`,不是 `<int>`
+
+**这是最容易白费半小时的坑。** 源码里是:
+
+```java
+int fontSize = SharedPreferenceUtils.getIntStoredAsString(
+        mSharedPreferences, TERMUX_APP.KEY_FONTSIZE, DEFAULT_FONTSIZE);
+```
+
+名字叫 `getIntStoredAsString` —— **值是以字符串形式存的**。写成 `<int>` 会被
+完全忽略,而且**一点报错都没有**,表现就是「改了没用」:
+
+```xml
+<!-- ✗ 无效,静默忽略 -->
+<int name="fontsize" value="40" />
+<!-- ✓ 正确 -->
+<string name="fontsize">40</string>
+```
+
+实测(量文字行距,同一段欢迎横幅):
+
+| 写法 | 文字行数 | 平均行距 | 文字块总高 |
+|---|---|---|---|
+| 不写(默认) | 18 | 27.26 px | 464 px |
+| `<int name="fontsize" value="40"/>` | 18 | 27.26 px | 464 px |
+| `<string name="fontsize">40</string>` | 10 | 68.39 px | 616 px |
+
+`fontsize` 的可用范围由 `MIN_FONTSIZE`/`MAX_FONTSIZE` 夹住(从资源读),
+`changeFontSize()` 每次步进 2。**默认大约 20**(默认行距 27.26px ≈ fontsize 20)。
+
+在电视上直接写(需要 `run-as`,Termux 的 GitHub 构建是 debuggable):
+
+```bash
+D=/data/data/com.termux
+# 停应用 → 改 → 起应用(不停应用会被它回写覆盖)
+adb -s "$TV_ADDR" shell "am force-stop com.termux"
+adb -s "$TV_ADDR" shell "run-as com.termux sed -i \
+  's#<int name=\"fontsize\" value=\"[0-9]*\" />#<string name=\"fontsize\">24</string>#' \
+  $D/shared_prefs/com.termux_preferences.xml"
+adb -s "$TV_ADDR" shell "am start -n com.termux/com.termux.app.TermuxActivity"
+```
+
+> 更简单:先按一次 `Ctrl+Alt++` 让 Termux **自己把 `<string>` 那条写进去**,
+> 之后再用 sed 改数字就不会踩格式的坑了。
+
+#### 走不通的(别再试)
 
 | 尝试 | 结果 |
 |---|---|
-| `fontsize`(Termux 内部就是用的这个 SharedPreferences 键) | ❌ 默认 / 8 / 20 / 40 / 120 **五档截图字节级完全一致** |
-| 界面菜单 | ❌ 没有(键盘 MENU 键无反应;Termux 靠**两指捏合**改字号) |
-| `~/.termux/termux.properties` | ❌ 支持的键里**没有**字号(只有 `font-family` / `font-woff2`) |
-| `settings put system font_scale 1.5` | ❌ 行距与文字块高度**完全不变**(只有功能键行的字变大) |
-| 两指捏合 | ❌ 这台电视**没有触摸屏**,鼠标做不了捏合 |
+| `~/.termux/termux.properties` 里的字号 | ❌ 支持的键里**没有**字号(只有 `font-family` / `font-woff2`) |
+| `settings put system font_scale 1.5` | ❌ 行距与文字块高度**完全不变**(只有功能键行的字变大 —— 这点骗到过我) |
+| 界面菜单 | ❌ 没有(它不进菜单,只走快捷键和捏合) |
 
-#### 能用的是 `wm density`
-
-Termux 的默认字号是按 density 推出来的,所以**改密度就改了字号**:
+#### 最后手段:`wm density`(有效,但**整机生效**)
 
 ```bash
-adb -s "$TV_ADDR" shell "wm density 320"     # 240 → 320,终端字号 +24%
-adb -s "$TV_ADDR" shell "wm density reset"   # 还原(精确回到原值)
+adb -s "$TV_ADDR" shell "wm density 320"     # 240 → 320
+adb -s "$TV_ADDR" shell "wm density reset"   # 还原
 ```
 
-实测(量行距,不靠肉眼):
-
-| density | 行距 | 文字块总高 |
-|---|---|---|
-| 240(原始) | 27.26 px | 464 px |
-| 320 | 33.89 px | 610 px |
-| 240(`reset` 后) | 27.26 px | 464 px |
-
-三点要知道:
-
-- 它写在 **`settings secure display_density_forced`** 里 → **重启不丢**(不是运行时覆盖)
-- 它**影响整个电视 UI**(TCL 桌面也变大)。实测 320 下桌面布局正常,
-  只是字更大、一屏放的东西变少
-- 逻辑分辨率从 1280×720dp(240dpi)变成 960×540dp(320dpi)
+实测行距 27.26 → 33.89 px,`reset` 后精确回到 27.26 px;写在
+`settings secure display_density_forced` 里,**重启不丢**。
+代价是**整个电视 UI 都变大**(TCL 桌面也一样)—— 只想改终端就不要用这个。
 
 > ❗ **别靠肉眼判字号变化。** 本机没有 PIL/numpy,而截图内容是会变的 ——
-> 我一开始拿「文件大小」和「两张图长得不一样」当判据,结果被「功能键行的字变大」
-> 和「前后内容不同」分别骗了一次。可靠的做法是**控住内容**(删掉 `current_session`
-> 逼出固定内容的欢迎横幅)再量文字行距。
+> 我先后被「功能键行的字变大」和「前后画面内容不同」各骗了一次。
+> 可靠做法:**控住内容**(删掉 `current_session` 逼出固定内容的欢迎横幅)
+> 再量文字行距。
 
 ### 实测证据
 
