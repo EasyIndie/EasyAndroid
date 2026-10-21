@@ -74,6 +74,18 @@
    版本的 `runs-on`。改完 workflow 跑一次就知道。**别绕过它去改脚本里的期望值** ——
    那张表写死是故意的,它就是你升版本时要改的那一处(见 `_min_action_major`)。
    CI 与本地跑的是同一份判据(它不依赖 JDK / SDK / 设备)。
+11. **Agent Skills 的配置只在 `.agents/skills.config.json`;上游技能目录不要手改。**
+    所有 Android 项目共用的技能集合维护在 `.agents/skills/`:
+    - 本地技能放 `.agents/skills/<name>/`,并在 `localSkills` 登记;`SKILL.md` 的
+      frontmatter `name` 必须等于目录名。
+    - 上游技能由 `tools/update-agent-skills.sh` 从 `sources` 同步,复制进
+      `.agents/skills/<name>/` 并写 `skills-sources.lock.json`。**不要手改这些目录**
+      —— 下次更新会覆盖。要加/减技能改 config 的 `include` / `exclude`。
+    - 安装到用户级用 `bash tools/install-agent-skills.sh`;不要手工往
+      `~/.agents/skills` 复制(Windows 的 junction / 副本回退由脚本处理)。
+    - 改完跑 `bash tools/verify-all.sh --skills-only`。CI 的 `--build-only` 也会跑
+      同一段校验。
+    完整来源、选型与更新流程见 [docs/10](docs/10-agent-skills.md)。
 
 ---
 
@@ -83,6 +95,7 @@
 docs/            知识沉淀(踩坑、结论、绕行方案)
 apps/            可运行的 Android 工程(每个子目录是一个独立 Gradle 构建)
 tools/           设备连接 / 安装 / 引导脚本 / 发版
+.agents/skills/  跨项目复用的 Agent Skills(本地技能 + 上游同步;装到 ~/.agents/skills)
 CHANGELOG.md     版本历史 —— 由 tools/release.sh 自动生成,不要手改
 version.properties  版本号唯一来源
   _common.sh             共用的配置载入逻辑(所有脚本 source 它)
@@ -583,6 +596,31 @@ bash tools/new-app.sh <AppName> <package.id>
 
 写「怎么验证的」而不只是结论 —— 环境会变,以后需要复现。
 
+### 加 / 改一个 Agent Skill
+
+**本地技能**(只属于本仓库,比如真机流程):
+
+```bash
+mkdir -p .agents/skills/<name>
+# 写 SKILL.md:frontmatter 必须有 name / description,name 必须等于 <name>
+# 然后把它加进 .agents/skills.config.json 的 localSkills
+bash tools/verify-all.sh --skills-only
+```
+
+**上游技能**(来自 `android/skills` 或社区库):
+
+```bash
+# 1. 改 .agents/skills.config.json 里对应 source 的 include / exclude
+# 2. 同步并更新 lock
+bash tools/update-agent-skills.sh
+# 3. 校验 + 看 diff
+bash tools/verify-all.sh --skills-only
+git status --short .agents/skills .agents/skills-sources.lock.json
+```
+
+**不要手工往 `.agents/skills/` 里拷上游文件** —— 下次更新会按 lock 覆盖或删除。
+技能集合的来源、选型判据和 profile 说明见 [docs/10](docs/10-agent-skills.md)。
+
 ---
 
 ## 9. 开工 / 收尾
@@ -592,6 +630,12 @@ bash tools/new-app.sh <AppName> <package.id>
 ```bash
 git pull
 bash tools/devices.sh        # 两台都要是 device 才能继续
+```
+
+换机器 / 第一次开工时,再装一次技能集合(用户级,所有 Android 项目共用):
+
+```bash
+bash tools/install-agent-skills.sh --profile easyandroid
 ```
 
 Pico 不在线通常是**休眠**了(它重启后无线调试会失效):让它亮一下,
@@ -606,11 +650,14 @@ bash tools/verify-all.sh     # 环境 → 构建 → 双设备,确认工具链�
 然后:
 
 1. 跑一遍第 7 节的泄漏自检(都应该零输出)
-2. **把这次踩到的坑补进文档** —— 新坑进 [docs/05](docs/05-gotchas.md),
+2. **动了 `.agents/skills/` / `skills.config.json` 就再跑**:
+   `bash tools/verify-all.sh --skills-only`(不碰设备),以及在装过的机器上
+   `bash tools/install-agent-skills.sh --check`。
+3. **把这次踩到的坑补进文档** —— 新坑进 [docs/05](docs/05-gotchas.md),
    agent 必须知道的约束进本文件。判断标准:**不知道会不会做错事 → 这里;
    知道更省事 → docs/**。
    这些经验一旦写下来就永久生效,不写就每次重新踩。
-3. 设备侧别留临时文件(推到 `/sdcard` 的 APK、下载目录里的测试文件)
+4. 设备侧别留临时文件(推到 `/sdcard` 的 APK、下载目录里的测试文件)
 
 **不要顺手升级 Kotlin / AGP / Compose**。现在这套组合是在真机上验证过的,
 升级会连带 Compose 编译器、Compose BOM、tv-material 一起动,升完必须重新

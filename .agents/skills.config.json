@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "defaultProfile": "core",
+  "defaultAgents": ["codex"],
+  "scope": "user",
+  "installMode": "auto",
+  "localSkills": ["android-device-ops"],
+  "agents": {
+    "codex": {
+      "path": ".agents/skills",
+      "description": "Agent Skills 标准位置；Codex / pi / VS Code Copilot / Cursor 都能发现"
+    },
+    "claude": {
+      "path": ".claude/skills",
+      "description": "Claude Code 的用户级 / 项目级技能目录"
+    },
+    "cursor": {
+      "path": ".cursor/skills",
+      "description": "Cursor 的项目级技能目录"
+    },
+    "copilot": {
+      "path": ".copilot/skills",
+      "description": "VS Code Copilot 的个人技能目录"
+    },
+    "antigravity": {
+      "path": ".gemini/antigravity/skills",
+      "description": "Google Antigravity 的技能目录（Android CLI 的默认位置）"
+    },
+    "gemini": {
+      "path": ".gemini/skills",
+      "description": "Gemini CLI 的技能目录；版本不同可能不同，可用 --target 覆盖"
+    }
+  },
+  "sources": [
+    {
+      "id": "android",
+      "repository": "https://github.com/android/skills.git",
+      "license": "Apache-2.0",
+      "include": ["*"],
+      "exclude": []
+    },
+    {
+      "id": "awesome-android",
+      "repository": "https://github.com/new-silvermoon/awesome-android-agent-skills.git",
+      "license": "Apache-2.0",
+      "include": [
+        "android-architecture",
+        "android-data-layer",
+        "android-viewmodel",
+        "android-gradle-logic",
+        "android-coroutines",
+        "android-retrofit",
+        "kotlin-concurrency-expert",
+        "rxjava-to-coroutines-migration",
+        "gradle-build-performance",
+        "android-emulator-skill",
+        "android-accessibility",
+        "compose-ui",
+        "coil-compose"
+      ],
+      "exclude": []
+    }
+  ],
+  "profiles": {
+    "core": {
+      "description": "任意 Android 项目的基础集合：架构、Compose、协程、网络、测试、安全、性能、构建",
+      "skills": [
+        "android-cli",
+        "adaptive",
+        "edge-to-edge",
+        "testing-setup",
+        "android-intent-security",
+        "android-permissions-security",
+        "anr-audit-and-fix",
+        "r8-analyzer",
+        "jetpack-compose-performance",
+        "android-architecture",
+        "android-data-layer",
+        "android-viewmodel",
+        "android-coroutines",
+        "android-retrofit",
+        "compose-ui",
+        "android-accessibility",
+        "gradle-build-performance"
+      ]
+    },
+    "compose": {
+      "description": "Compose 深入：样式、XML 迁移、Navigation 3、图片加载",
+      "extends": "core",
+      "skills": [
+        "styles",
+        "migrate-xml-views-to-jetpack-compose",
+        "navigation-3",
+        "coil-compose"
+      ]
+    },
+    "perf": {
+      "description": "性能与包体：Profiler、R8 规则、Compose 性能",
+      "extends": "core",
+      "skills": [
+        "android-profiler"
+      ]
+    },
+    "kotlin": {
+      "description": "Kotlin 工程化：协程、RxJava 迁移、Gradle 逻辑",
+      "extends": "core",
+      "skills": [
+        "kotlin-concurrency-expert",
+        "rxjava-to-coroutines-migration",
+        "android-gradle-logic"
+      ]
+    },
+    "devices": {
+      "description": "真机 / 模拟器操作：本仓库的真机流程 + 官方模拟器技能",
+      "extends": "core",
+      "skills": [
+        "android-device-ops",
+        "android-emulator-skill"
+      ]
+    },
+    "tv": {
+      "description": "Android TV：Leanback→Compose 迁移、Media3 Cast、真机安装",
+      "extends": "core",
+      "skills": [
+        "leanback-to-compose-tv-migration",
+        "media3-cast-integration",
+        "android-device-ops"
+      ]
+    },
+    "xr": {
+      "description": "XR / 智能眼镜：Glimmer Compose、投射硬件",
+      "extends": "core",
+      "skills": [
+        "display-glasses-with-jetpack-compose-glimmer",
+        "projected-hardware"
+      ]
+    },
+    "wear": {
+      "description": "Wear OS：Compose Material 3、表盘 / 小组件",
+      "extends": "core",
+      "skills": [
+        "wear-compose-m3",
+        "wear-widgets"
+      ]
+    },
+    "cars": {
+      "description": "Android Auto / Automotive：驻车应用适配",
+      "extends": "core",
+      "skills": [
+        "android-for-cars-parked-apps"
+      ]
+    },
+    "media": {
+      "description": "相机与媒体：CameraX、Media3 Cast",
+      "extends": "core",
+      "skills": [
+        "camerax",
+        "media3-cast-integration"
+      ]
+    },
+    "ai": {
+      "description": "端侧 AI：AppFunctions、LiteRT、ML Kit GenAI",
+      "extends": "core",
+      "skills": [
+        "appfunctions",
+        "litert-lm",
+        "litert-runtime",
+        "ml-kit-genai-prompt-api"
+      ]
+    },
+    "identity": {
+      "description": "登录与凭据：Restore Credentials、Verified Email",
+      "extends": "core",
+      "skills": [
+        "restore-credentials",
+        "verified-email"
+      ]
+    },
+    "play": {
+      "description": "Google Play：Engage SDK、结算库升级、政策检查",
+      "extends": "core",
+      "skills": [
+        "engage-sdk-integration",
+        "play-billing-library-version-upgrade",
+        "play-policy-insights"
+      ]
+    },
+    "build": {
+      "description": "构建链路：AGP 9 升级、Gradle 逻辑",
+      "extends": "core",
+      "skills": [
+        "agp-9-upgrade",
+        "android-gradle-logic"
+      ]
+    },
+    "system": {
+      "description": "系统集成：Glance 小组件、Compose Styles",
+      "extends": "core",
+      "skills": [
+        "glance-canonical-layouts",
+        "styles"
+      ]
+    },
+    "easyandroid": {
+      "description": "本仓库自用：core + 真机操作 + 电视安装 / Media3",
+      "extends": "devices",
+      "skills": [
+        "leanback-to-compose-tv-migration",
+        "media3-cast-integration"
+      ]
+    },
+    "all": {
+      "description": "全部已收录技能；仅供探索，不建议日常安装（技能描述会占满上下文）",
+      "skills": ["*"]
+    }
+  }
+}

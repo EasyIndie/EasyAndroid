@@ -12,6 +12,7 @@ Android 开发实践沉淀。
 | [`docs/`](docs/) | 知识沉淀:环境搭建、ADB 技巧、厂商限制与绕行方案、踩坑速查 |
 | [`apps/`](apps/) | 可运行的 Android 工程(**每个子目录是一个独立工程**) |
 | [`tools/`](tools/) | 设备连接 / 安装 / 引导 / 新建工程脚本 |
+| [`.agents/skills/`](.agents/skills/) | 可复用的 Android Agent Skills 集合(官方 + 社区精选 + 本仓库真机技能) |
 | [`AGENTS.md`](AGENTS.md) | 给 AI 编码智能体的仓库说明与硬性约束 |
 
 ## 已沉淀的主题
@@ -21,6 +22,28 @@ Android 开发实践沉淀。
 - **厂商侧载封锁**:TCL 电视固件级 `INSTALL_FAILED_VERIFICATION_FAILURE` 的完整分析与绕行
 - **Pico 4 开发约束**:`FLAG_SECURE` 截屏限制、ABI、无线调试持久性
 - **把电视当远程开发终端**:三套方案 —— TV Bro + GeckoView 跑自建 PWA;Termux + ssh + tmux;或 **herdr 的 WebUI 走 SSH 隧道**(电视上零安装,实体键盘打中文最顺,见 [docs/09](docs/09-tv-remote-dev.md))
+- **跨项目的 Agent Skills 集合**:官方 `android/skills` + 社区精选 + 本仓库真机技能,按 profile 装到 `~/.agents/skills`,所有 Android 项目共用;上游锁文件 + 每周 PR 更新(见 [docs/10](docs/10-agent-skills.md))
+
+## 跨项目的 Android 技能集合
+
+仓库里的 [`.agents/skills/`](.agents/skills/) 不只为 EasyAndroid 服务。跑一次安装脚本,
+这台机器上的所有 Android 项目都能用同一套技能:
+
+```bash
+bash tools/install-agent-skills.sh                  # 默认 core -> ~/.agents/skills
+bash tools/install-agent-skills.sh --profile tv     # 或 tv / compose / xr / easyandroid ...
+bash tools/install-agent-skills.sh --list           # 看所有集合
+```
+
+`~/.agents/skills` 是 Agent Skills 的标准位置,Codex / pi / VS Code Copilot / Cursor
+都会发现它;需要 Claude Code / Antigravity 时加 `--agent`。
+
+- **来源**:Google 官方 [`android/skills`](https://github.com/android/skills) 全量 33 个,
+  社区 [`awesome-android-agent-skills`](https://github.com/new-silvermoon/awesome-android-agent-skills)
+  精选 13 个,本仓库真机技能 1 个。选型理由与排除项见 [docs/10](docs/10-agent-skills.md)。
+- **更新**:`bash tools/update-agent-skills.sh` 同步上游并更新 lock;
+  GitHub Actions 每周检查一次,**只开待审 PR,不直接改 main**。
+- **校验**:`bash tools/verify-all.sh --skills-only`(不碰设备)。
 
 ## 示例工程
 

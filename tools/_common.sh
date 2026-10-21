@@ -236,8 +236,10 @@ done
 #    是不存在的路径,会直接 FileNotFoundError。
 pyfile(){ win_of "$1"; }
 
-# run_py —— 用探测到的 python 跑脚本,自动处理路径。
+# run_py —— 用探测到的 python 跑脚本。
 #   用法同 python: run_py -c '...'   或   run_py script.py [args]
+#   ⚠️ 它**不转换脚本路径** —— Windows 原生 python 不认 /e/...,
+#   调用方要把路径参数过 pyfile(见 AGENTS.md §6)。
 run_py(){ [ -n "$PY" ] || return 127; "$PY" "$@"; }
 
 # re_escape <字符串> —— 转义成 grep -E 的字面量

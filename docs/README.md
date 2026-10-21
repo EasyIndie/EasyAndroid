@@ -13,6 +13,7 @@
 | [07-debug-ui-capture.md](07-debug-ui-capture.md) | **应用自截图**:让 `FLAG_SECURE` 设备(Pico 4)也能被 `adb` 看见 |
 | [08-jvm-screenshot-testing.md](08-jvm-screenshot-testing.md) | **JVM 截图测试**:不碰设备看 UI,最快的迭代档位 |
 | [09-tv-remote-dev.md](09-tv-remote-dev.md) | **把电视当远程开发终端(三套方案)**:A = TV Bro + **必须先切 GeckoView 引擎**(系统 WebView 是 Chromium 83,会丢 `@layer` 整份样式表)跑自建 PWA;B = **Termux + ssh + tmux**(已实测跨机连通);C = **herdr-web-ui + SSH 隧道**(电视上零安装、局域网不暴露、实体键盘打中文已实测通过)。含电视能力清单、对齐的输入习惯、`run-as` 驱动 Termux 的自动化技巧 |
+| [10-agent-skills.md](10-agent-skills.md) | **Android 开发 Agent Skills 集中管理**:官方 `android/skills` 全量 + 社区 awesome 精选 + 本仓库真机技能;profile 安装到 `~/.agents/skills` 供所有项目复用;上游锁文件 + 每周 PR 自动更新 |
 
 ## 实测设备
 

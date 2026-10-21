@@ -87,6 +87,62 @@ bash tools/devices.sh
 对目录里的两台设备(电视 + Pico)逐个 `adb connect`,然后打印状态表。
 日常开工第一条命令。
 
+### `install-agent-skills.sh` — 把技能集合安装到用户级 / 项目级目录
+
+```bash
+bash tools/install-agent-skills.sh                  # 默认 profile=core -> ~/.agents/skills
+bash tools/install-agent-skills.sh --profile tv     # 换集合
+bash tools/install-agent-skills.sh --list           # 列出 profile / agent 及数量
+bash tools/install-agent-skills.sh --check          # 只检查，不写盘
+bash tools/install-agent-skills.sh --uninstall      # 移除本脚本管理的链接/副本
+```
+
+`~/.agents/skills` 是 Agent Skills 的标准位置，Codex / pi / VS Code Copilot /
+Cursor 都会发现它。装一次，这台机器上的所有 Android 项目都能用。需要 Claude Code /
+Gemini / Antigravity 时加 `--agent`；路径在 `.agents/skills.config.json` 里。
+
+跨平台差异：
+
+- WSL / Linux / macOS 用符号链接；
+- Windows 原生先试目录 junction（`mklink /J`，不需要管理员），失败再试 `ln -s`，
+  都失败则退化成副本（目录里有 `.easyandroid-skill` 标记，重跑脚本会刷新）；
+- **WSL 和 Windows 的 `$HOME` 不是一个目录**。在 WSL 里跑默认装到 WSL home，
+  Windows 侧 agent 看不到；要用 Git Bash 跑，或用 `--target` 指到 Windows 的
+  `~/.agents/skills`。
+
+同名技能已存在且不是本脚本建的链接/副本时**拒绝覆盖**；`--force` 也只替换
+链接或本脚本的副本，不会删真实目录。
+
+### `update-agent-skills.sh` — 从上游同步技能集合
+
+```bash
+bash tools/update-agent-skills.sh             # 同步到工作树 + 更新 lock
+bash tools/update-agent-skills.sh --dry-run   # 只拉上游，不写盘
+bash tools/update-agent-skills.sh --check     # 上游有变化时退出码 1
+```
+
+按 `.agents/skills.config.json` 的 `sources` 克隆上游默认分支，按 `include` /
+`exclude` 挑技能，复制到 `.agents/skills/<name>/`（带许可证），并把每个技能的
+repository + commit 写进 `.agents/skills-sources.lock.json`。上游删除的技能会被
+移除；本地技能（`localSkills`）不动。
+
+GitHub Actions 每周一跑一次，但**只创建待审 PR**，不直接改 `main`。
+
+### `skills_config.py` — 技能配置解析 / 校验
+
+一般不用直接调；`install-agent-skills.sh`、`update-agent-skills.sh` 和
+`verify-all.sh` 共用它。需要手工排查时：
+
+```bash
+python3 tools/skills_config.py validate          # 配置 / lock / 目录 / profile 自洽
+python3 tools/skills_config.py skills --profile core
+python3 tools/skills_config.py agent-path --agent codex --scope user
+```
+
+校验点包括：frontmatter `name` 是否等于目录名、`description` 是否非空、上游技能
+是否有许可证、lock 与 config 的 source / repository / license 是否一致、目录集合
+是否等于 `localSkills` + lock 里的技能。
+
 ### `png-rowpitch.py` — 从截图量「文字行距」(判断字号/行高有没有真的变)
 
 ```bash
@@ -270,15 +326,17 @@ tag 名只能来自 [`version.properties`](../version.properties),脚本把这�
 ```bash
 bash tools/verify-all.sh                # 仓库自检 → 环境 → 构建 → Pico → 电视 → 汇总
 bash tools/verify-all.sh --build-only   # 只验仓库自检 + 环境 + 构建(不需要设备)
+bash tools/verify-all.sh --skills-only  # 只验 CI 配置 + Agent Skills(不碰 JDK/SDK/设备)
 ```
 
 换机器、升级 SDK 之后跑一次就知道有没有坏。设备不在线会自动跳过并标 SKIP,
 不算失败,所以 CI 上也能跑。缺什么(比如 Windows 上没装 JDK/SDK)会明确列出来。
 
-第一段 **0/4 仓库自检**只读 `.github/workflows/*.yml`,零外部依赖、毫秒级,查两件
-「坏了也不报错」的事:action 主版本是否已升到跑 Node 24 的版本(旧版本只会让 GitHub
-刷 warning,不挡 CI,最容易积压)、`runs-on` 是否写成了 `-latest`(换镜像时**无声**
-改变构建环境)。期望值写死在脚本里是**有意的闸门** —— 要升 action 或升 runner 就得
+第一段 **0/4 仓库自检**只读 `.github/workflows/*.yml` 和 `.agents/` 下的技能配置,
+零外部依赖、毫秒级,查三件「坏了也不报错」的事:action 主版本是否已升到跑 Node 24
+的版本(旧版本只会让 GitHub 刷 warning,不挡 CI,最容易积压)、`runs-on` 是否写成了
+`-latest`(换镜像时**无声**改变构建环境)、Agent Skills 的 config / lock / 目录是否
+互相对得上。期望值写死在脚本里是**有意的闸门** —— 要升 action 或升 runner 就得
 改那张表,改的时候即是显式决策。新引入外部 action 时同步登记进 `_min_action_major`。
 
 ### `device-status.sh` — 设备状态一次性报告

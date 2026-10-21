@@ -56,3 +56,6 @@ tools/.tv-pos-*
 # ---- 本地智能体数据(WorkBuddy) ----
 # 工作日志 / 记忆等本机数据,且可能含真实设备地址,不入库
 .workbuddy/
+# ---- Python ----
+__pycache__/
+*.pyc

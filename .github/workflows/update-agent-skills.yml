@@ -1,0 +1,65 @@
+name: Update Android agent skills
+
+on:
+  schedule:
+    # 每周一 09:17 UTC。避开整点，减少 GitHub Actions 排队。
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    # 与 ci.yml 一样显式 pin runner：换 OS 会改变 Python / git 行为，
+    # 不应该跟着 `-latest` 无声发生。
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: 同步上游技能
+        run: bash tools/update-agent-skills.sh
+
+      - name: 校验技能配置（不构建 APK）
+        run: bash tools/verify-all.sh --skills-only
+
+      - name: 创建或更新待审 PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain -- .agents/skills .agents/skills-sources.lock.json)" ]; then
+            echo '上游技能没有变化'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C automation/update-android-agent-skills
+          git add .agents/skills .agents/skills-sources.lock.json
+          git commit -m 'chore(skills): 更新 Android 开发技能'
+          gh auth setup-git
+          git push --force origin HEAD:automation/update-android-agent-skills
+          body_file="$(mktemp)"
+          cat > "$body_file" <<'BODY'
+          自动检查 `.agents/skills.config.json` 里登记的 Android 上游技能，
+          并更新 `.agents/skills/` 与 `.agents/skills-sources.lock.json`。
+
+          请审阅技能说明、reference 和许可证的变化后再合并。
+          这个 PR 由 GITHUB_TOKEN 创建；合并前请确认技能目录里没有新增的可执行脚本。
+          BODY
+          if gh pr view automation/update-android-agent-skills >/dev/null 2>&1; then
+            gh pr edit automation/update-android-agent-skills \
+              --title 'chore(skills): 更新 Android 开发技能' \
+              --body-file "$body_file"
+          else
+            gh pr create \
+              --base main \
+              --head automation/update-android-agent-skills \
+              --title 'chore(skills): 更新 Android 开发技能' \
+              --body-file "$body_file"
+          fi

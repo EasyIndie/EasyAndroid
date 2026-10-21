@@ -8,11 +8,12 @@
 #   · 有一阵子没动这个仓库,想确认还能跑通
 #
 # 做什么
-#   仓库自检(CI 配置)→ 环境 → 构建 → Pico(装/起/自截图)→ 电视(装/起/自截图)→ 汇总
+#   仓库自检(CI 配置 / Agent Skills)→ 环境 → 构建 → Pico(装/起/自截图)→ 电视(装/起/自截图)→ 汇总
 #
 # 用法
 #   bash tools/verify-all.sh                # 全跑
 #   bash tools/verify-all.sh --build-only   # 只验环境 + 构建(不需要设备)
+#   bash tools/verify-all.sh --skills-only  # 只验 CI 配置 + Agent Skills(不碰 JDK/SDK/设备)
 #
 # 设备不在线会自动跳过并标 SKIP,不算失败 —— 这样在没有真机的环境
 # (比如 CI)也能跑。
@@ -22,7 +23,13 @@ set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 BUILD_ONLY=0
-[ "${1:-}" = "--build-only" ] && BUILD_ONLY=1
+SKILLS_ONLY=0
+case "${1:-}" in
+  '')            ;;
+  --build-only)  BUILD_ONLY=1 ;;
+  --skills-only) SKILLS_ONLY=1 ;;
+  *) echo "未知参数：$1（可用：--build-only / --skills-only）" >&2; exit 2 ;;
+esac
 
 REPO="$_REPO_DIR"
 APP_DIR="$REPO/apps/DualDemo"
@@ -40,6 +47,33 @@ warn(){ RESULTS+=("WARN  $1"); WARN=$((WARN+1)); printf '  ⚠️  %s\n' "$1"; }
 # need —— 当前模式下的必需项:完整模式当失败,--build-only 当警告。
 need(){ if [ "$BUILD_ONLY" = 1 ]; then warn "$1"; else bad "$1"; fi; }
 
+# 汇总。抽成函数是为了让 --skills-only 能在跑完仓库自检后直接收尾。
+summary(){
+  echo
+  echo "════════════════ 汇总 ════════════════"
+  for r in "${RESULTS[@]}"; do
+    case "$r" in
+      PASS*) printf '  ✅ %s\n' "${r#PASS  }" ;;
+      FAIL*) printf '  ❌ %s\n' "${r#FAIL  }" ;;
+      WARN*) printf '  ⚠️  %s\n' "${r#WARN  }" ;;
+      SKIP*) printf '  ⏭️  %s\n' "${r#SKIP  }" ;;
+    esac
+  done
+  echo
+  printf '  通过 %d  失败 %d  警告 %d  跳过 %d\n' "$PASS" "$FAIL" "$WARN" "$SKIP"
+  echo
+  if [ "$FAIL" -gt 0 ]; then
+    echo "有问题先查 docs/01(环境)和 docs/05(踩坑速查)。"
+    return 1
+  fi
+  if [ "$WARN" -gt 0 ]; then
+    echo "工具链正常(有警告项:当前模式用不到,完整设备验证前请补齐)。"
+  else
+    echo "工具链正常。"
+  fi
+  return 0
+}
+
 online(){ adb_online "$1"; }
 
 # 外部 action → 期望的最低主版本(供下面 0/4 段用)。
@@ -56,7 +90,26 @@ _min_action_major(){
 
 echo "==> 平台 $PLATFORM"
 echo
-echo "════════════════ 0/4 仓库自检(CI 配置)════════════════"
+echo "════════════════ 0/4 仓库自检(CI 配置 / Agent Skills)════════════════"
+
+# Agent Skills 的配置、lock 和技能目录必须互相对得上。
+# 这条检查不依赖 JDK / SDK / 设备，和 CI 配置检查一样在 --skills-only 下也会跑。
+step_skills(){
+  if [ -z "$PY" ]; then
+    bad "python3 缺失，无法校验 Agent Skills 配置"
+    return
+  fi
+  local out
+  if out="$(run_py "$(pyfile "$_TOOLS_DIR/skills_config.py")" validate 2>&1)"; then
+    out="${out//$'\r'/}"
+    ok "Agent Skills 集合($(printf '%s\n' "$out" | sed -n 's/^OK    技能集有效：//p'))"
+  else
+    out="${out//$'\r'/}"
+    bad "Agent Skills 集合校验失败"
+    printf '%s\n' "$out" | sed 's/^/       /' >&2
+  fi
+}
+
 step_repo(){
   # 排在 1/4 之前:它只读几个 yml、零外部依赖、毫秒级 —— 而它一旦坏了,后面所有
   # CI 都是白跑。并且它与 JDK / SDK / 设备全都无关,CI 和本机跑的是同一份判据。
@@ -143,8 +196,16 @@ step_repo(){
   done
 
   [ "$found" = 1 ] || bad "找不到 .github/workflows/*.yml"
+  step_skills
 }
 step_repo
+
+if [ "$SKILLS_ONLY" = 1 ]; then
+  echo
+  echo "(--skills-only,跳过环境 / 构建 / 设备)"
+  summary
+  exit $?
+fi
 
 echo
 echo "════════════════ 1/4 环境 ════════════════"
@@ -353,7 +414,7 @@ step_build(){
   # 它自己错了就会得出**相反**的结论,所以每次推送都验一下。
   # 自检不碰设备:现场造几张已知行距的图再量回来,必须对得上。
   if [ -f "$_TOOLS_DIR/png-rowpitch.py" ]; then
-    if out="$("$PY" "$_TOOLS_DIR/png-rowpitch.py" --selftest 2>&1)"; then
+    if out="$(run_py "$(pyfile "$_TOOLS_DIR/png-rowpitch.py")" --selftest 2>&1)"; then
       ok "截图行距量化工具自检通过"
     else
       bad "tools/png-rowpitch.py --selftest 失败(量行距的判据不可信了)"
@@ -427,25 +488,4 @@ step_tv
 
 fi
 
-echo
-echo "════════════════ 汇总 ════════════════"
-for r in "${RESULTS[@]}"; do
-  case "$r" in
-    PASS*) printf '  ✅ %s\n' "${r#PASS  }" ;;
-    FAIL*) printf '  ❌ %s\n' "${r#FAIL  }" ;;
-    WARN*) printf '  ⚠️  %s\n' "${r#WARN  }" ;;
-    SKIP*) printf '  ⏭️  %s\n' "${r#SKIP  }" ;;
-  esac
-done
-echo
-printf '  通过 %d  失败 %d  警告 %d  跳过 %d\n' "$PASS" "$FAIL" "$WARN" "$SKIP"
-echo
-if [ "$FAIL" -gt 0 ]; then
-  echo "有问题先查 docs/01(环境)和 docs/05(踩坑速查)。"
-  exit 1
-fi
-if [ "$WARN" -gt 0 ]; then
-  echo "工具链正常(有警告项:当前模式用不到,完整设备验证前请补齐)。"
-else
-  echo "工具链正常。"
-fi
+summary
