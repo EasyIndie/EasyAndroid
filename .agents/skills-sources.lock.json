@@ -5,7 +5,7 @@
       "name": "adaptive",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "jetpack-compose/adaptive",
       "license": "Apache-2.0"
     },
@@ -13,7 +13,7 @@
       "name": "agp-9-upgrade",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "build-system/agp/agp-9-upgrade",
       "license": "Apache-2.0"
     },
@@ -37,7 +37,7 @@
       "name": "android-cli",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "devtools/android-cli",
       "license": "Apache-2.0"
     },
@@ -69,7 +69,7 @@
       "name": "android-for-cars-parked-apps",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "cars/android-for-cars-parked-apps",
       "license": "Apache-2.0"
     },
@@ -85,7 +85,7 @@
       "name": "android-intent-security",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "security/android-intent-security",
       "license": "Apache-2.0"
     },
@@ -93,7 +93,7 @@
       "name": "android-permissions-security",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "security/android-permissions-security",
       "license": "Apache-2.0"
     },
@@ -101,7 +101,7 @@
       "name": "android-profiler",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "profilers/android-profiler",
       "license": "Apache-2.0"
     },
@@ -125,7 +125,7 @@
       "name": "anr-audit-and-fix",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "performance/anr-audit-and-fix",
       "license": "Apache-2.0"
     },
@@ -133,7 +133,7 @@
       "name": "appfunctions",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "device-ai/appfunctions",
       "license": "Apache-2.0"
     },
@@ -141,7 +141,7 @@
       "name": "camerax",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "camera/camerax",
       "license": "Apache-2.0"
     },
@@ -165,7 +165,7 @@
       "name": "display-glasses-with-jetpack-compose-glimmer",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "xr/display-glasses-with-jetpack-compose-glimmer",
       "license": "Apache-2.0"
     },
@@ -173,7 +173,7 @@
       "name": "edge-to-edge",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "system/edge-to-edge",
       "license": "Apache-2.0"
     },
@@ -181,7 +181,7 @@
       "name": "engage-sdk-integration",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "play/engage-sdk-integration",
       "license": "Apache-2.0"
     },
@@ -189,7 +189,7 @@
       "name": "glance-canonical-layouts",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "system/glance-canonical-layouts",
       "license": "Apache-2.0"
     },
@@ -205,7 +205,7 @@
       "name": "jetpack-compose-performance",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "jetpack-compose/jetpack-compose-performance",
       "license": "Apache-2.0"
     },
@@ -221,7 +221,7 @@
       "name": "leanback-to-compose-tv-migration",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "tv/leanback-to-compose-tv-migration",
       "license": "Apache-2.0"
     },
@@ -229,7 +229,7 @@
       "name": "litert-lm",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "device-ai/litert/litert-lm",
       "license": "Apache-2.0"
     },
@@ -237,7 +237,7 @@
       "name": "litert-runtime",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "device-ai/litert/litert-runtime",
       "license": "Apache-2.0"
     },
@@ -245,7 +245,7 @@
       "name": "media3-cast-integration",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "media/media3-cast-integration",
       "license": "Apache-2.0"
     },
@@ -253,7 +253,7 @@
       "name": "migrate-xml-views-to-jetpack-compose",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "jetpack-compose/migration/migrate-xml-views-to-jetpack-compose",
       "license": "Apache-2.0"
     },
@@ -261,7 +261,7 @@
       "name": "ml-kit-genai-prompt-api",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "device-ai/ml-kit-genai-prompt-api",
       "license": "Apache-2.0"
     },
@@ -269,7 +269,7 @@
       "name": "navigation-3",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "navigation/navigation-3",
       "license": "Apache-2.0"
     },
@@ -277,7 +277,7 @@
       "name": "navigation-event",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "navigation/navigation-event",
       "license": "Apache-2.0"
     },
@@ -285,7 +285,7 @@
       "name": "play-billing-library-version-upgrade",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "play/play-billing-library-version-upgrade",
       "license": "Apache-2.0"
     },
@@ -293,7 +293,7 @@
       "name": "play-policy-insights",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "play/play-policy-insights",
       "license": "Apache-2.0"
     },
@@ -301,7 +301,7 @@
       "name": "projected-hardware",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "xr/projected-hardware",
       "license": "Apache-2.0"
     },
@@ -309,7 +309,7 @@
       "name": "r8-analyzer",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "performance/r8-analyzer",
       "license": "Apache-2.0"
     },
@@ -317,7 +317,7 @@
       "name": "restore-credentials",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "identity/restore-credentials",
       "license": "Apache-2.0"
     },
@@ -333,7 +333,7 @@
       "name": "styles",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "jetpack-compose/theming/styles",
       "license": "Apache-2.0"
     },
@@ -341,7 +341,7 @@
       "name": "testing-setup",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "testing/testing-setup",
       "license": "Apache-2.0"
     },
@@ -349,7 +349,7 @@
       "name": "verified-email",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "identity/verified-email",
       "license": "Apache-2.0"
     },
@@ -357,7 +357,7 @@
       "name": "wear-compose-m3",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "wear/wear-compose-m3",
       "license": "Apache-2.0"
     },
@@ -365,7 +365,7 @@
       "name": "wear-widgets",
       "source": "android",
       "repository": "https://github.com/android/skills.git",
-      "revision": "95ea931a1ad8f9b2be132ae0cfb2aad964d71118",
+      "revision": "4ebabf2b0fd6c04b7150023c8b612f80592a6226",
       "path": "wear/wear-widgets",
       "license": "Apache-2.0"
     }
