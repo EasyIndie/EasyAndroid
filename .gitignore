@@ -59,3 +59,8 @@ tools/.tv-pos-*
 # ---- Python ----
 __pycache__/
 *.pyc
+
+# ---- OrzAudioCore / libopenmpt 构建中间产物 ----
+# 应用内 audio-kit 的构建脚本下载/编译的 libopenmpt 源码与静态库,
+# 以及 CMake 构建目录。产物 .so 在 app/src/main/jniLibs/ 下,是要入库的。
+apps/*/audio-kit/native/.build/
