@@ -44,7 +44,7 @@ apps/DualDemo/app/src/debug/
 **把它拷到你的工程里即可。** 三个 `.kt` 放到 `<module>/src/debug/java/<你的包名>/debug/`,
 清单里的 `xmlns` 和 `${applicationId}` 占位符照抄,`android:name` 改成你的包名。
 
-> `tools/new-app.sh` 生成的新工程已经自带这套钩子(它以 `DualDemo` 为模板,
+> `tools/new-app.sh` 生成的新工程已经自带这套钩子(它以 `template/` 为模板,
 > 包名会被自动改写)。
 
 ### 为什么需要一个 ContentProvider

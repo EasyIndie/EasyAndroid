@@ -7,6 +7,9 @@
 # 用法:
 #   bash tools/new-app.sh <AppName> <package.id>
 #   bash tools/new-app.sh MyPlayer com.example.myplayer
+#
+# 模板是仓库根的 template/(不是 apps/DualDemo —— 那是验证工程的实机自检应用)。
+# 模板改了会影响所有新工程,见 docs/06-app-conventions.md。
 set -euo pipefail
 
 # 载入公共逻辑(平台探测 / SDK 解析 / re_escape / PY 等)。
@@ -18,8 +21,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/_common.sh"
 
 REPO="$_REPO_DIR"
-TEMPLATE="$REPO/apps/DualDemo"
-TEMPLATE_PKG="com.example.dualdemo"
+TEMPLATE="$REPO/template"
+TEMPLATE_PKG="com.example.template"
 
 NAME="${1:-}"
 PKG="${2:-}"
@@ -68,7 +71,7 @@ if grep -rqs "applicationId = \"$PKG\"" "$REPO/apps"; then
   exit 1
 fi
 
-echo "==> 从模板复制: apps/DualDemo → apps/$NAME"
+echo "==> 从模板复制: template → apps/$NAME"
 cp -r "$TEMPLATE" "$DEST"
 
 # 清掉不该带过来的东西
@@ -201,11 +204,15 @@ adb -s "\$PICO_ADDR" install -r app/build/outputs/apk/debug/app-debug.apk
 bash ../../tools/device-status.sh "\$TV_ADDR" $PKG
 \`\`\`
 
+## 上架
+
+渠道声明在 \`publish.properties\`(\`targets=github,play,cn\`),构建与自检流程见
+[docs/11](../../docs/11-publishing.md)。
+
 ## 已知限制
 
 <!-- 记下目标设备上的限制,例如 Pico 上截屏不可用 -->
 EOF
-
 echo
 echo "完成: apps/$NAME"
 echo
@@ -224,3 +231,4 @@ echo "     为什么不能和其他应用共用一把:同签名下的应用之�
 echo "     protectionLevel=signature 的组件、共享 sharedUserId),共一把 = 共一个信任域。"
 echo "     ⚠️ 首次发布之后就**不能再改**了 —— 等于换签名,老用户升不了级。"
 echo "     见 docs/06 的「签名凭据」。"
+echo "  6. 要上架(Play / 国内商店): 写 apps/$NAME/publish.properties,再按 docs/11 走"

@@ -17,6 +17,7 @@
 | 目录 | 定位 |
 |---|---|
 | `apps/DualDemo` | **测试验证工程**。用于验证工具链、ADB 链路、设备兼容性。保持精简,**不要往里加业务功能**。 |
+| `template/` | **公共应用模板**。`new-app.sh` 复制它来生成新工程。它不在 `apps/` 下 —— `release-apk.sh` 会构建 `apps/*/` 下的所有工程,模板不该被当成应用发出去。 |
 
 ## 新建一个应用
 
@@ -27,7 +28,9 @@ bash tools/new-app.sh <AppName> <package.id>
 bash tools/new-app.sh MyPlayer com.example.myplayer
 ```
 
-脚本会以 `DualDemo` 为模板复制出一份,替换包名 / 应用名 / 工程名,并清掉构建产物。
+脚本会以 `template/` 为模板复制出一份,替换包名 / 应用名 / 工程名,并清掉构建产物。
+`template/` 是从 `apps/DualDemo` 抽出来的「公共脚手架」:调试自截图钩子、TV/手机自适应清单、
+版本号推导、Roborazzi 截图测试都在里面,但不含 DualDemo 的设备自检业务。
 生成后直接可构建:
 
 ```bash
@@ -55,7 +58,7 @@ apps/<AppName>/
 ```
 
 `gradle/wrapper/gradle-wrapper.jar` 是二进制。手写不出来,用 `gradle wrapper` 生成,
-或者直接从 `apps/DualDemo/gradle/wrapper/` 拷。
+或者直接从 `template/gradle/wrapper/` 拷。
 
 ## 命名与标识
 
