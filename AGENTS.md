@@ -86,6 +86,14 @@
     - 改完跑 `bash tools/verify-all.sh --skills-only`。CI 的 `--build-only` 也会跑
       同一段校验。
     完整来源、选型与更新流程见 [docs/10](docs/10-agent-skills.md)。
+12. **上架前先跑 `tools/store-preflight.sh`;包名不能是 `com.example.*`;首次上架后不能改包名/签名。**
+    三条链路:A = GitHub Release(已有,全自动),B = Google Play, C = 国内商店。
+    渠道在 `apps/<App>/publish.properties` 里声明(`targets=github,play,cn`);
+    `DualDemo` 是测试工程,只发 github,不上商店。
+    构建用 `release-apk.sh <version> --app <Name> --format both`,自检用
+    `store-preflight.sh <version> --target play|cn`。完整流程、Play 的 targetSdk 门槛、
+    国内商店的软著/备案要求见 [docs/11](docs/11-publishing.md)。
+    **包名/签名一旦上架就是不可逆的** —— 改等于换应用,老用户升不了级。
 
 ---
 
@@ -94,7 +102,8 @@
 ```
 docs/            知识沉淀(踩坑、结论、绕行方案)
 apps/            可运行的 Android 工程(每个子目录是一个独立 Gradle 构建)
-tools/           设备连接 / 安装 / 引导脚本 / 发版
+template/        公共应用模板(new-app.sh 的复制源;不在 apps/ 下,不参与发版)
+tools/           设备连接 / 安装 / 引导 / 发版 / 上架自检脚本
 .agents/skills/  跨项目复用的 Agent Skills(本地技能 + 上游同步;装到 ~/.agents/skills)
 CHANGELOG.md     版本历史 —— 由 tools/release.sh 自动生成,不要手改
 version.properties  版本号唯一来源
@@ -114,6 +123,8 @@ bash tools/new-app.sh <AppName> <package.id>
 - 每个工程自带 `settings.gradle.kts` + `gradlew` + `gradle/wrapper/`,**仓库根目录没有** `settings.gradle.kts`
 - 工程之间**不共享代码**;要复用的放 `tools/` 或 `docs/`
 - `apps/DualDemo` 是**测试验证工程**,保持精简,**不要往里加业务功能**
+- 公共脚手架模板在仓库根的 `template/`(`new-app.sh` 从它复制)。它**不在 `apps/` 下** ——
+  放进去会被 `release-apk.sh` 当成应用构建/发版
 - `applicationId` 每个工程必须不同(否则装到同一台设备会互相覆盖)
 
 完整约定(目录清单、命名、**版本号与发版流程**、版本组合、README 要求)见
@@ -579,7 +590,7 @@ git ls-files | grep -E 'device\.env$|tools/platform-tools/'
 bash tools/new-app.sh <AppName> <package.id>
 ```
 
-它会以 `DualDemo` 为模板生成 `apps/<AppName>/`,替换包名/应用名/工程名,并清掉构建产物。
+它会以 `template/` 为模板生成 `apps/<AppName>/`,替换包名/应用名/工程名,并清掉构建产物。
 生成后记得:
 
 1. 写 `apps/<AppName>/README.md`(做什么、目标设备、构建/安装/验收、已知限制)

@@ -167,7 +167,7 @@ bash tools/new-app.sh <AppName> <package.id>
 bash tools/new-app.sh MyPlayer com.example.myplayer
 ```
 
-以 `apps/DualDemo` 为模板生成 `apps/<AppName>/`,并完成:
+以 `template/` 为模板生成 `apps/<AppName>/`,并完成:
 
 - 替换包名(`namespace` / `applicationId` / 源码目录结构)
 - 设置 `rootProject.name` 和 `app_name`
@@ -257,22 +257,50 @@ bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签�
 > 存哪儿 / 什么能入库 / 怎么保证半年后还找得到,
 > 见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md#签名凭据存哪儿--什么能入库什么不能)。
 
-### `release-apk.sh` — 构建正式版 APK 并挂到 Release
+### `release-apk.sh` — 构建正式版 APK / AAB 并挂到 Release
 
 ```bash
-bash tools/release-apk.sh <version>              # 构建,产物落 dist/
-bash tools/release-apk.sh <version> --upload     # 顺便上传到 GitHub Release
-bash tools/release-apk.sh <version> --with-debug # 额外附上 debug 包(带自截图钩子)
+bash tools/release-apk.sh <version>                          # 构建 APK,产物落 dist/
+bash tools/release-apk.sh <version> --upload                 # 顺便上传到 GitHub Release
+bash tools/release-apk.sh <version> --with-debug             # 额外附上 debug 包(带自截图钩子)
+
+# 商店出包(只构建一个应用,同时出 AAB)
+bash tools/release-apk.sh <version> --app EasyInfo --format both
 ```
 
 关键点:**它不用当前工作区构建**,而是在临时 git worktree 里 checkout 那个 tag ——
 Release 附件必须能从 tag 复现。逐个校验已签名 / `versionName` / `versionCode` /
 不含 debug 钩子,不过关就不上传。
 
+`--format aab|both` 会额外跑 `bundleRelease`,并用 `jarsigner -verify` 校验 AAB
+签名。**它一定也会出 APK** —— AAB 里的清单是 protobuf,`aapt2` 读不了,
+版本/包名/ABI 要从同一版本的 APK 取。
+
 > ⚠️ release 包与 debug 包签名不同,同一台设备上换装要先 `adb uninstall`。
 > debug 包之间同理:各环境的 `~/.android/debug.keystore` 是各自生成的,换环境构建后
 > 装包照样会撞 —— 这是**有意保留**的,别去「统一」,取舍见
 > [../docs/06-app-conventions.md](../docs/06-app-conventions.md) 的「debug 凭据」一节。
+
+### `store-preflight.sh` — 上架前静态自检(不联网)
+
+```bash
+bash tools/store-preflight.sh <version>                # 所有渠道
+bash tools/store-preflight.sh <version> --target play  # Google Play
+bash tools/store-preflight.sh <version> --target cn    # 国内商店
+```
+
+只查**机器能查的**硬阻塞:包名(`com.example.*`)、targetSdk 门槛、
+versionName/versionCode、签名、debuggable、debug 钩子、ABI(32/64 位)、
+AAB 结构与签名、APK 体积。人工项(隐私政策/软著/备案/截图)在
+`apps/<App>/store/*.md` 里,有 `TODO:` 会提示但不判失败。
+
+门槛可用环境变量覆盖(商店政策每年变,不用改脚本):
+
+```bash
+PLAY_MIN_TARGET_SDK=36 CN_MIN_TARGET_SDK=30 bash tools/store-preflight.sh <version>
+```
+
+完整说明见 [../docs/11-publishing.md](../docs/11-publishing.md)。
 
 ### `release.sh` — 发版(推荐入口,一条命令)
 

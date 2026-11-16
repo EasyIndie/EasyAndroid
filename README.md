@@ -49,7 +49,9 @@ bash tools/install-agent-skills.sh --list           # 看所有集合
 
 | 工程 | 定位 |
 |---|---|
+| [`apps/EasyInfo`](apps/EasyInfo/) | **正式应用**:零权限、不联网的设备信息工具;同时跑 A / B / C 三条上架链路 |
 | [`apps/DualDemo`](apps/DualDemo/) | **测试验证工程**:一个 APK 同时跑在 Android TV 和 Pico 4 上的最小 Compose 工程,内置设备自检页 |
+| [`template/`](template/) | **公共应用模板**:`new-app.sh` 复制它生成新工程。不含业务代码,不在 `apps/` 下(不参与发版构建) |
 
 > `apps/` 下每个子目录都是**独立 Gradle 构建**。新增应用请用脚手架:
 >
@@ -58,6 +60,24 @@ bash tools/install-agent-skills.sh --list           # 看所有集合
 > ```
 >
 > 完整约定见 [`docs/06-app-conventions.md`](docs/06-app-conventions.md)。
+
+### 上架
+
+三条链路共用一套构建/签名,渠道在 `apps/<App>/publish.properties` 里声明:
+
+| 渠道 | 产物 | 自动化到哪一步 |
+|---|---|---|
+| A. GitHub Release | APK(+ AAB) | 全自动(`release.sh` → tag → CI) |
+| B. Google Play | AAB | 构建 + `store-preflight.sh` 自检;上传/审核人工 |
+| C. 国内商店 | APK | 构建 + `store-preflight.sh` 自检;上传/资质人工 |
+
+```bash
+bash tools/release-apk.sh <version> --app EasyInfo --format both
+bash tools/store-preflight.sh <version> --target play
+bash tools/store-preflight.sh <version> --target cn
+```
+
+完整流程、商店门槛与人工清单见 [`docs/11-publishing.md`](docs/11-publishing.md)。
 
 ### 开发循环
 
