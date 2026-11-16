@@ -13,7 +13,7 @@
 # 更新:bash tools/gen-keystore.sh --manifest --write
 # 自检:bash tools/gen-keystore.sh --manifest
 #
-# 生成时间:2026-09-18 08:01:49 +0800
+# 生成时间:2026-11-16 08:22:45 +0800
 # 指纹格式:小写无冒号(与 apksigner 一致)
 #
 # drill.* 是恢复演练的记录,由 --drill <文件> --record 写入:
@@ -23,7 +23,9 @@
 #   drill.size    字节数 —— 用来说明「验的到底是哪一份」
 
 default_alias=release
+alias.easyinfo=5451e4a635c787f6197ce62f307b7292bba39f3be8cca9734bd2d30e049194bf
 alias.release=eb3bfaf6847264a0e696996fb02a91fa7e034ec3c42ef9a85c68168d4d573dbd
+app.EasyInfo=easyinfo
 
 drill.last=2026-09-18
 drill.where=飞书个人聊天(文件消息)

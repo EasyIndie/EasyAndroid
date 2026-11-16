@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- TV 特性声明为非必需, 这样同一个 APK 也能装到 Pico 等非 TV 设备上 -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <!-- ⚠️ 本应用不申请任何权限:不联网、不读取联系人/存储/位置。
+         上架时「数据安全」表单可以直接选「不收集任何数据」。
+         加权限之前先确认它真的必要 —— 国内商店和 Play 都会按权限追问用途。 -->
+
+    <application
+        android:allowBackup="true"
+        android:banner="@drawable/banner"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.App">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <!-- TV 桌面靠这一条才能列出应用 -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <!-- 手机/VR 的应用列表靠这一条 -->
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

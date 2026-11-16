@@ -14,12 +14,18 @@
 #   bash tools/release-apk.sh <version> --upload         # 顺便上传到 GitHub Release
 #   bash tools/release-apk.sh <version> --with-debug     # 额外附上 debug 包
 #
+#   bash tools/release-apk.sh <version> --format both    # 同时产出 AAB(Play 用)
+#   bash tools/release-apk.sh <version> --app EasyInfo   # 只构建一个应用(商店单独出包)
+#
 #   # CI 用(见 .github/workflows/release.yml):
 #   bash tools/release-apk.sh <version> --in-place --create-release --upload
 #     --in-place       不用 worktree,直接在当前检出上构建。会强制校验 HEAD == tag,
 #                      因为它假定「你已经处在那个提交」—— 本地发版别加这个。
 #     --create-release Release 不存在就建(说明自动生成,见下)。
 #     --notes-file <f> 用手写的说明代替自动生成。
+#     --format <f>     apk(默认)/ aab / both。aab 也**一定**会同时产出 apk ——
+#                      APK 是清单/签名/ABI 的事实来源,store-preflight.sh 要用。
+#     --app <Name>     只构建 apps/<Name>(默认全部)。商店单渠道出包时用它。
 #
 #   例
 #   bash tools/release-apk.sh 0.1.0 --upload
@@ -30,6 +36,7 @@
 #
 # 产物
 #   dist/<AppName>-<version>.apk         每个 apps/* 一个
+#   dist/<AppName>-<version>.aab         仅 --format aab/both
 #   dist/<AppName>-<version>-debug.apk   仅 --with-debug 时
 #   (dist/ 已 gitignore —— 二进制属于 Release 附件,不入库)
 #
@@ -54,6 +61,7 @@ REPO="$(gitpath "$_REPO_DIR")"
 DIST="$REPO/dist"
 
 VER=""; UPLOAD=0; WITH_DEBUG=0; IN_PLACE=0; CREATE_RELEASE=0; PRINT_NOTES=0; NOTES_FILE=""
+FORMAT="apk"; ONLY_APP=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --upload)         UPLOAD=1 ;;
@@ -62,7 +70,9 @@ while [ $# -gt 0 ]; do
     --create-release) CREATE_RELEASE=1 ;;
     --print-notes)    PRINT_NOTES=1 ;;
     --notes-file)     shift; NOTES_FILE="${1:-}" ;;
-    -h|--help)        sed -n '3,36p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --format)         shift; FORMAT="${1:-}" ;;
+    --app)            shift; ONLY_APP="${1:-}" ;;
+    -h|--help)        sed -n '3,42p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)                [ -z "$VER" ] && VER="$1" ;;
   esac
   shift
@@ -70,6 +80,11 @@ done
 
 die(){ echo "!! $*" >&2; exit 1; }
 step(){ printf '\n════════ %s ════════\n' "$1"; }
+
+case "$FORMAT" in
+  apk|aab|both) ;;
+  *) die "--format 只能是 apk / aab / both: $FORMAT" ;;
+esac
 
 # ── stdout 只留给「数据」,诊断一律走 stderr ──────────────────────────
 # `--print-notes` 是给 shell 重定向用的(`> notes.md`),所以**进度信息不能
@@ -163,8 +178,37 @@ fi
 mapfile -t APPS < <(cd "$BUILD_ROOT/apps" && ls -d */ 2>/dev/null | tr -d '/')
 [ ${#APPS[@]} -gt 0 ] || die "apps/ 下没有工程"
 
+# --app 只构建一个应用。商店单独出包时用,避免把测试工程也算进去。
+if [ -n "$ONLY_APP" ]; then
+  [ -f "$BUILD_ROOT/apps/$ONLY_APP/gradlew" ] \
+    || die "apps/$ONLY_APP 不存在(或不是工程)"
+  APPS=("$ONLY_APP")
+  echo "  只构建: $ONLY_APP"
+else
+  # 默认只构建声明了 targets 含 github 的应用。
+  # publish.properties 来自 tag;老 tag 没有这个文件时按 github 算。
+  FILTERED=()
+  for _a in "${APPS[@]}"; do
+    _pf="$BUILD_ROOT/apps/$_a/publish.properties"
+    _tg=""
+    if [ -f "$_pf" ]; then
+      _tg="$(sed -n 's/^targets[[:space:]]*=[[:space:]]*//p' "$_pf" | tr -d '\r' | head -1)"
+    fi
+    [ -n "$_tg" ] || _tg=github
+    case ",$_tg," in
+      *",github,"*) FILTERED+=("$_a") ;;
+      *) echo "  跳过 $_a(targets=$_tg,不含 github)" ;;
+    esac
+  done
+  APPS=("${FILTERED[@]}")
+  [ ${#APPS[@]} -gt 0 ] || die "没有应用声明 targets 含 github"
+fi
+
 mkdir -p "$DIST"
 declare -a BUILT=()
+declare -a BUILT_AAB=()
+NEED_AAB=0
+case "$FORMAT" in aab|both) NEED_AAB=1 ;; esac
 
 for APP in "${APPS[@]}"; do
   step "构建 $APP (release)"
@@ -209,6 +253,23 @@ for APP in "${APPS[@]}"; do
   cp "$SRC" "$OUT"
   BUILT+=("$OUT")
   echo "  $OUT  ($(file_size "$OUT") bytes)"
+
+  # ── AAB(Google Play 只收 .aab)──
+  # 它由 :app:signReleaseBundle 用同一个 release signingConfig 签名。
+  # Play App Signing 下这就是「upload key 签名」,Play 验过后再用应用签名密钥重签。
+  if [ "$NEED_AAB" = 1 ]; then
+    step "构建 $APP (bundle)"
+    ( cd "$APPDIR" && run_timeout 900 ./gradlew bundleRelease \
+        --no-daemon --console=plain --max-workers=2 ) > "$TMP/release-bundle-$APP.log" 2>&1 \
+      || { tail -25 "$TMP/release-bundle-$APP.log" | sed 's/^/    /' >&2
+           die "$APP bundleRelease 失败(日志 $TMP/release-bundle-$APP.log)"; }
+    AAB_SRC="$APPDIR/app/build/outputs/bundle/release/app-release.aab"
+    [ -f "$AAB_SRC" ] || die "$APP 没找到 AAB 产物: $AAB_SRC"
+    AAB_OUT="$DIST/$APP-$VER.aab"
+    cp "$AAB_SRC" "$AAB_OUT"
+    BUILT_AAB+=("$AAB_OUT")
+    echo "  $AAB_OUT  ($(file_size "$AAB_OUT") bytes)"
+  fi
 done
 
 # ── 4. 校验产物:签名 + 版本号 ────────────────────────────────────
@@ -298,6 +359,36 @@ for apk in "${BUILT[@]}"; do
     echo "  ✅ $n 非 debuggable(正式包)"
   fi
 done
+# ── 4.5 AAB(Google Play)也要校验 ──────────────────────────────
+# AAB 不是 zip 里能直接 aapt2 读的格式(清单是 protobuf),所以只查
+# 「结构齐全 + jarsigner 验签」。版本号/包名的最终确认由 Play Console 做,
+# 本地另用同一版本的 APK 核对(store-preflight.sh 就是这么做的)。
+if [ ${#BUILT_AAB[@]} -gt 0 ]; then
+  echo
+  echo "  ── AAB ──"
+  command -v unzip >/dev/null 2>&1 || die "找不到 unzip(校验 AAB 需要它)"
+  JARSIGNER="${JAVA_HOME:-}/bin/jarsigner"
+  [ -f "$JARSIGNER" ] || [ -f "$JARSIGNER.exe" ] || JARSIGNER=""
+  for aab in "${BUILT_AAB[@]}"; do
+    n="$(basename "$aab")"
+    entries="$(unzip -l "$aab" 2>/dev/null)"
+    aab_ok=1
+    for e in BundleConfig.pb base/manifest/AndroidManifest.xml base/dex/classes.dex; do
+      printf '%s' "$entries" | grep -qF "$e" || { echo "  ❌ $n 缺少 $e" >&2; aab_ok=0; fail=1; }
+    done
+    [ "$aab_ok" = 1 ] && echo "  ✅ $n 结构完整"
+    if [ -n "$JARSIGNER" ]; then
+      if "$JARSIGNER" -verify "$(win_of "$aab")" >/dev/null 2>&1; then
+        echo "  ✅ $n 已签名"
+      else
+        echo "  ❌ $n 未通过 jarsigner 校验 —— Play 需要 upload key 签名" >&2; fail=1
+      fi
+    else
+      echo "  ⚠️  找不到 jarsigner,跳过 AAB 签名校验"
+    fi
+  done
+fi
+
 [ "$fail" = 0 ] || die "有产物没通过校验,不继续"
 
 # ── 5. 可选:debug 包 ──────────────────────────────────────────────
@@ -339,7 +430,7 @@ gen_notes(){
 
   echo "## 📦 附件"; echo
   echo "| 文件 | 大小 |"; echo "|---|---|"
-  for f in "${BUILT[@]}"; do
+  for f in "${BUILT[@]}" "${BUILT_AAB[@]}"; do
     printf '| `%s` | %s |\n' "$(basename "$f")" "$(human_size "$(file_size "$f")")"
   done
   echo
@@ -394,6 +485,7 @@ gen_notes(){
 # ── 7. 汇总 / 建 Release / 上传 ──────────────────────────────────
 step "产物"
 for apk in "${BUILT[@]}"; do echo "  $apk"; done
+for aab in "${BUILT_AAB[@]}"; do echo "  $aab"; done
 
 if [ "$PRINT_NOTES" = 1 ]; then
   gen_notes "$VER" >&3     # 说明走真正的 stdout(fd 3)
@@ -437,10 +529,10 @@ if [ "$UPLOAD" = 1 ] || [ "$CREATE_RELEASE" = 1 ]; then
     # 恒等函数 —— 直接传会报 “no matches found for /mnt/e/.../x.apk”。
     # winpath 不做平台判断,无条件转成 Windows 路径。
     declare -a WIN_FILES=()
-    for apk in "${BUILT[@]}"; do WIN_FILES+=("$(winpath "$apk")"); done
+    for f in "${BUILT[@]}" "${BUILT_AAB[@]}"; do WIN_FILES+=("$(winpath "$f")"); done
     "$GH" release upload "$VER" "${WIN_FILES[@]}" --clobber </dev/null 2>&1 | tail -5 | sed 's/^/  /' \
       || die "上传失败"
-    echo "  ✅ 已上传 ${#BUILT[@]} 个附件"
+    echo "  ✅ 已上传 $(( ${#BUILT[@]} + ${#BUILT_AAB[@]} )) 个附件"
   fi
 fi
 
