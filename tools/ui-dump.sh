@@ -8,7 +8,7 @@
 #
 # 前提
 #   应用里已经集成了 debug 自截图钩子。模板在
-#   apps/DualDemo/app/src/debug/,把那几个文件拷进你的工程即可,
+#   apps/<App>/app/src/debug/,把那几个文件拷进你的工程即可,
 #   细节见 docs/07-debug-ui-capture.md。**只在 debug 构建里可用。**
 #
 # 用法

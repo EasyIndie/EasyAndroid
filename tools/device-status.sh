@@ -4,7 +4,7 @@
 # 用法:
 #   bash tools/device-status.sh                           # 默认 TV
 #   bash tools/device-status.sh "$PICO_ADDR"
-#   bash tools/device-status.sh "$TV_ADDR" com.example.dualdemo
+#   bash tools/device-status.sh "$TV_ADDR" com.example.myapp
 #
 # 输出: 型号/系统/ABI → 目标包是否安装及版本 → 当前前台 → 最近崩溃 → 当前界面文案
 #

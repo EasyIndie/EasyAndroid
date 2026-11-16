@@ -9,6 +9,9 @@
 
 一个 **APK 同时跑在 Android TV 和 Pico 4 上**的最小 Compose 工程。
 
+> 本目录带 `selftest.properties`:仓库根的 `tools/verify-all.sh` 会把它当作
+> **自检应用**来构建/安装/截图。它不代表任何业务应用。
+
 存在的目的:
 
 1. 验证「无 IDE 纯命令行」的完整闭环(构建 → 安装 → 启动 → 读 UI 树)
@@ -21,7 +24,7 @@
 ## 构建
 
 ```bash
-cd apps/DualDemo
+cd self-test/DualDemo
 ./gradlew assembleDebug
 # → app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -97,7 +100,7 @@ adb -s $DEV pull /sdcard/ui.xml /tmp/ui.xml
 ## 目录
 
 ```
-apps/DualDemo/
+self-test/DualDemo/
 ├── settings.gradle.kts
 ├── build.gradle.kts            根构建脚本(插件版本在此声明)
 ├── gradle.properties

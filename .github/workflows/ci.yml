@@ -84,8 +84,18 @@ jobs:
           bash tools/gen-keystore.sh --import /tmp/signing-bundle.b64
           rm -f /tmp/signing-bundle.b64
 
+      - name: 找出仓库自检应用
+        id: selftest
+        run: |
+          set -euo pipefail
+          f="$(ls self-test/*/selftest.properties apps/*/selftest.properties 2>/dev/null | head -1 || true)"
+          [ -n "$f" ] || { echo "::error::没有 self-test/*/selftest.properties 或 apps/*/selftest.properties"; exit 1; }
+          dir="$(dirname "$f")"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$dir")" >> "$GITHUB_OUTPUT"
+
       - name: 构建 + lint + 单测
-        working-directory: apps/DualDemo
+        working-directory: ${{ steps.selftest.outputs.dir }}
         run: |
           ./gradlew assembleDebug assembleRelease lint testDebugUnitTest \
             --no-daemon --console=plain --max-workers=2
@@ -93,8 +103,8 @@ jobs:
       - name: 上传 APK
         uses: actions/upload-artifact@v7
         with:
-          name: DualDemo-apk
-          path: apps/DualDemo/app/build/outputs/apk/**/*.apk
+          name: ${{ steps.selftest.outputs.name }}-apk
+          path: ${{ steps.selftest.outputs.dir }}/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
       - name: 上传 JVM 截图(Robolectric + Roborazzi 渲染出来的界面)
@@ -102,7 +112,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ui-screenshots
-          path: apps/DualDemo/app/build/outputs/roborazzi/*.png
+          path: ${{ steps.selftest.outputs.dir }}/app/build/outputs/roborazzi/*.png
           if-no-files-found: ignore
 
       - name: 上传 lint 报告
@@ -110,5 +120,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lint-report
-          path: apps/DualDemo/app/build/reports/lint-results-*.html
+          path: ${{ steps.selftest.outputs.dir }}/app/build/reports/lint-results-*.html
           if-no-files-found: ignore

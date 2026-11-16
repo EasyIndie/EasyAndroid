@@ -246,7 +246,7 @@ run_py(){ [ -n "$PY" ] || return 127; "$PY" "$@"; }
 #
 # ⚠️ 别用 `sed 's/[.[\*^$]/\\&/g'` 这类写法,它有两个坑:
 #   1. sed 替换串里的 `&` 代表「整个匹配」,必须写成 `\&`。
-#      仓库里曾因此把 com.example.dualdemo 变成 com&example&dualdemo。
+#      仓库里曾因此把 com.example.myapp 变成 com&example&myapp。
 #   2. 字符类里同时出现 `]`、`\`、`|` 时,各版本 sed 的解析不一致,
 #      很容易报 unterminated `s' command。
 # 逐字符处理又长又慢但**没有歧义**,这种一次性小字符串不值得为性能妥协。

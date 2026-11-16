@@ -15,7 +15,7 @@
 #   bash tools/release-apk.sh <version> --with-debug     # 额外附上 debug 包
 #
 #   bash tools/release-apk.sh <version> --format both    # 同时产出 AAB(Play 用)
-#   bash tools/release-apk.sh <version> --app EasyInfo   # 只构建一个应用(商店单独出包)
+#   bash tools/release-apk.sh <version> --app <AppName>   # 只构建一个应用(商店单独出包)
 #
 #   # CI 用(见 .github/workflows/release.yml):
 #   bash tools/release-apk.sh <version> --in-place --create-release --upload

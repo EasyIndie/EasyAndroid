@@ -92,11 +92,14 @@ semver_ok "$VER" || die "version='$VER' 不是严格 SemVer(MAJOR.MINOR.PATCH,�
 ok "version = $VER(来自 version.properties)"
 
 # 工程里不该再有版本号字面量
-if grep -rqE 'version(Name)?[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' "$REPO/apps" --include='*.kts' 2>/dev/null; then
-  grep -rnE 'version(Name)?[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' "$REPO/apps" --include='*.kts' >&2
-  die "apps/ 里还有硬编码的版本号 —— 应该统一从 version.properties 读(见 docs/06)"
-fi
-ok "apps/ 下没有硬编码版本号"
+for _root in "$REPO/apps" "$REPO/self-test"; do
+  [ -d "$_root" ] || continue
+  if grep -rqE 'version(Name)?[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' --include='*.kts' "$_root" 2>/dev/null; then
+    grep -rnE 'version(Name)?[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' --include='*.kts' "$_root" >&2
+    die "$(basename "$_root")/ 里还有硬编码的版本号 —— 应该统一从 version.properties 读(见 docs/06)"
+  fi
+done
+ok "apps/ 与 self-test/ 下没有硬编码版本号"
 
 if [ "$CHECK" = 0 ]; then
   [ -z "$(git -C "$REPO" status --porcelain)" ] \

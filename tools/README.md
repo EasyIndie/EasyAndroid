@@ -178,6 +178,8 @@ bash tools/new-app.sh MyPlayer com.example.myplayer
 
 约定见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md)。
 
+> 应用专属的 SDK / manifest 脚本随应用放在 `apps/<App>/` 下;`tools/` 只保留通用工具。
+
 ### `ui-dump.sh` — 触发应用自截图并拉回 PNG
 
 ```bash
@@ -187,7 +189,7 @@ bash tools/ui-dump.sh <applicationId> --launch       # 先拉起应用
 ```
 
 给 `FLAG_SECURE` 设备(如 Pico 4)用的 —— 那种设备 `screencap` 只能抓到纯白图。
-要求应用集成了 debug 自截图钩子(`apps/DualDemo/app/src/debug/`),
+要求应用集成了 debug 自截图钩子(`apps/<App>/app/src/debug/`),
 原理见 [../docs/07-debug-ui-capture.md](../docs/07-debug-ui-capture.md)。
 
 取图有两条路径,脚本自动选择:Android ≤10 直接 `adb pull` 外部目录;
@@ -265,7 +267,7 @@ bash tools/release-apk.sh <version> --upload                 # 顺便上传到 G
 bash tools/release-apk.sh <version> --with-debug             # 额外附上 debug 包(带自截图钩子)
 
 # 商店出包(只构建一个应用,同时出 AAB)
-bash tools/release-apk.sh <version> --app EasyInfo --format both
+bash tools/release-apk.sh <version> --app <AppName> --format both
 ```
 
 关键点:**它不用当前工作区构建**,而是在临时 git worktree 里 checkout 那个 tag ——
@@ -341,7 +343,7 @@ bash tools/tag-release.sh                  # 校验 + 构建自检 + 打 tag + �
 
 **为什么需要它**:本仓库出现过 tag=`0.0.1` 而 APK 里 `versionName=0.1.0` 的漂移。
 tag 名只能来自 [`version.properties`](../version.properties),脚本把这条约束变成机械检查:
-工作区是否干净、是否已推送、`apps/` 下有没有残留版本字面量,
+工作区是否干净、是否已推送、`apps/` 与 `self-test/` 下有没有残留版本字面量,
 以及**构建出来的 APK 里的 `versionName` 是不是就是那个版本**(它内部会跑
 `verify-all.sh --build-only`)。
 
@@ -356,6 +358,9 @@ bash tools/verify-all.sh                # 仓库自检 → 环境 → 构建 →
 bash tools/verify-all.sh --build-only   # 只验仓库自检 + 环境 + 构建(不需要设备)
 bash tools/verify-all.sh --skills-only  # 只验 CI 配置 + Agent Skills(不碰 JDK/SDK/设备)
 ```
+
+构建/设备段会自动找 `self-test/*/selftest.properties` 或 `apps/*/selftest.properties` 标记的自检应用;
+没有标记就跳过这两段,不会硬编码某个应用。
 
 换机器、升级 SDK 之后跑一次就知道有没有坏。设备不在线会自动跳过并标 SKIP,
 不算失败,所以 CI 上也能跑。缺什么(比如 Windows 上没装 JDK/SDK)会明确列出来。
@@ -372,7 +377,7 @@ bash tools/verify-all.sh --skills-only  # 只验 CI 配置 + Agent Skills(不碰
 ```bash
 bash tools/device-status.sh                          # 默认 TV
 bash tools/device-status.sh "$PICO_ADDR"             # 指定设备
-bash tools/device-status.sh "$TV_ADDR" com.example.dualdemo   # 顺带查某个包
+bash tools/device-status.sh "$TV_ADDR" <package.id>   # 顺带查某个包
 ```
 
 一次输出:型号 / 系统 / ABI → 目标包是否安装及版本 → 当前前台 → 最近崩溃 → 当前界面全部文案。
@@ -403,7 +408,7 @@ display 0(`com.pvr.vrshell`)—— 所以裸 `input keyevent` **到不了你的�
 ### `tv-install.sh` — 装到 TCL 电视
 
 ```bash
-bash tools/tv-install.sh apps/DualDemo/app/build/outputs/apk/debug/app-debug.apk
+bash tools/tv-install.sh apps/<App>/app/build/outputs/apk/debug/app-debug.apk
 LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>   # 手动指定
 ```
 
@@ -419,8 +424,8 @@ LABEL=双端演示 TV=192.0.2.11:5555 bash tools/tv-install.sh <apk>   # 手动�
 机器上 aapt2 是可选的**:用环境变量手动给元信息即可,
 
 ```bash
-PKG=com.example.dualdemo VER=0.0.1 ACTIVITY=com.example.dualdemo.MainActivity \
-  bash tools/tv-install.sh apps/DualDemo/app/build/outputs/apk/debug/app-debug.apk
+PKG=<package.id> VER=0.0.1 ACTIVITY=<package.id>.MainActivity \
+  bash tools/tv-install.sh apps/<App>/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 (PKG 必须给;VER 缺省则跳过装后版本校验;ACTIVITY 缺省则装完不自动启动。)

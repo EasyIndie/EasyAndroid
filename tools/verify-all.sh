@@ -10,6 +10,9 @@
 # 做什么
 #   仓库自检(CI 配置 / Agent Skills)→ 环境 → 构建 → Pico(装/起/自截图)→ 电视(装/起/自截图)→ 汇总
 #
+# 构建/设备段使用 **self-test/ 或 apps/ 下带 selftest.properties 的应用**(仓库自检应用)。
+# 没有标记就跳过这两段,而不是硬编码某个应用。
+#
 # 用法
 #   bash tools/verify-all.sh                # 全跑
 #   bash tools/verify-all.sh --build-only   # 只验环境 + 构建(不需要设备)
@@ -32,8 +35,17 @@ case "${1:-}" in
 esac
 
 REPO="$_REPO_DIR"
-APP_DIR="$REPO/apps/DualDemo"
-PKG="com.example.dualdemo"
+
+# 仓库自检应用:优先 self-test/,其次 apps/(只应有一个)。
+SELFTEST_PROPS=""
+for _root in "$REPO/self-test" "$REPO/apps"; do
+  for _f in "$_root"/*/selftest.properties; do
+    [ -f "$_f" ] && { SELFTEST_PROPS="$_f"; break 2; }
+  done
+done
+APP_DIR=""
+[ -n "$SELFTEST_PROPS" ] && APP_DIR="$(dirname "$SELFTEST_PROPS")"
+PKG=""
 
 PASS=0; FAIL=0; SKIP=0; WARN=0
 RESULTS=()
@@ -257,8 +269,13 @@ step_env(){
     # aapt2 只用来校验 APK 内容(build 段缺它是 skip),不是构建的硬依赖
     need "build-tools 缺失(没有 aapt2 就验不了 APK 里的钩子/版本号)"
   fi
-  [ -x "$APP_DIR/gradlew" ] || [ -f "$APP_DIR/gradlew" ] \
-    && ok "gradlew" || bad "找不到 $APP_DIR/gradlew"
+  if [ -n "$APP_DIR" ]; then
+    [ -f "$APP_DIR/gradlew" ] \
+      && ok "gradlew ($(basename "$APP_DIR"))" \
+      || bad "找不到 $APP_DIR/gradlew"
+  else
+    skip "没有 selftest.properties(跳过构建/设备段)"
+  fi
   [ -n "$PY" ] && ok "$PY(脚本用来解析 UI 树)" || bad "python3 缺失"
   # Android 11+ 上 shell 读不了 /sdcard/Android/data,取图靠 run-as;这里只做存在性提示
   [ -f "$_TOOLS_DIR/device.env" ] \
@@ -324,6 +341,10 @@ step_signing
 echo
 echo "════════════════ 2/4 构建 ════════════════"
 step_build(){
+  if [ -z "$APP_DIR" ]; then
+    skip "没有 selftest.properties;跳过构建"
+    return 0
+  fi
   local log="$TMP/verify-build.log"
   ( cd "$APP_DIR" && ./gradlew assembleDebug --no-daemon --console=plain --max-workers=2 ) \
     > "$log" 2>&1
@@ -374,6 +395,8 @@ step_build(){
     #    详见 _common.sh 里 badging_field 的说明。
     local badging
     badging="$("$aapt2" dump badging "$apk_win" 2>/dev/null)"
+    PKG="$(badging_field "$badging" "package:" name)"
+    [ -n "$PKG" ] && ok "包名 $PKG" || bad "取不到 APK 包名"
     got="$(badging_field "$badging" "package:" versionName)"
     [ "$got" = "$want" ] \
       && ok "版本号与 version.properties 一致 ($want)" \
@@ -432,6 +455,10 @@ else
 echo
 echo "════════════════ 3/4 Pico(快速迭代目标)════════════════"
 step_pico(){
+  if [ -z "$APP_DIR" ] || [ -z "$PKG" ]; then
+    skip "没有自检应用/包名;跳过 Pico"
+    return
+  fi
   if ! online "$PICO_ADDR"; then
     skip "Pico 不在线($PICO_ADDR)—— 重启后跑 tools/pico-usb.sh"
     return
@@ -470,6 +497,10 @@ step_pico
 echo
 echo "════════════════ 4/4 电视(验收目标)════════════════"
 step_tv(){
+  if [ -z "$APP_DIR" ]; then
+    skip "没有自检应用;跳过电视"
+    return
+  fi
   if ! online "$TV_ADDR"; then
     skip "电视不在线($TV_ADDR)"
     return

@@ -8,7 +8,7 @@
 #   bash tools/new-app.sh <AppName> <package.id>
 #   bash tools/new-app.sh MyPlayer com.example.myplayer
 #
-# 模板是仓库根的 template/(不是 apps/DualDemo —— 那是验证工程的实机自检应用)。
+# 模板是仓库根的 template/(不是 apps/<App> —— 那是验证工程的实机自检应用)。
 # 模板改了会影响所有新工程,见 docs/06-app-conventions.md。
 set -euo pipefail
 
@@ -84,8 +84,8 @@ rm -rf "$DEST/app/build" "$DEST/build" "$DEST/.gradle" "$DEST/.kotlin" \
 echo "==> 替换包名: $TEMPLATE_PKG → $PKG"
 # ⚠️ 不要用 sed 做这件事。包名里的 `.` 会被当成正则通配符:
 #   · 匹配侧需要转义,但 sed 替换串里的 `&` 又代表「整个匹配」,
-#     两边的转义规则不同 —— 仓库里曾因此把 com.example.dualdemo
-#     替换成 com&example&dualdemo。
+#     两边的转义规则不同 —— 仓库里曾因此把 com.example.myapp
+#     替换成 com&example&myapp。
 # 换成 python 的 str.replace,是**纯字面量**替换,没有歧义。
 FILES="$(grep -rl "$TEMPLATE_PKG" "$DEST" 2>/dev/null || true)"
 if [ -z "$FILES" ]; then
@@ -209,10 +209,29 @@ bash ../../tools/device-status.sh "\$TV_ADDR" $PKG
 渠道声明在 \`publish.properties\`(\`targets=github,play,cn\`),构建与自检流程见
 [docs/11](../../docs/11-publishing.md)。
 
+## 文档
+
+应用专属文档放 [docs/](docs/);跨应用通用知识在仓库根 docs/。
+商店人工清单放 [store/](store/)。
+
 ## 已知限制
 
 <!-- 记下目标设备上的限制,例如 Pico 上截屏不可用 -->
 EOF
+
+# 应用专属文档目录(仓库根 docs/ 只放跨应用通用知识)
+mkdir -p "$DEST/docs"
+cat > "$DEST/docs/README.md" <<EOF
+# $NAME 文档
+
+应用专属文档放这里(后端 API / 架构 / 模块 / 实机验收)。
+跨应用通用的知识(环境、设备、工具链、发版/上架流程)在仓库根 \`docs/\`。
+
+| 文档 | 内容 |
+|---|---|
+| (待写) | |
+EOF
+
 echo
 echo "完成: apps/$NAME"
 echo
@@ -232,3 +251,4 @@ echo "     protectionLevel=signature 的组件、共享 sharedUserId),共一把 
 echo "     ⚠️ 首次发布之后就**不能再改**了 —— 等于换签名,老用户升不了级。"
 echo "     见 docs/06 的「签名凭据」。"
 echo "  6. 要上架(Play / 国内商店): 写 apps/$NAME/publish.properties,再按 docs/11 走"
+echo "  7. 应用专属文档放 apps/$NAME/docs/,不要写进仓库根 docs/"
