@@ -29,8 +29,8 @@ adb -s $TV install -r -t fdroid.apk
 
 ```
 D/OverseasAppConfig(571): Verifying begin
-D/OverseasAppConfig(571): pkgName = com.example.dualdemo
-I/AppRecordJni(1208): getAppInstallEvent with event: 16, package: com.example.dualdemo
+D/OverseasAppConfig(571): pkgName = <package.id>
+I/AppRecordJni(1208): getAppInstallEvent with event: 16, package: <package.id>
 W/RuleEvaluation(571): Integrity rule files are not available.
 I/PackageManager(571): Integrity check passed for file:///data/app/vmdl880486418.tmp
 → INSTALL_FAILED_VERIFICATION_FAILURE

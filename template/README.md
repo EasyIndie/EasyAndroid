@@ -32,7 +32,7 @@
    cd apps/TemplateCheck && ./gradlew assembleDebug && ./gradlew testDebugUnitTest
    rm -rf ../../apps/TemplateCheck
    ```
-2. **不要放业务代码、不要放设备自检页。** 那些属于 `apps/DualDemo` 或具体应用。
+2. **不要放业务代码、不要放设备自检页。** 那些属于测试应用或具体应用。
 3. **不要在这里写版本号、包名、应用名的字面量**(占位值除外)—— 新工程靠
    `new-app.sh` 替换,写死会漏改。
 4. 模板目录里不要留 `local.properties`、`build/`、`.gradle/`;`new-app.sh`

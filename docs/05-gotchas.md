@@ -50,8 +50,8 @@ aapt2.exe…)收到这种字符串按相对路径解析,必然失败。
 
 ### 4. sed 替换串里的 `&`
 
-**症状**:想把 `com.example.dualdemo` 里的 `.` 转义,用了
-`sed 's/[.[\*^$]/\\&/g'`,结果得到 `com&example&dualdemo`。
+**症状**:想把 `<package.id>` 里的 `.` 转义,用了
+`sed 's/[.[\*^$]/\\&/g'`,结果得到 `com&example&myapp`。
 
 **原因**:sed 的**替换串**里 `&` 代表「整个匹配」,必须写成 `\&` 才是字面量。
 匹配侧和替换侧的转义规则不同,混用必翻车。
@@ -278,7 +278,7 @@ adb shell pm install -r /data/local/tmp/t.apk    # 设备路径(需先 push)
 **症状**:脚本里 `adb install "$PWD/app-debug.apk"` 报文件不存在,把同一条命令手敲一遍却成功。
 
 ```bash
-adb install -r -t /e/EasyAndroid/apps/DualDemo/app/build/outputs/apk/debug/app-debug.apk
+adb install -r -t /e/EasyAndroid/apps/<App>/app/build/outputs/apk/debug/app-debug.apk
 # adb.exe: failed to stat /e/EasyAndroid/...: No such file or directory
 ```
 
@@ -304,7 +304,7 @@ adb install -r -t "$(win_of "$PWD/app-debug.apk")"
 「装到的是 v0.4.4,不是目标 v0.5.0」,但 U 盘里明明只有新包。
 
 ```
-INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.example.dualdemo signatures
+INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package <package.id> signatures
 do not match previously installed version; ignoring!
 ```
 
@@ -315,7 +315,7 @@ do not match previously installed version; ignoring!
 **解法**:先卸载再装。
 
 ```bash
-adb uninstall com.example.dualdemo
+adb uninstall <package.id>
 ```
 
 判指纹别判 DN,详见 [06](06-app-conventions.md)。电视脚本现已内置这层诊断。
@@ -473,13 +473,13 @@ java.lang.SecurityException: Permission Denial: starting Intent { ... }
 
 ```bash
 git ls-files -s | grep gradlew
-# 100644 apps/DualDemo/gradlew     ← 644 就是没有可执行位
+# 100644 apps/<App>/gradlew     ← 644 就是没有可执行位
 ```
 
 **解法**:显式告诉 git 哪些文件要可执行,不依赖文件系统。
 
 ```bash
-git update-index --chmod=+x apps/DualDemo/gradlew tools/*.sh
+git update-index --chmod=+x apps/<App>/gradlew tools/*.sh
 ```
 
 之后 `git ls-files -s` 应该显示 `100755`。
@@ -608,7 +608,7 @@ adb -s $DEV pull /sdcard/x.xml /tmp/x.xml
 **原因**:`LazyColumn` / `RecyclerView` **只组合当前视口附近的项**。
 不在视口内的项压根没被创建,自然也不在无障碍节点树里 —— `uiautomator` 读的就是这棵树。
 
-**症状确认**:同一界面按几下 D-pad 再 dump,次数会变。实测 DualDemo:
+**症状确认**:同一界面按几下 D-pad 再 dump,次数会变。实测 <App>:
 
 ```
 初始        : 24 条文案

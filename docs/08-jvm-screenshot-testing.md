@@ -26,7 +26,7 @@ app/build/outputs/roborazzi/*.png            ← 产物
 ## 用法
 
 ```bash
-cd apps/DualDemo
+cd apps/<App>
 
 # 出图(默认行为)
 ./gradlew testDebugUnitTest
@@ -132,7 +132,7 @@ CI 里可以把出图关掉(只断言):
 
 ## 当前覆盖
 
-`apps/DualDemo/app/src/test/java/com/example/dualdemo/DeviceInspectorScreenshotTest.kt`
+`apps/<App>/app/src/test/java/<package path>/<App>ScreenshotTest.kt`
 
 | 测试 | 验的东西 |
 |---|---|

@@ -33,9 +33,9 @@ bmp.compress(PNG, 100, file)
 ## 模板位置
 
 ```
-apps/DualDemo/app/src/debug/
+apps/<App>/app/src/debug/
 ├── AndroidManifest.xml                  声明下面两个组件
-└── java/com/example/dualdemo/debug/
+└── java/<package path>/debug/
     ├── DebugHooks.kt                    共享状态(当前 Activity)
     ├── DebugHooksInitProvider.kt        零侵入地跟踪当前 Activity
     └── UiDumpReceiver.kt                收广播 → 截图 → 落盘
@@ -60,11 +60,11 @@ apps/DualDemo/app/src/debug/
 
 ```bash
 # 触发 + 拉回(默认设备取 device.env 里的 PICO_ADDR)
-bash tools/ui-dump.sh com.example.dualdemo
+bash tools/ui-dump.sh <package.id>
 
 # 指定设备 / 输出路径 / 先拉起应用
-bash tools/ui-dump.sh com.example.dualdemo "$TV_ADDR" /tmp/tv.png
-bash tools/ui-dump.sh com.example.dualdemo --launch
+bash tools/ui-dump.sh <package.id> "$TV_ADDR" /tmp/tv.png
+bash tools/ui-dump.sh <package.id> --launch
 ```
 
 脚本做的事:
@@ -98,8 +98,8 @@ adb exec-out run-as <applicationId> cat files/ui-dump.png > out.png
 手动触发也可以:
 
 ```bash
-adb shell am broadcast -a com.example.dualdemo.DUMP_UI -p com.example.dualdemo
-adb exec-out run-as com.example.dualdemo cat files/ui-dump.png > ui.png
+adb shell am broadcast -a <package.id>.DUMP_UI -p <package.id>
+adb exec-out run-as <package.id> cat files/ui-dump.png > ui.png
 ```
 
 ## 只在 debug 构建里
@@ -120,13 +120,13 @@ aapt2 dump xmltree --file AndroidManifest.xml app/build/outputs/apk/release/app-
 
 ## 实测效果
 
-Pico 4,`com.example.dualdemo`:
+Pico 4,`<package.id>`:
 
 ```
-$ bash tools/ui-dump.sh com.example.dualdemo --launch
+$ bash tools/ui-dump.sh <package.id> --launch
 ==> 广播触发自截图
   Broadcast completed: result=0
-  /tmp/ui-dump-com_example_dualdemo.png
+  /tmp/ui-dump-<pkg>.png
   1600x900, 102732 bytes
 ```
 
@@ -140,7 +140,7 @@ TCL 电视(Android 11)上同样可用,走 `run-as` 取图:
 
 ```
 ==> 自截图
-  /tmp/ui-dump-com_example_dualdemo.png
+  /tmp/ui-dump-<pkg>.png
   1920x1080, 125297 bytes
 ```
 

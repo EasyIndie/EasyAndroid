@@ -12,11 +12,12 @@
 2. **工程之间不共享代码**。要复用的东西放 `tools/`(脚本)或 `docs/`(知识),
    真要做共享库再另立 `libs/` 并说明理由。
 
-## `apps/` 现状
+## `apps/` 与 `self-test/`
 
 | 目录 | 定位 |
 |---|---|
-| `apps/DualDemo` | **测试验证工程**。用于验证工具链、ADB 链路、设备兼容性。保持精简,**不要往里加业务功能**。 |
+| `apps/<App>` | **业务应用**。细节(API/架构/商店资料)在各自 `README.md` / `docs/` / `store/`。 |
+| `self-test/<TestApp>` | **测试验证工程**(带 `selftest.properties`)。用于验证工具链、ADB 链路、设备兼容性;保持精简,**不要往里加业务功能**。 |
 | `template/` | **公共应用模板**。`new-app.sh` 复制它来生成新工程。它不在 `apps/` 下 —— `release-apk.sh` 会构建 `apps/*/` 下的所有工程,模板不该被当成应用发出去。 |
 
 ## 新建一个应用
@@ -29,8 +30,8 @@ bash tools/new-app.sh MyPlayer com.example.myplayer
 ```
 
 脚本会以 `template/` 为模板复制出一份,替换包名 / 应用名 / 工程名,并清掉构建产物。
-`template/` 是从 `apps/DualDemo` 抽出来的「公共脚手架」:调试自截图钩子、TV/手机自适应清单、
-版本号推导、Roborazzi 截图测试都在里面,但不含 DualDemo 的设备自检业务。
+`template/` 是从测试验证工程抽出来的「公共脚手架」:调试自截图钩子、TV/手机自适应清单、
+版本号推导、Roborazzi 截图测试都在里面,但不含测试应用的自检业务。
 生成后直接可构建:
 
 ```bash
@@ -43,6 +44,9 @@ cd apps/MyPlayer
 ```
 apps/<AppName>/
 ├── README.md                    必须写:这个应用做什么、怎么构建、怎么装
+├── docs/                        应用专属文档(API / 架构 / 实机验收)
+├── store/                       商店人工清单(play.md / cn.md)
+├── publish.properties           发布渠道(targets=github,play,cn)
 ├── settings.gradle.kts          rootProject.name = "<AppName>"
 ├── build.gradle.kts             只说插件版本,apply false
 ├── gradle.properties
@@ -59,6 +63,11 @@ apps/<AppName>/
 
 `gradle/wrapper/gradle-wrapper.jar` 是二进制。手写不出来,用 `gradle wrapper` 生成,
 或者直接从 `template/gradle/wrapper/` 拷。
+
+> **文档边界**:应用专属内容(后端 API、架构、模块、商店资料、验收记录)放
+> `apps/<AppName>/docs/`、`apps/<AppName>/store/` 和 README;测试验证工程的文档
+> 放 `self-test/<TestApp>/`;仓库根 `docs/` 只放跨应用通用的知识
+> (环境、设备、工具链、发版/上架流程)。
 
 ## 命名与标识
 
@@ -502,13 +511,13 @@ keyAlias = keystoreProps.getProperty("alias." + rootProject.name)  // 优先:按
 实测两个应用签出来确实是两把:
 
 ```
-DualDemo   eb3bfaf6...   DN=CN=EasyAndroid Release    ← 默认别名 release,未改动
+<App>   eb3bfaf6...   DN=CN=EasyAndroid Release    ← 默认别名 release,未改动
 MyPlayer   e0a85a85...   DN=CN=MyPlayer Release       ← alias.MyPlayer
 ```
 
 > ⚠️ **已经发布过的应用不要改别名。** 那等于换签名,老用户升不了级。
 > 所以引入这套时:新应用用 `--add-alias` 拿自己的,**老应用继续用默认那把**。
-> 实测 DualDemo 改完配置后 `--verify-against` 已发布的 `0.2.0` 仍然是 ✅。
+> 实测 <App> 改完配置后 `--verify-against` 已发布的 `0.2.0` 仍然是 ✅。
 
 > 💡 一个内幕:**PKCS12 密钥库会把别名转成小写。** 传 `-alias MyPlayer` 进去,
 > `keytool -list` 显示的是 `myplayer`。Java 查 PKCS12 时大小写不敏感,所以用
@@ -619,7 +628,7 @@ adb -s "$TV_ADDR" shell uiautomator dump /sdcard/_vc.xml
 实测结果(2026-09,电视 Android 11):
 
 ```
-dumpsys package com.example.dualdemo
+dumpsys package <package.id>
   versionName=0.0.1
   versionCode=1
 
@@ -674,9 +683,9 @@ UI 树 → text="共 18 项 · 构建 v0.0.1"
 `release-apk.sh` 会逐个校验产物,把「不小心把 debug 包装成正式包」变成构建期错误:
 
 ```
-✅ DualDemo-0.2.0.apk 已签名  (CN=EasyAndroid Release)
-✅ DualDemo-0.2.0.apk versionName=0.2.0 versionCode=200
-✅ DualDemo-0.2.0.apk 非 debuggable(正式包)
+✅ <App>-0.2.0.apk 已签名  (CN=EasyAndroid Release)
+✅ <App>-0.2.0.apk versionName=0.2.0 versionCode=200
+✅ <App>-0.2.0.apk 非 debuggable(正式包)
 ```
 
 判据是 `aapt2 dump badging` 里的 `application-debuggable` —— debug 包多这一行,
@@ -684,7 +693,7 @@ UI 树 → text="共 18 项 · 构建 v0.0.1"
 
 ```
 app-debug.apk          → application-debuggable 在    UiDumpReceiver=1   → 拒绝
-DualDemo-0.2.0.apk     → 不在                       UiDumpReceiver=0   → 放行
+<App>-0.2.0.apk     → 不在                       UiDumpReceiver=0   → 放行
 ```
 
 > ⚠️ **签名不同 → 同一台设备上换装要先卸载**:
@@ -832,7 +841,7 @@ bash tools/release-apk.sh 0.0.2 --upload
 
 外加 `android:banner` 指向一张 **320×180** 的图。
 
-细节和原因见 [apps/DualDemo/README.md](../apps/DualDemo/README.md#让一个-apk-同时上-tv-和-vr-的三个关键点)。
+细节和原因见 `apps/<App>/README.md` 的「让一个 APK 同时上 TV 和 VR 的三个关键点」。
 
 ### 只跑单一设备时
 
@@ -849,7 +858,7 @@ bash tools/release-apk.sh 0.0.2 --upload
 如果该工程对版本号有特殊安排(比如拆了独立版本线),还要写明它跟
 `version.properties` 的关系。
 
-参考 [apps/DualDemo/README.md](../apps/DualDemo/README.md)。
+参考 `apps/<App>/README.md`。
 
 ## 验收要求
 

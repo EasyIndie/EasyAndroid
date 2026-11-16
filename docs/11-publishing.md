@@ -32,7 +32,7 @@ bash tools/gen-keystore.sh --manifest --write     # 更新入库的期望值文�
 ### 0.2 包名不能是 `com.example.*`
 
 Google Play 明确拒收,国内商店也不接受。用真实反域名,比如
-`com.easyindie.easyinfo`。
+`<package.id>`(例:`com.example.myapp`)。
 
 > 包名在**首次上架后不可改**(等于换应用)。上架前改是免费的:
 > 改 `applicationId` + 重新 `--add-alias` + 清掉旧的 `dist/` 即可。
@@ -57,7 +57,7 @@ sdkmanager --sdk_root="$ANDROID_HOME" "platforms;android-36" "build-tools;36.0.0
 ```
 
 然后只改**要上架的那个工程**的 `compileSdk` / `targetSdk`。
-模板和 `DualDemo` 不上商店,保持低版本即可 —— 不要为了一个应用把仓库全升了。
+模板和测试工程不上商店,保持低版本即可 —— 不要为了一个应用把仓库全升了。
 
 > ⚠️ **AGP 8.7.3 对 `compileSdk = 36` 会打一条 warning**
 > (`We recommend using a newer Android Gradle plugin`)。实测能正常构建、
@@ -101,7 +101,7 @@ dist/<AppName>-<version>.aab
 bash tools/release-apk.sh <version>
 
 # 只出一个应用,同时出 APK + AAB(商店用)
-bash tools/release-apk.sh <version> --app EasyInfo --format both
+bash tools/release-apk.sh <version> --app <AppName> --format both
 
 # 本地预览 Release 说明(不碰 GitHub)
 bash tools/release-apk.sh <version> --print-notes
@@ -126,10 +126,10 @@ bash tools/release-apk.sh <version> --print-notes
 ```properties
 # github / play / cn,逗号分隔;缺省 = github
 targets=github,play,cn
-alias=EasyInfo
+alias=<AppName>
 ```
 
-`release-apk.sh` 和 `store-preflight.sh` 都读这一行。`DualDemo` 是测试工程,
+`release-apk.sh` 和 `store-preflight.sh` 都读这一行。带 `selftest.properties` 的测试工程,
 只写 `targets=github` —— 不参与商店构建。
 
 ---
@@ -153,7 +153,7 @@ bash tools/release.sh          # 推导版本 + 写 CHANGELOG + 打 tag + 推
 ### 3.1 构建 + 自检
 
 ```bash
-bash tools/release-apk.sh <version> --app EasyInfo --format both
+bash tools/release-apk.sh <version> --app <AppName> --format both
 bash tools/store-preflight.sh <version> --target play
 ```
 
@@ -171,7 +171,7 @@ bash tools/store-preflight.sh <version> --target play
 ### 3.2 Play App Signing
 
 - 上传的 AAB 用**上传密钥**(upload key)签名;本仓库里就是
-  `keystore.properties` 的 `alias.EasyInfo`。
+  `keystore.properties` 的 `alias.<AppName>`。
 - 首次在 Play Console 创建应用时选择 **Play App Signing**,Google 保管
   应用签名密钥,之后所有安装包由它重签。
 - 上传密钥指纹见仓库根 `signing-manifest.txt`;核对:
@@ -186,14 +186,14 @@ bash tools/store-preflight.sh <version> --target play
 2. 填写 `store/play.md` 里的资料:简短说明、完整说明、图标 512×512、
    特色图 1024×500、截图(手机 ≥2、TV ≥1)
 3. 隐私政策 URL(必须可公开访问;GitHub Pages 即可)
-4. **数据安全表单**:本应用不收集任何数据、无广告/分析 SDK → 勾「不收集」
+4. **数据安全表单**:按应用实际填写(例如无账号 / 无广告 / 无分析 SDK → 「不收集」)
 5. 内容分级问卷、目标受众、广告声明
 6. 上传 `.aab` 到**内部测试**轨道,先自己装一遍
 7. 逐级 promoted:closed → open → production
 
 ### 3.4 Android TV 轨道
 
-本应用清单已包含 TV 需要的三件套(见 docs/06「让一个 APK 同时上 TV 和 VR」):
+TV 应用的清单需要三件套(见 docs/06「让一个 APK 同时上 TV 和 VR」):
 
 ```xml
 <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -211,7 +211,7 @@ bash tools/store-preflight.sh <version> --target play
 ### 4.1 构建 + 自检
 
 ```bash
-bash tools/release-apk.sh <version> --app EasyInfo --format apk
+bash tools/release-apk.sh <version> --app <AppName> --format apk
 bash tools/store-preflight.sh <version> --target cn
 ```
 
@@ -231,7 +231,7 @@ bash tools/store-preflight.sh <version> --target cn
 | 开发者实名 / 企业认证 | 个人可上部分商店,企业更稳 |
 | 软件著作权证书(软著) | 应用名要和软著一致或能说明关系 |
 | APP 备案 | 2023 起国内分发普遍要求 |
-| ICP 备案 | 联网应用必需;本应用不联网,以商店后台为准 |
+| ICP 备案 | 联网应用必需;不联网应用多数可豁免,以商店后台为准 |
 | 隐私政策 URL | 必须可公开访问 |
 
 ### 4.3 各商店
@@ -239,7 +239,7 @@ bash tools/store-preflight.sh <version> --target cn
 | 商店 | 备注 |
 |---|---|
 | TCL 应用商店 | TV 场景最匹配;要 banner、横屏截图、D-pad 可操作 |
-| 华为 AppGallery | 新应用通常要 `targetSdk ≥ 33`;权限说明要填(本应用填「无」) |
+| 华为 AppGallery | 新应用通常要 `targetSdk ≥ 33`;权限说明按实际填写,无敏感权限就填「无」 |
 | 小米 / OPPO / vivo | 独立后台;「设备信息」类要说明用途,避免被判仿冒系统工具 |
 
 完整清单见 `apps/<App>/store/cn.md`。

@@ -10,8 +10,10 @@ Android 开发实践沉淀。
 | 路径 | 内容 |
 |---|---|
 | [`docs/`](docs/) | 知识沉淀:环境搭建、ADB 技巧、厂商限制与绕行方案、踩坑速查 |
-| [`apps/`](apps/) | 可运行的 Android 工程(**每个子目录是一个独立工程**) |
-| [`tools/`](tools/) | 设备连接 / 安装 / 引导 / 新建工程脚本 |
+| [`apps/`](apps/) | **业务应用**(每个子目录是一个独立工程;细节在各自目录) |
+| [`self-test/`](self-test/) | 测试验证工程(带 `selftest.properties`;`verify-all.sh` 自动发现) |
+| [`template/`](template/) | 公共应用脚手架(`new-app.sh` 的复制源;不在 `apps/` 下,不参与发版构建) |
+| [`tools/`](tools/) | 设备连接 / 安装 / 引导 / 新建工程 / 发版脚本 |
 | [`.agents/skills/`](.agents/skills/) | 可复用的 Android Agent Skills 集合(官方 + 社区精选 + 本仓库真机技能) |
 | [`AGENTS.md`](AGENTS.md) | 给 AI 编码智能体的仓库说明与硬性约束 |
 
@@ -45,23 +47,20 @@ bash tools/install-agent-skills.sh --list           # 看所有集合
   GitHub Actions 每周检查一次,**只开待审 PR,不直接改 main**。
 - **校验**:`bash tools/verify-all.sh --skills-only`(不碰设备)。
 
-## 示例工程
+## 应用
 
-| 工程 | 定位 |
-|---|---|
-| [`apps/EasyInfo`](apps/EasyInfo/) | **正式应用**:零权限、不联网的设备信息工具;同时跑 A / B / C 三条上架链路 |
-| [`apps/DualDemo`](apps/DualDemo/) | **测试验证工程**:一个 APK 同时跑在 Android TV 和 Pico 4 上的最小 Compose 工程,内置设备自检页 |
-| [`template/`](template/) | **公共应用模板**:`new-app.sh` 复制它生成新工程。不含业务代码,不在 `apps/` 下(不参与发版构建) |
+`apps/` 下每个子目录是一个**独立 Gradle 构建**,只放业务应用。应用做什么、怎么构建/安装/验收,
+以各自的 `README.md`、`docs/`、`store/` 为准;本 README 不维护具体应用细节。
 
-> `apps/` 下每个子目录都是**独立 Gradle 构建**。新增应用请用脚手架:
->
-> ```bash
-> bash tools/new-app.sh MyPlayer com.example.myplayer
-> ```
->
-> 完整约定见 [`docs/06-app-conventions.md`](docs/06-app-conventions.md)。
+新增应用用脚手架:
 
-### 上架
+```bash
+bash tools/new-app.sh <AppName> <package.id>
+```
+
+完整约定见 [`docs/06-app-conventions.md`](docs/06-app-conventions.md)。
+
+## 上架
 
 三条链路共用一套构建/签名,渠道在 `apps/<App>/publish.properties` 里声明:
 
@@ -72,14 +71,14 @@ bash tools/install-agent-skills.sh --list           # 看所有集合
 | C. 国内商店 | APK | 构建 + `store-preflight.sh` 自检;上传/资质人工 |
 
 ```bash
-bash tools/release-apk.sh <version> --app EasyInfo --format both
+bash tools/release-apk.sh <version> --app <AppName> --format both
 bash tools/store-preflight.sh <version> --target play
 bash tools/store-preflight.sh <version> --target cn
 ```
 
 完整流程、商店门槛与人工清单见 [`docs/11-publishing.md`](docs/11-publishing.md)。
 
-### 开发循环
+## 开发循环
 
 从「改一行代码」到「发布」的完整路径。每层都比上一层快,所以**先用快的**:
 
@@ -98,7 +97,7 @@ bash tools/store-preflight.sh <version> --target cn
   而不可靠,Pico 截图被 `FLAG_SECURE` 挡。
 - **提交信息写 `type(scope): 描述`** —— 版本号从它推导(见下)。
 
-### 发版
+## 发版
 
 **一条命令。** 版本号从提交信息机械推导,CHANGELOG 自动生成,CI 接手出包:
 
@@ -139,7 +138,7 @@ bash tools/release.sh --dry-run    # 先看将要发生什么,一个字节都不
 bash tools/devices.sh
 
 # 2. 构建
-cd apps/DualDemo && ./gradlew assembleDebug
+cd apps/<App> && ./gradlew assembleDebug
 
 # 3. 安装
 bash ../../tools/tv-install.sh app/build/outputs/apk/debug/app-debug.apk   # TCL 电视

@@ -12,10 +12,10 @@
 能跑通的闭环长这样(下面每一句都实测过):
 
 ```bash
-bash tools/pico-panel.sh com.example.dualdemo awake                     # 拉起 + 解除自动休眠
-bash tools/ui-dump.sh    com.example.dualdemo                           # 1 秒拿到真实渲染的 PNG
-bash tools/pico-panel.sh com.example.dualdemo key KEYCODE_DPAD_DOWN     # 定向按键
-bash tools/ui-dump.sh    com.example.dualdemo /tmp/b.png                # 对比 PNG 确认焦点真的动了
+bash tools/pico-panel.sh <package.id> awake                     # 拉起 + 解除自动休眠
+bash tools/ui-dump.sh    <package.id>                           # 1 秒拿到真实渲染的 PNG
+bash tools/pico-panel.sh <package.id> key KEYCODE_DPAD_DOWN     # 定向按键
+bash tools/ui-dump.sh    <package.id> /tmp/b.png                # 对比 PNG 确认焦点真的动了
 ```
 
 ---
@@ -44,7 +44,7 @@ DisplayDeviceInfo{"GlobalUI": 4320 x 4320, ...
     FLAG_SECURE, FLAG_PRIVATE, FLAG_NEVER_BLANK, FLAG_OWN_CONTENT_ONLY}
 DisplayDeviceInfo{"NS_APP[com.pvr.home]": 2102 x 902, ...
     FLAG_SECURE, ...}
-DisplayDeviceInfo{"NS_APP[com.example.dualdemo]": 1602 x 902, ...}   ← 我们的应用
+DisplayDeviceInfo{"NS_APP[<package.id>]": 1602 x 902, ...}   ← 我们的应用
 DisplayDeviceInfo{"NS_APP[com.picovr.settings]": 1127 x 752, ...}
 DisplayDeviceInfo{"NS_CAPTION_BAR_[双端演示]": 413 x 250, ...}
 ```
@@ -52,7 +52,7 @@ DisplayDeviceInfo{"NS_CAPTION_BAR_[双端演示]": 413 x 250, ...}
 从 `mViewports` 里能拿到每个应用的 display id:
 
 ```
-displayId=17, uniqueId='virtual:com.picovr.systemext,1000,NS_APP[com.example.dualdemo],0',
+displayId=17, uniqueId='virtual:com.picovr.systemext,1000,NS_APP[<package.id>],0',
   logicalFrame=Rect(0, 0 - 1602, 902)
 ```
 
@@ -119,7 +119,7 @@ Pico 给**每个应用**建一个独立虚拟 display:
 
 ```
 $ adb -s $PICO_ADDR shell dumpsys display | grep NS_APP
-DisplayDeviceInfo{"NS_APP[com.example.dualdemo]": uniqueId="virtual:com.picovr.systemext,1000,NS_APP[com.example.dualdemo],0",
+DisplayDeviceInfo{"NS_APP[<package.id>]": uniqueId="virtual:com.picovr.systemext,1000,NS_APP[<package.id>],0",
     1602 x 902, density 200, touch VIRTUAL, type VIRTUAL, state ON,
     owner com.picovr.systemext (uid 1000), FLAG_SECURE, FLAG_PRIVATE,
     FLAG_NEVER_BLANK, FLAG_OWN_CONTENT_ONLY}
@@ -156,12 +156,12 @@ W WindowManager: Dropping key targeting non-focused display #24 keyCode=KEYCODE_
 ```bash
 # 推荐:直接读 mViewports
 adb shell dumpsys display \
-  | grep -oE "displayId=[0-9]+, uniqueId='virtual:[^']*NS_APP\[com.example.dualdemo\]," \
+  | grep -oE "displayId=[0-9]+, uniqueId='virtual:[^']*NS_APP\[<package.id>\]," \
   | tail -1
 
 # 也可以:
-adb shell dumpsys input | grep 'NS_APP\[com.example.dualdemo\]'
-#   Viewport VIRTUAL: displayId=46, uniqueId=virtual:...,NS_APP[com.example.dualdemo],0, ...
+adb shell dumpsys input | grep 'NS_APP\[<package.id>\]'
+#   Viewport VIRTUAL: displayId=46, uniqueId=virtual:...,NS_APP[<package.id>],0, ...
 ```
 
 ### 能用 / 不能用
@@ -192,9 +192,9 @@ adb shell input -d $D swipe 800 700 800 200 300
 **不要靠感觉**(「命令没报错」什么都不能说明)。用自截图前后对比:
 
 ```bash
-bash tools/ui-dump.sh com.example.dualdemo "$PICO_ADDR" /tmp/a.png
-bash tools/pico-panel.sh com.example.dualdemo key KEYCODE_DPAD_DOWN KEYCODE_DPAD_DOWN
-bash tools/ui-dump.sh com.example.dualdemo "$PICO_ADDR" /tmp/b.png
+bash tools/ui-dump.sh <package.id> "$PICO_ADDR" /tmp/a.png
+bash tools/pico-panel.sh <package.id> key KEYCODE_DPAD_DOWN KEYCODE_DPAD_DOWN
+bash tools/ui-dump.sh <package.id> "$PICO_ADDR" /tmp/b.png
 md5sum /tmp/a.png /tmp/b.png     # 不一样 = 送达了
 ```
 
@@ -275,7 +275,7 @@ adb shell setprop pvr.factorytest.never.sleep 1
 | display | 尺寸 | density | 相当于 |
 |---|---|---|---|
 | 内置屏幕(双眼合成) | 4320 x 2160 | 560 | 头显本体,每眼 2160 x 2160;90 / 72 Hz |
-| `NS_APP[com.example.dualdemo]` | **1602 x 902** | 200 | 我们的应用,**801 x 451 dp** |
+| `NS_APP[<package.id>]` | **1602 x 902** | 200 | 我们的应用,**801 x 451 dp** |
 | `NS_APP[com.pvr.home]` | 2102 x 902 | 200 | 系统桌面(21:9) |
 | `NS_APP[com.picovr.settings]` | 1127 x 752 | 200 | 设置 |
 | `NS_CAPTION_BAR_[双端演示]` | 413 x 250 | 200 | 面板上方的标题条(自动建,**每个应用一个**) |
@@ -379,8 +379,8 @@ libCVControllerClient.pxr.so libSlamTools.pxr.so
 | 步骤 | 命令 | 耗时 |
 |---|---|---|
 | 安装 | `adb -s $PICO_ADDR install -r app-debug.apk` | **3 s** |
-| 启动 | `am start -W -n com.example.dualdemo/.MainActivity` | **0.9 s** |
-| 自截图 | `bash tools/ui-dump.sh com.example.dualdemo` | **1 s** |
+| 启动 | `am start -W -n <package.id>/.MainActivity` | **0.9 s** |
+| 自截图 | `bash tools/ui-dump.sh <package.id>` | **1 s** |
 | 定向按键 + 再截图 | `tools/pico-panel.sh ... key` + `ui-dump.sh` | **2 s** |
 
 对比 TCL 电视一次安装 60~80 秒(见 [03](03-tcl-tv-sideload.md#安装耗时为什么快不起来))——
@@ -397,8 +397,8 @@ logcat    → 无 FATAL / AndroidRuntime Exception
 
 ```bash
 adb -s $PICO_ADDR install -r app-debug.apk
-bash tools/pico-panel.sh com.example.dualdemo awake
-bash tools/ui-dump.sh com.example.dualdemo
+bash tools/pico-panel.sh <package.id> awake
+bash tools/ui-dump.sh <package.id>
 adb -s $PICO_ADDR logcat -d -t 300 | grep -iE 'FATAL|AndroidRuntime'
 ```
 

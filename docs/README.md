@@ -2,6 +2,9 @@
 
 按主题分文件。每条结论都标注了「怎么验证的」,方便以后环境变了能重新确认。
 
+> **这里只放跨应用通用的知识。** 具体应用的 API / 架构 / 商店资料在
+> `apps/<App>/docs/`、`apps/<App>/store/` 和 `apps/<App>/README.md`。
+
 | 文档 | 主题 |
 |---|---|
 | [01-headless-android-build.md](01-headless-android-build.md) | 不装 Android Studio,纯命令行搭 Android 构建环境(WSL2 + JDK 17 + cmdline-tools + Gradle) |
@@ -34,6 +37,8 @@
   新增的坑记在 [05-gotchas.md](05-gotchas.md#windows-原生git-bash跑脚本的四个坑)
 - `$TV` / `$TV_ADDR` = 电视 serial,`$PICO_ADDR` = 第二台设备
 - 「✅ 已验证」= 真机跑通过;「⚠️ 推测」= 有依据但没实测
+- **`docs/` 不写具体应用细节**(包名、类名、后端 API、商店资料);这些放
+  `apps/<App>/` 下,示例统一用 `<App>` / `<package.id>` 占位
 
 ## 关于设备地址
 

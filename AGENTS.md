@@ -89,11 +89,18 @@
 12. **上架前先跑 `tools/store-preflight.sh`;包名不能是 `com.example.*`;首次上架后不能改包名/签名。**
     三条链路:A = GitHub Release(已有,全自动),B = Google Play, C = 国内商店。
     渠道在 `apps/<App>/publish.properties` 里声明(`targets=github,play,cn`);
-    `DualDemo` 是测试工程,只发 github,不上商店。
+    `self-test/` 或 `apps/` 下带 `selftest.properties` 的测试工程只发 github,不上商店。
     构建用 `release-apk.sh <version> --app <Name> --format both`,自检用
     `store-preflight.sh <version> --target play|cn`。完整流程、Play 的 targetSdk 门槛、
     国内商店的软著/备案要求见 [docs/11](docs/11-publishing.md)。
     **包名/签名一旦上架就是不可逆的** —— 改等于换应用,老用户升不了级。
+13. **文档边界:`docs/` 只放跨应用通用的知识;具体应用细节放 `apps/<App>/`。**
+    - 通用:环境、设备、工具链、发版/上架流程。
+    - 应用专属:后端 API、架构、模块、商店资料、验收记录 →
+      `apps/<App>/docs/`、`apps/<App>/store/`、`apps/<App>/README.md`。
+    - 测试验证工程(`self-test/<App>/`)的文档同样放它自己的目录,不要写进 `docs/`。
+    - 示例命令用 `<App>` / `<package.id>` 占位;不要把某个应用的包名/类名/API
+      写进 `docs/` 的常驻文档。
 
 ---
 
@@ -101,7 +108,9 @@
 
 ```
 docs/            知识沉淀(踩坑、结论、绕行方案)
-apps/            可运行的 Android 工程(每个子目录是一个独立 Gradle 构建)
+apps/            业务应用(每个子目录是一个独立 Gradle 构建)
+  <App>          业务应用;API/架构/商店资料在 apps/<App>/docs/、store/、README
+self-test/       测试验证工程(带 selftest.properties;verify-all 自动发现)
 template/        公共应用模板(new-app.sh 的复制源;不在 apps/ 下,不参与发版)
 tools/           设备连接 / 安装 / 引导 / 发版 / 上架自检脚本
 .agents/skills/  跨项目复用的 Agent Skills(本地技能 + 上游同步;装到 ~/.agents/skills)
@@ -110,6 +119,9 @@ version.properties  版本号唯一来源
   _common.sh             共用的配置载入逻辑(所有脚本 source 它)
   device.env.example     设备地址模板 → 复制成 device.env(不入库)
 ```
+
+> **文档边界**:`docs/` 只放跨应用通用的知识。具体应用的 API / 架构 / 商店资料在
+> `apps/<App>/` 下(见 `apps/<App>/docs/`、`apps/<App>/store/`、`apps/<App>/README.md`)。
 
 ### 新增应用必须遵守
 
@@ -122,7 +134,7 @@ bash tools/new-app.sh <AppName> <package.id>
 
 - 每个工程自带 `settings.gradle.kts` + `gradlew` + `gradle/wrapper/`,**仓库根目录没有** `settings.gradle.kts`
 - 工程之间**不共享代码**;要复用的放 `tools/` 或 `docs/`
-- `apps/DualDemo` 是**测试验证工程**,保持精简,**不要往里加业务功能**
+- 带 `selftest.properties` 的应用(`self-test/` 或 `apps/`)是**测试验证工程**,保持精简,**不要往里加业务功能**
 - 公共脚手架模板在仓库根的 `template/`(`new-app.sh` 从它复制)。它**不在 `apps/` 下** ——
   放进去会被 `release-apk.sh` 当成应用构建/发版
 - `applicationId` 每个工程必须不同(否则装到同一台设备会互相覆盖)
@@ -137,7 +149,7 @@ bash tools/new-app.sh <AppName> <package.id>
 ## 2. 构建
 
 ```bash
-cd apps/DualDemo
+cd self-test/<TestApp>
 ./gradlew assembleDebug
 # → app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -166,7 +178,7 @@ bash tools/devices.sh
 ### TCL 电视:必须用专用脚本
 
 ```bash
-bash tools/tv-install.sh apps/DualDemo/app/build/outputs/apk/debug/app-debug.apk
+bash tools/tv-install.sh self-test/<TestApp>/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 **不要用 `adb install`**,一定会得到:
@@ -594,16 +606,21 @@ bash tools/new-app.sh <AppName> <package.id>
 生成后记得:
 
 1. 写 `apps/<AppName>/README.md`(做什么、目标设备、构建/安装/验收、已知限制)
-2. 改 `app/src/main/res/values/strings.xml` 里的 `app_name`
-3. 确认 `applicationId` 与其它工程不重复
-4. 确认没在工程里写版本号字面量(版本唯一来源是仓库根的 `version.properties`)
-5. 按第 7 节验证一遍完整闭环(构建 → 安装 → 验收)
+2. 应用专属文档放 `apps/<AppName>/docs/`;商店资料放 `apps/<AppName>/store/`
+   —— **不要写进仓库根 `docs/`**
+3. 改 `app/src/main/res/values/strings.xml` 里的 `app_name`
+4. 确认 `applicationId` 与其它工程不重复
+5. 确认没在工程里写版本号字面量(版本唯一来源是仓库根的 `version.properties`)
+6. 按第 7 节验证一遍完整闭环(构建 → 安装 → 验收)
 
 完整约定见 [docs/06-app-conventions.md](docs/06-app-conventions.md)。
 
 ### 加一篇文档
 
-放 `docs/NN-kebab-case.md`,并在 [docs/README.md](docs/README.md) 的表格里加一行。
+- **跨应用通用知识**:放 `docs/NN-kebab-case.md`,并在
+  [docs/README.md](docs/README.md) 的表格里加一行。
+- **具体应用内容**:放 `apps/<App>/docs/`(API/架构/验收)或
+  `apps/<App>/store/`(商店资料),**不要写进仓库根 `docs/`**。
 
 写「怎么验证的」而不只是结论 —— 环境会变,以后需要复现。
 

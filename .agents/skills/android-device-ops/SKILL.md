@@ -63,7 +63,7 @@ adb -s "$DEV" shell dumpsys package <pkg> | grep installerPackageName
 ## 4. 验收
 
 ```bash
-bash tools/device-status.sh "$TV_ADDR" com.example.dualdemo
+bash tools/device-status.sh "$TV_ADDR" <package.id>
 ```
 
 一次拿到:型号/API/ABI、包是否安装及版本、当前前台、最近崩溃、当前界面全部文案。
