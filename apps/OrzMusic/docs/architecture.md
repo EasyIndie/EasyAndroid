@@ -227,6 +227,8 @@ SDK/Android/
 
 ## 4. 当前 Android 结构
 
+> 界面与 Web 播放器的逐项映射见 [`ui-parity.md`](ui-parity.md)。
+
 ```
 apps/OrzMusic/
 ├── core/                         纯 Kotlin(JVM),无 Android
@@ -241,7 +243,8 @@ apps/OrzMusic/
 ├── app/                          Android 客户端
 │   ├── data/                     Retrofit 实现 + ApiFactory
 │   ├── player/                   PlaybackController(Media3)/MediaCache
-│   ├── ui/                       Compose / ViewModel / 自适应
+│   ├── ui/                       AppRoot / FormatCatalog / PlayerDock
+│   │                             QueueDrawer / ShortcutsDialog / screens
 │   └── (解码调用 :audio-kit)
 └── audio-kit/                   平台解码 SDK(AAR + JNI + native/)
     ├── src/main/jniLibs/         liborzaudio.so(arm64 + armv7)

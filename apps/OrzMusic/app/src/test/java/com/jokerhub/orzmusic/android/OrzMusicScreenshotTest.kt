@@ -3,6 +3,7 @@ package com.jokerhub.orzmusic.android
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
@@ -10,13 +11,15 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.darkColorScheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.jokerhub.orzmusic.android.ui.OrzTheme
+import com.jokerhub.orzmusic.android.ui.QueueDrawer
+import com.jokerhub.orzmusic.android.ui.screens.LibraryContent
+import com.jokerhub.orzmusic.android.ui.screens.NowPlayingScreen
 import com.jokerhub.orzmusic.core.model.Artist
 import com.jokerhub.orzmusic.core.model.FormatCount
+import com.jokerhub.orzmusic.core.model.Playlist
 import com.jokerhub.orzmusic.core.model.Song
-import com.jokerhub.orzmusic.android.ui.screens.LibraryContent
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -83,7 +86,7 @@ class OrzMusicScreenshotTest {
 
     private fun render() {
         rule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            OrzTheme {
                 LibraryContent(
                     songs = songs,
                     formats = formats,
@@ -91,9 +94,15 @@ class OrzMusicScreenshotTest {
                     totalSongs = 5533,
                     totalArtists = 713,
                     loading = false,
+                    isSearching = false,
+                    searchQuery = "",
+                    currentId = "1",
+                    isPlaying = true,
+                    locatedSongId = null,
                     onFormat = {},
                     onSong = { _, _ -> },
                     onLoadMore = {},
+                    onClearSearch = {},
                     modifier = Modifier.fillMaxSize().background(Color(0xFF080C10))
                 )
             }
@@ -103,7 +112,6 @@ class OrzMusicScreenshotTest {
     @Test
     fun rendersOnTvSize() {
         render()
-        rule.onNodeWithText("曲库").assertIsDisplayed()
         rule.onNodeWithText("Car Mechanic Simulator 2015").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-tv.png")
     }
@@ -113,5 +121,64 @@ class OrzMusicScreenshotTest {
     fun rendersOnPhoneSize() {
         render()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-phone.png")
+    }
+
+    @Test
+    fun rendersQueueDrawer() {
+        rule.setContent {
+            OrzTheme {
+                QueueDrawer(
+                    queue = songs,
+                    currentId = "1",
+                    playlists = listOf(
+                        Playlist(id = "p1", name = "Chip Mix", songCount = 3)
+                    ),
+                    onClose = {},
+                    onPlay = {},
+                    onRemove = {},
+                    onSavePlaylist = {},
+                    onLoadPlaylist = {},
+                    onDeletePlaylist = {}
+                )
+            }
+        }
+        rule.onNodeWithText("播放队列").assertIsDisplayed()
+        rule.onNodeWithText("Chip Mix").assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-queue.png")
+    }
+
+    @Test
+    fun rendersNowPlaying() {
+        val focus = FocusRequester()
+        rule.setContent {
+            OrzTheme {
+                NowPlayingScreen(
+                    song = songs.first(),
+                    isPlaying = true,
+                    decoding = false,
+                    notice = null,
+                    positionMs = 42_000,
+                    durationMs = 76_800,
+                    volume = 0.7f,
+                    levels = FloatArray(48) { 0.25f + (it % 7) * 0.08f },
+                    queueCount = 3,
+                    serverUrl = "https://music.example.com/",
+                    onBack = {},
+                    onToggle = {},
+                    onPrevious = {},
+                    onNext = {},
+                    onSeek = {},
+                    onSeekBy = {},
+                    onVolume = {},
+                    onMute = {},
+                    onQueue = {},
+                    onLocate = {},
+                    focusRequester = focus,
+                    modifier = Modifier.fillMaxSize().background(Color(0xFF080C10))
+                )
+            }
+        }
+        rule.onNodeWithText("Car Mechanic Simulator 2015").assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-nowplaying.png")
     }
 }

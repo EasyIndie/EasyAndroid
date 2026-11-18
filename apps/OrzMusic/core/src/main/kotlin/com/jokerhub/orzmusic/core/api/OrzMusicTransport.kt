@@ -6,7 +6,9 @@ import com.jokerhub.orzmusic.core.model.FormatSummary
 import com.jokerhub.orzmusic.core.model.Health
 import com.jokerhub.orzmusic.core.model.Page
 import com.jokerhub.orzmusic.core.model.Playlist
+import com.jokerhub.orzmusic.core.model.PlaylistDraft
 import com.jokerhub.orzmusic.core.model.Song
+import com.jokerhub.orzmusic.core.model.SongLocation
 import com.jokerhub.orzmusic.core.model.Stats
 
 /**
@@ -41,4 +43,11 @@ interface OrzMusicTransport {
     suspend fun playlists(): List<Playlist>
 
     suspend fun playlist(id: String): Playlist
+
+    /** 当前曲目在默认排序中的位置;用于“定位当前曲目”。 */
+    suspend fun songLocation(songId: String, per: Int = 50): SongLocation
+
+    suspend fun createPlaylist(draft: PlaylistDraft): Playlist
+
+    suspend fun deletePlaylist(id: String)
 }

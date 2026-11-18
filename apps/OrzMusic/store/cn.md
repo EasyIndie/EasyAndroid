@@ -29,7 +29,7 @@
 | `targetSdk` | 建议 ≥ 30;华为/小米新应用常见 33+ | 36 ✅ |
 | 32 位支持 | TCL 等 TV 商店 | 含 `armeabi-v7a` ✅ |
 | 64 位支持 | 手机商店 | 含 `arm64-v8a` ✅ |
-| 权限 | 仅 `INTERNET` | ✅ |
+| 权限 | `INTERNET` + 前台媒体播放 + 通知(`POST_NOTIFICATIONS`);不含录音/定位/存储 | ✅ |
 | APK 体积 | 多数商店 ≤ 100 MB | 约 27 MB(debug)/ 更小(release) ✅ |
 | 签名 | release,不是 debug | `alias.OrzMusic` ✅ |
 
@@ -44,7 +44,7 @@
 ### 华为 AppGallery
 
 - 新应用通常要 `targetSdk ≥ 33`(已 36)
-- 权限说明填「网络访问」;无其他敏感权限
+- 权限说明填「网络访问、后台音频播放、媒体通知」;不含录音/定位/存储权限
 - 可能需要 64 位包(已含)
 
 ### 小米 / OPPO / vivo

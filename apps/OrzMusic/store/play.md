@@ -20,7 +20,7 @@
 | 项 | 状态 |
 |---|---|
 | 简短说明(≤80 字符) | TODO:例「浏览与播放 KeyGen / 芯片音乐曲库」 |
-| 完整说明(≤4000 字符) | TODO:功能列表 + 自建服务器说明 + 数据/权限声明 |
+| 完整说明(≤4000 字符) | TODO:功能列表 + 自建服务器说明 + 后台播放/通知权限声明 |
 | 应用图标 512×512 PNG(32 位) | TODO:从 `ic_launcher` 导出 |
 | 特色图片 1024×500 PNG | TODO |
 | 手机截图(至少 2 张) | TODO:用 `tools/ui-dump.sh` 或 Roborazzi |
@@ -54,7 +54,7 @@ Play 对音乐/流媒体类会关注版权。提交前确认:
 - [x] 包名不是 `com.example.*`
 - [x] AAB 已签名(`jarsigner -verify`),含 `arm64-v8a`
 - [x] 非 debuggable、无 debug 自截图钩子
-- [x] 权限只有 `INTERNET`
+- [x] 权限:网络、前台媒体播放、通知;不含 `RECORD_AUDIO` / 定位 / 存储
 
 ## 提交流程
 

@@ -197,6 +197,10 @@ dependencies {
     // wasmDecode 的模块音乐(mod/xm/it...)服务端只返回原始文件,ExoPlayer 解不了 ——
     // 客户端会明确提示并给出网页播放器入口(见 docs/12)。
     implementation("androidx.media3:media3-exoplayer:1.5.0")
+    // 后台播放 / 通知栏 / 锁屏控制：ExoPlayer 由 MediaSessionService 持有，
+    // UI 通过 MediaController 连接（见 player/PlaybackService.kt）。
+    implementation("androidx.media3:media3-session:1.5.0")
+    implementation("androidx.media:media:1.7.0")
 
     // ---- JVM 截图测试(不需要设备/模拟器)----
     // 用 Robolectric 在 JVM 上渲染 Compose,Roborazzi 把结果落成 PNG。

@@ -31,7 +31,8 @@ Web Player / 本项目(Android)
 ```
 
 线上库快照(2026-11):**5533 首 / 713 位艺术家 / 25 种格式 / 约 793 MB**。
-`totalAlbums = 0`、`totalPlaylists = 0` —— 专辑页和歌单编辑暂时没有真实数据可验。
+`totalAlbums = 0`、`totalPlaylists = 0` —— 专辑页暂时没有真实数据;
+歌单现在可以在 Android 队列面板里创建、加载、删除。
 
 ### API 速查
 
@@ -47,11 +48,14 @@ OpenAPI 由后端自己提供:`GET /api/openapi.json`。
 | GET | `/api/songs/{id}` | 单曲 |
 | GET | `/api/songs/{id}/stream` | 播放流(策略见下) |
 | GET | `/api/songs/{id}/raw` | 原始文件 |
+| GET | `/api/songs/{id}/location?per=50` | 曲目在默认排序中的页码 / 位置(用于「定位」) |
 | GET | `/api/artists?page=&per=` | 艺术家分页 |
 | GET | `/api/artists/{id}/songs?page=&per=` | 某位艺术家的歌 |
 | GET | `/api/albums?page=&per=` | 专辑分页(当前库为空) |
 | GET | `/api/playlists` | 歌单列表(数组,不分页) |
+| POST | `/api/playlists` | 新建歌单(`name` / `description` / `songIds`) |
 | GET | `/api/playlists/{id}` | 歌单详情(含 `songs`) |
+| DELETE | `/api/playlists/{id}` | 删除歌单 |
 
 ⚠️ **分页参数是 `page` / `per`,不是 `per_page`。** 传 `per_page` 会被忽略,
 响应 `metadata.per` 一直是 10 —— 实测踩过。
@@ -70,6 +74,10 @@ OpenAPI 由后端自己提供:`GET /api/openapi.json`。
 ```
 
 `streamUrl` / `rawUrl` 是**相对路径**,客户端要自己拼服务器地址。
+
+Android 的「保存当前队列」调用 `POST /api/playlists`,「定位当前曲目」调用
+`GET /api/songs/{id}/location`。这两个接口在 Web 端也在用,但后端 OpenAPI
+快照不一定列出 `location`,以实际路由为准。
 
 ---
 
@@ -259,10 +267,11 @@ bash ../../tools/ui-dump.sh com.jokerhub.orzmusic.android --launch
 - [x] **模块音乐播放(主流格式)**:NDK 集成 OrzAudioCore + libopenmpt
 - [ ] 其余芯片格式(`nsf` / `spc` / `sid` / `ahx` / `sap` / `v2m` / adplug 系)
 - [ ] 解码进度 / 可取消(长曲目第一次解码要等几秒)
-- [ ] 解码缓存 LRU(目前只增不减)
-- [ ] 歌单 CRUD(后端 API 已就绪)
+- [x] 解码缓存上限(按最后访问时间清理,300 MB)
+- [x] 歌单创建 / 加载 / 删除(Android 队列面板)
 - [ ] 专辑页(等后端有数据)
-- [ ] 后台播放 + MediaSession + 通知栏 / TV 播放控制
+- [x] 后台播放 + MediaSession + 通知栏 / TV 播放控制
+- [ ] 通知栏切歌在 Activity 被销毁后的独立队列(当前依赖 ViewModel)
 - [ ] 封面图(等后端 album artwork)
 - [ ] Android TV 推荐频道(Play 的 TV 形态因子要求)
 

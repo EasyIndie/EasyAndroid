@@ -7,7 +7,9 @@ import com.jokerhub.orzmusic.core.model.FormatSummary
 import com.jokerhub.orzmusic.core.model.Health
 import com.jokerhub.orzmusic.core.model.Page
 import com.jokerhub.orzmusic.core.model.Playlist
+import com.jokerhub.orzmusic.core.model.PlaylistDraft
 import com.jokerhub.orzmusic.core.model.Song
+import com.jokerhub.orzmusic.core.model.SongLocation
 import com.jokerhub.orzmusic.core.model.Stats
 import com.jokerhub.orzmusic.core.util.UrlResolver
 
@@ -43,6 +45,9 @@ class MusicRepository(initialBaseUrl: String) : OrzMusicTransport {
     override suspend fun search(query: String, format: String?): List<Song> =
         api.search(query = query, format = format)
 
+    override suspend fun songLocation(songId: String, per: Int): SongLocation =
+        api.songLocation(songId = songId, per = per)
+
     override suspend fun artists(page: Int, per: Int): Page<Artist> =
         api.artists(page = page, per = per)
 
@@ -55,4 +60,9 @@ class MusicRepository(initialBaseUrl: String) : OrzMusicTransport {
     override suspend fun playlists(): List<Playlist> = api.playlists()
 
     override suspend fun playlist(id: String): Playlist = api.playlist(id)
+
+    override suspend fun createPlaylist(draft: PlaylistDraft): Playlist =
+        api.createPlaylist(draft)
+
+    override suspend fun deletePlaylist(id: String) = api.deletePlaylist(id)
 }

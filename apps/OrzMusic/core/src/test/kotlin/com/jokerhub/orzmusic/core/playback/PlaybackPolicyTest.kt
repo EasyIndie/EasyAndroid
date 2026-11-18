@@ -7,7 +7,9 @@ import com.jokerhub.orzmusic.core.model.FormatSummary
 import com.jokerhub.orzmusic.core.model.Health
 import com.jokerhub.orzmusic.core.model.Page
 import com.jokerhub.orzmusic.core.model.Playlist
+import com.jokerhub.orzmusic.core.model.PlaylistDraft
 import com.jokerhub.orzmusic.core.model.Song
+import com.jokerhub.orzmusic.core.model.SongLocation
 import com.jokerhub.orzmusic.core.model.Stats
 import com.jokerhub.orzmusic.core.util.UrlResolver
 import org.junit.Assert.assertEquals
@@ -30,6 +32,9 @@ class PlaybackPolicyTest {
         override suspend fun albums(page: Int, per: Int): Page<Album> = error("unused")
         override suspend fun playlists(): List<Playlist> = error("unused")
         override suspend fun playlist(id: String): Playlist = error("unused")
+        override suspend fun songLocation(songId: String, per: Int): SongLocation = error("unused")
+        override suspend fun createPlaylist(draft: PlaylistDraft): Playlist = error("unused")
+        override suspend fun deletePlaylist(id: String) = Unit
     }
 
     private fun song(

@@ -114,6 +114,28 @@ data class Health(
 )
 
 /**
+ * `GET /api/songs/{id}/location?per=`。
+ *
+ * 网页端的“定位当前曲目”依赖它:先拿到默认排序里的页码,再加载那一页。
+ * `index` 是零基位置,`page` 是一基页码。
+ */
+@Serializable
+data class SongLocation(
+    val songId: String = "",
+    val index: Int = 0,
+    val page: Int = 1,
+    val per: Int = 50
+)
+
+/** `POST /api/playlists` 请求体。 */
+@Serializable
+data class PlaylistDraft(
+    val name: String,
+    val description: String? = null,
+    val songIds: List<String> = emptyList()
+)
+
+/**
  * 播放策略 —— 后端 `playStrategy` 的三种值。
  *
  * - [DirectFile]:mp3/ogg/flac/m4a/aac、PCM WAV,服务端直接给原文件,ExoPlayer 能放。

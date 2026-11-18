@@ -6,9 +6,14 @@ import com.jokerhub.orzmusic.core.model.FormatSummary
 import com.jokerhub.orzmusic.core.model.Health
 import com.jokerhub.orzmusic.core.model.Page
 import com.jokerhub.orzmusic.core.model.Playlist
+import com.jokerhub.orzmusic.core.model.PlaylistDraft
 import com.jokerhub.orzmusic.core.model.Song
+import com.jokerhub.orzmusic.core.model.SongLocation
 import com.jokerhub.orzmusic.core.model.Stats
+import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -42,6 +47,12 @@ interface OrzMusicApi {
         @Query("format") format: String? = null
     ): List<Song>
 
+    @GET("api/songs/{id}/location")
+    suspend fun songLocation(
+        @Path("id") songId: String,
+        @Query("per") per: Int = 50
+    ): SongLocation
+
     @GET("api/artists")
     suspend fun artists(
         @Query("page") page: Int = 1,
@@ -66,4 +77,10 @@ interface OrzMusicApi {
 
     @GET("api/playlists/{id}")
     suspend fun playlist(@Path("id") playlistId: String): Playlist
+
+    @POST("api/playlists")
+    suspend fun createPlaylist(@Body draft: PlaylistDraft): Playlist
+
+    @DELETE("api/playlists/{id}")
+    suspend fun deletePlaylist(@Path("id") playlistId: String)
 }

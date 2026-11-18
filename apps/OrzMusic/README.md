@@ -13,22 +13,34 @@
 | 包名(Apple,预留) | `com.jokerhub.orzmusic.apple` |
 | 目标设备 | **手机 / 平板 / TV / VR(Pico 2D 面板)** 同一 APK |
 | minSdk / targetSdk | 29 / **36** |
-| 权限 | `INTERNET`(仅此一项) |
+| 权限 | `INTERNET` / 前台服务 / 通知 / WAKE_LOCK(不申请 `RECORD_AUDIO`) |
 | 默认服务器 | `https://music.jokerhub.cn`(设置页可改自建地址) |
 | 版本号 | 仓库根 [`version.properties`](../../version.properties)(唯一来源) |
 | 发布渠道 | 见 [`publish.properties`](publish.properties) |
 
 ## 功能(当前实现)
 
-- **曲库**:5533+ 首,按格式筛选(`xm` / `mod` / `it` / `mp3` / `ogg` …),分页加载
+界面和交互按 Web 播放器(`player.leaf` / `app.css` / `app.js`)重做,
+详见 [docs/ui-parity.md](docs/ui-parity.md);后台播放/声场/Pico 焦点见
+[docs/playback.md](docs/playback.md)。
+
+- **曲库**:5533+ 首,按模块 / 复古主机 / 芯片合成 / 常规音频分组筛选,分页加载
+- **歌曲表**:标题 / 艺术家 / 专辑 / 格式 / 大小 / 时长;窄屏自动减列
+- **搜索**:顶栏全局搜索(歌曲名 + 艺术家,300ms 防抖),`/` 聚焦
 - **艺术家**:列表 + 某位艺术家的全部曲目
-- **歌单**:后端歌单列表 + 详情
-- **搜索**:歌曲名 / 艺术家名(输入防抖)
-- **播放**:Media3/ExoPlayer 播放 `directFile` 与 `serverDecode` 的曲目
-- **设置**:切换服务器地址、测试连接(`/api/health`)
-- **自适应**:手机单栏 / 平板与 TV 左侧导航 / 宽屏列表+详情两栏
-- **TV**:`leanback` 启动入口、banner、D-pad 可走(`tv-material3` 的 Card)
-- **VR**:Pico 的 2D 面板按宽屏渲染,触摸与遥控都能操作
+- **歌单**:列表 + 详情 + **保存当前队列** + 加载 / 删除
+- **播放队列**:右侧抽屉,显示当前项、点击播放、移除
+- **播放坞**:进度条(点击/拖动/D-pad seek)、上一首 / 播放暂停 / 下一首、时间、音量 / 静音
+- **正在播放**:全屏详情、±5/15 秒、音量、队列入口、定位当前曲目、**真实 PCM 声场**
+- **后台播放**:ExoPlayer 在 `MediaSessionService` 里;按 HOME/锁屏继续播
+- **通知栏 / 锁屏控制**:上一首 / 播放暂停 / 下一首 + 进度;点击通知回到 App
+- **声场**:从 Media3 `AudioProcessor` 的 PCM 管线取数据,不申请录音权限
+- **定位**:`/api/songs/{id}/location` 找到当前曲目所在页并滚动过去
+- **快捷键**:空格播放暂停、`M` 静音、`N/P` 切歌、`L` 定位、`Q` 队列、`/` 搜索、`Esc` 关闭
+- **设置**:切换服务器地址、测试连接(`/api/health`)、调试信息
+- **自适应**:手机单栏 / 平板与 TV 左侧导航 / 宽屏表格式布局
+- **TV**:`leanback` 启动入口、banner、D-pad 可走(`tv-material3` 的 Card/Button)
+- **VR**:Pico 的 2D 面板按宽屏渲染;Pico 使用应用内键盘,避免系统 IME 抢焦点
 
 ## 芯片格式怎么播
 
@@ -104,7 +116,7 @@ cd apps/OrzMusic
 
 # JVM 截图测试(TV / 手机两种尺寸,不碰设备)
 ./gradlew testDebugUnitTest
-# → app/build/outputs/roborazzi/orzmusic-tv.png / orzmusic-phone.png
+# → app/build/outputs/roborazzi/orzmusic-{tv,phone,queue,nowplaying}.png
 ```
 
 > native 解码库已提交在 `audio-kit/src/main/jniLibs/{arm64-v8a,armeabi-v7a}/liborzaudio.so`,
@@ -151,11 +163,15 @@ http://192.0.2.10:8080/      # 局域网调试(清单里允许了 cleartext)
 
 - **其余芯片格式**(`nsf` / `spc` / `sid` / `ahx` / `sap` / `v2m` / adplug 系)没有编进
   native 库,点播时回落到「网页播放器」。已编入的格式见上面的表。
-- 歌单只读:后端有 CRUD API,客户端暂未做创建/编辑。
+- 歌单已支持「保存当前队列 / 加载 / 删除」,但还没有改名和逐首排序。
 - 专辑页未做:后端当前库 `totalAlbums = 0`,没有真实数据可验。
 - 没有登录/账号:后端本身无鉴权。
-- 没有后台播放 / MediaSession / 通知栏控制 —— 后续加。
 - 没有封面图:后端专辑无 artwork,界面用格式徽标代替。
+- **Web 的管理员目录导入没有移植** —— 浏览器文件选择器 + 管理令牌属于管理端能力。
+- **Pico 的系统 BACK 最终由 VRSHELL 抢回焦点**;App 已用 `BackHandler` + Activity 消费 + 焦点恢复兜底,
+  覆盖层都提供屏幕上的关闭/完成按钮,`Esc` 也可用。详见 [docs/playback.md](docs/playback.md)。
+- 通知栏的「上一首/下一首」依赖 App 进程里的 ViewModel 队列;从最近任务划掉后,
+  通知栏仍可控制当前曲目,但切歌需要重新打开 App。
 
 ## 上架
 
