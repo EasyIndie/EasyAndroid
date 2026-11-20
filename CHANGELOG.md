@@ -8,6 +8,17 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.6.1](https://github.com/EasyIndie/EasyAndroid/compare/0.6.0...0.6.1) - 2026-11-20
+
+### 修复
+
+- **build**: gradlew 在 git 里丢了可执行位 —— CI 的 ./gradlew 直接 Permission denied ([10e127b](https://github.com/EasyIndie/EasyAndroid/commit/10e127b))
+- **tools**: pipefail + grep -q 随机误判,大文本判断改用纯 bash contains ([15c3899](https://github.com/EasyIndie/EasyAndroid/commit/15c3899))
+
+### 其他
+
+- **changelog**: 0.6.0 的条目补上被 tag 卡住的那条修复 ([aa910b3](https://github.com/EasyIndie/EasyAndroid/commit/aa910b3))
+
 ## [0.6.0](https://github.com/EasyIndie/EasyAndroid/compare/0.5.0...0.6.0) - 2026-11-20
 
 ### 新增
