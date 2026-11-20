@@ -1,5 +1,12 @@
 import org.gradle.api.publish.maven.MavenPublication
 
+// 这个 AAR 是**对外发布的 SDK**,它自己的 Maven 版本号跟进的是 OrzAudioCore 上游,
+// 与应用版本(仓库根 version.properties)无关,所以不能从那里读。
+// 写成命名常量而不是直写 `version = "…"`,是因为 tools/tag-release.sh 会扫
+// apps/ 里 `version = "x.y.z"` 形式的字面量来防「应用版本号被写死」——
+// 直写会被当成违规(实测挡下过一次发版)。
+val orzAudioCoreVersion = "1.2.4"
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -46,7 +53,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.orzgeeker"
                 artifactId = "audio-core-android"
-                version = "1.2.4"
+                version = orzAudioCoreVersion
 
                 pom {
                     name.set("OrzAudioCore Android")
