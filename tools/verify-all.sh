@@ -208,6 +208,24 @@ step_repo(){
   done
 
   [ "$found" = 1 ] || bad "找不到 .github/workflows/*.yml"
+
+  # gradlew 在 git 里必须是 100755。
+  #
+  # 本机(WSL 的 /mnt、Windows 的 Git Bash)文件权限永远是 777,`./gradlew` 照样能跑,
+  # 所以**本地完全感觉不到**;而 CI 是 checkout 到 Linux,拿到 100644 就是
+  # `./gradlew: Permission denied`。
+  # 实测 2026-11-20:OrzMusic 加进来后 CI 连挂三天,本地怎么跑都是好的,
+  # 直到发 0.6.0 才发现 —— 这条检查就是为了让它在本机就暴露。
+  local bad_mode
+  bad_mode="$(git -C "$REPO" ls-files -s -- '*gradlew' 2>/dev/null | awk '$1!="100755"{print $4}')"
+  if [ -n "$bad_mode" ]; then
+    bad "gradlew 缺可执行位(CI 会 Permission denied):$(printf '%s' "$bad_mode" | tr '\n' ' ')"
+    printf '       修:\n'
+    printf '%s\n' "$bad_mode" | sed 's/^/         git update-index --chmod=+x /'
+  else
+    ok "gradlew 在 git 里是可执行的(100755)"
+  fi
+
   step_skills
 }
 step_repo
