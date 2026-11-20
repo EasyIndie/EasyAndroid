@@ -27,6 +27,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.Text
 import com.jokerhub.orzmusic.android.ui.ArtistRow
 import com.jokerhub.orzmusic.android.ui.EmptyPane
+import com.jokerhub.orzmusic.android.ui.OrzButton
 import com.jokerhub.orzmusic.android.ui.OrzColors
 import com.jokerhub.orzmusic.android.ui.orzButtonColors
 import com.jokerhub.orzmusic.android.ui.SearchField
@@ -132,7 +133,7 @@ fun SongListPane(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Button(colors = orzButtonColors(), onClick = onBack) { Text("‹ 返回") }
+            OrzButton(onClick = onBack) { Text("‹ 返回") }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -149,7 +150,7 @@ fun SongListPane(
                 )
             }
             if (songs.isNotEmpty()) {
-                Button(colors = orzButtonColors(), onClick = { onSong(songs.first(), songs) }) { Text("播放全部") }
+                OrzButton(onClick = { onSong(songs.first(), songs) }) { Text("播放全部") }
             }
         }
 
@@ -221,8 +222,8 @@ fun SettingsContent(
                 onValueChange = { draft = it }
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(colors = orzButtonColors(), onClick = { onSave(draft) }) { Text("保存并重载") }
-                Button(colors = orzButtonColors(), onClick = onCheck) { Text("测试连接") }
+                OrzButton(onClick = { onSave(draft) }) { Text("保存并重载") }
+                OrzButton(onClick = onCheck) { Text("测试连接") }
             }
         }
 
@@ -240,8 +241,8 @@ fun SettingsContent(
                 fontSize = 11.sp
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(colors = orzButtonColors(), onClick = onShortcuts) { Text("快捷键 / 遥控说明") }
-                Button(colors = orzButtonColors(), onClick = { advanced = !advanced }) {
+                OrzButton(onClick = onShortcuts) { Text("快捷键 / 遥控说明") }
+                OrzButton(onClick = { advanced = !advanced }) {
                     Text(if (advanced) "收起调试信息" else "显示调试信息")
                 }
             }

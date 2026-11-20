@@ -1,6 +1,7 @@
 package com.jokerhub.orzmusic.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,7 +66,7 @@ fun QueueDrawer(
         runCatching { closeFocus.requestFocus() }
     }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val panelWidth = if (maxWidth < 520.dp) maxWidth else 390.dp
+        val panelWidth = if (maxWidth < 520.dp) maxWidth else 410.dp
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -78,24 +79,25 @@ fun QueueDrawer(
                 .width(panelWidth)
                 .fillMaxHeight()
                 .background(OrzColors.Surface)
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .border(1.dp, OrzColors.Line.copy(alpha = 0.7f))
+                .padding(horizontal = 18.dp, vertical = 16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("接下来播放", color = OrzColors.Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    Text("播放队列", color = OrzColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("接下来播放", color = OrzColors.Mint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    Text("播放队列", color = OrzColors.Text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
                 Text(
                     text = "${queue.size} 首",
                     color = OrzColors.Muted,
-                    fontSize = 11.sp
+                    fontSize = 12.sp
                 )
                 Spacer(Modifier.width(8.dp))
-                Button(
-                    colors = orzButtonColors(),
+                OrzButton(
+
                     onClick = onClose,
                     modifier = Modifier.focusRequester(closeFocus)
-                ) { Text("✕") }
+                ) { Text("关闭", fontSize = 12.sp) }
             }
             Spacer(Modifier.height(10.dp))
 
@@ -121,18 +123,19 @@ fun QueueDrawer(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(OrzColors.Bg, RoundedCornerShape(10.dp))
-                    .padding(10.dp),
+                    .background(OrzColors.Bg, RoundedCornerShape(12.dp))
+                    .border(1.dp, OrzColors.Line.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text("保存当前队列", color = OrzColors.Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("保存当前队列", color = OrzColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 SearchField(
                     value = playlistName,
                     placeholder = "播放列表名称",
                     onValueChange = { playlistName = it }
                 )
-                Button(
-                    colors = orzButtonColors(),
+                OrzButton(
+
                     onClick = {
                         onSavePlaylist(playlistName)
                         playlistName = ""
@@ -145,7 +148,7 @@ fun QueueDrawer(
 
             if (playlists.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text("已保存歌单", color = OrzColors.MutedDim, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Text("已保存歌单", color = OrzColors.MutedDim, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().height(120.dp),
                     contentPadding = PaddingValues(vertical = 3.dp),
@@ -156,10 +159,13 @@ fun QueueDrawer(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val listFocus = remember { FocusRequester() }
                             Card(
                                 onClick = { onLoadPlaylist(playlist.id) },
-                                modifier = Modifier.weight(1f),
-                                colors = orzCardColors()
+                                modifier = Modifier.weight(1f).tapGesture { onLoadPlaylist(playlist.id) }.focusOnHover(listFocus),
+                                colors = orzCardColors(),
+                                scale = orzCardScale(),
+                                border = orzCardBorder(RoundedCornerShape(10.dp))
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 7.dp),
@@ -169,14 +175,14 @@ fun QueueDrawer(
                                         text = playlist.name,
                                         modifier = Modifier.weight(1f),
                                         color = OrzColors.Text,
-                                        fontSize = 11.sp,
+                                        fontSize = 12.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = "${playlist.songCount ?: 0} 首",
                                         color = OrzColors.MutedDim,
-                                        fontSize = 9.sp
+                                        fontSize = 10.sp
                                     )
                                 }
                             }
@@ -203,12 +209,19 @@ private fun QueueRow(
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), colors = orzCardColors()) {
+    val rowFocus = remember { FocusRequester() }
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().tapGesture(onClick).focusOnHover(rowFocus),
+        colors = orzCardColors(),
+        scale = orzCardScale(),
+        border = orzCardBorder(RoundedCornerShape(10.dp))
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(if (active) OrzColors.MintSoft else Color.Transparent)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .padding(horizontal = 9.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -216,7 +229,7 @@ private fun QueueRow(
                 color = if (active) OrzColors.Mint else OrzColors.MutedDim,
                 fontSize = 10.sp
             )
-            BrandBadge(song.fileFormat, size = 30.dp, modifier = Modifier.padding(start = 7.dp))
+            BrandBadge(song.fileFormat, size = 32.dp, modifier = Modifier.padding(start = 8.dp))
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -225,7 +238,7 @@ private fun QueueRow(
                 Text(
                     text = song.title,
                     color = if (active) OrzColors.Mint else OrzColors.Text,
-                    fontSize = 11.sp,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -233,7 +246,7 @@ private fun QueueRow(
                 Text(
                     text = "${song.artistName} · ${song.fileFormat.uppercase()}",
                     color = OrzColors.Muted,
-                    fontSize = 9.sp,
+                    fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

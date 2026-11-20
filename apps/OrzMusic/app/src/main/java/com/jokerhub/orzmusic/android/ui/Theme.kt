@@ -13,9 +13,12 @@ import androidx.tv.material3.darkColorScheme
  */
 object OrzColors {
     val Bg = Color(0xFF0B0D0C)
+    val BgTop = Color(0xFF0E1411)
+    val BgBottom = Color(0xFF090B0A)
     val Surface = Color(0xFF101311)
     val SurfaceHigh = Color(0xFF151917)
     val SurfaceHover = Color(0xFF1A211C)
+    val SurfaceHighlight = Color(0xFF171E19)
     val Line = Color(0xFF242A26)
     val LineStrong = Color(0xFF3A413D)
     val Mint = Color(0xFF39E58C)

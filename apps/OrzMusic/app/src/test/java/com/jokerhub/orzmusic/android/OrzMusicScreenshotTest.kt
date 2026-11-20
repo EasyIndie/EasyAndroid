@@ -84,7 +84,7 @@ class OrzMusicScreenshotTest {
         FormatCount("ogg", 41)
     )
 
-    private fun render() {
+    private fun render(shellWide: Boolean? = null) {
         rule.setContent {
             OrzTheme {
                 LibraryContent(
@@ -103,6 +103,7 @@ class OrzMusicScreenshotTest {
                     onSong = { _, _ -> },
                     onLoadMore = {},
                     onClearSearch = {},
+                    shellWide = shellWide,
                     modifier = Modifier.fillMaxSize().background(Color(0xFF080C10))
                 )
             }
@@ -121,6 +122,20 @@ class OrzMusicScreenshotTest {
     fun rendersOnPhoneSize() {
         render()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-phone.png")
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1280dp-240dpi")
+    fun rendersOnTabletPortrait() {
+        render(shellWide = false)
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-tablet.png")
+    }
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-240dpi")
+    fun rendersOnTabletLandscape() {
+        render(shellWide = true)
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-tablet-landscape.png")
     }
 
     @Test
@@ -147,8 +162,7 @@ class OrzMusicScreenshotTest {
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-queue.png")
     }
 
-    @Test
-    fun rendersNowPlaying() {
+    private fun renderNowPlaying() {
         val focus = FocusRequester()
         rule.setContent {
             OrzTheme {
@@ -178,7 +192,28 @@ class OrzMusicScreenshotTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun rendersNowPlaying() {
+        renderNowPlaying()
         rule.onNodeWithText("Car Mechanic Simulator 2015").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-nowplaying.png")
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h891dp-420dpi")
+    fun rendersNowPlayingOnPhoneSize() {
+        renderNowPlaying()
+        rule.onNodeWithText("Car Mechanic Simulator 2015").assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-nowplaying-phone.png")
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1280dp-240dpi")
+    fun rendersNowPlayingOnTablet() {
+        renderNowPlaying()
+        rule.onNodeWithText("Car Mechanic Simulator 2015").assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/orzmusic-nowplaying-tablet.png")
     }
 }

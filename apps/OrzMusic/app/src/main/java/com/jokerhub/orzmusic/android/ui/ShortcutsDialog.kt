@@ -1,6 +1,7 @@
 package com.jokerhub.orzmusic.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,19 +54,20 @@ fun ShortcutsDialog(onClose: () -> Unit, modifier: Modifier = Modifier) {
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 540.dp)
+                .widthIn(max = 600.dp)
                 .fillMaxWidth(0.9f)
-                .background(OrzColors.Surface, RoundedCornerShape(16.dp))
-                .padding(20.dp),
+                .background(OrzColors.Surface, RoundedCornerShape(18.dp))
+                .border(1.dp, OrzColors.Line.copy(alpha = 0.8f), RoundedCornerShape(18.dp))
+                .padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("轻松操控", color = OrzColors.Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    Text("键盘 / 遥控快捷键", color = OrzColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("轻松操控", color = OrzColors.Mint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("键盘 / 遥控快捷键", color = OrzColors.Text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
-                Button(
-                    colors = orzButtonColors(),
+                OrzButton(
+
                     onClick = onClose,
                     modifier = Modifier.focusRequester(closeFocus)
                 ) { Text("关闭") }
@@ -74,24 +76,24 @@ fun ShortcutsDialog(onClose: () -> Unit, modifier: Modifier = Modifier) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(OrzColors.SurfaceHigh, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .background(OrzColors.SurfaceHigh, RoundedCornerShape(9.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = key,
-                        modifier = Modifier.widthIn(min = 90.dp),
+                        modifier = Modifier.widthIn(min = 100.dp),
                         color = OrzColors.Mint,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(label, color = OrzColors.Muted, fontSize = 11.sp)
+                    Text(label, color = OrzColors.Muted, fontSize = 12.sp)
                 }
             }
             Text(
                 "TV 遥控:方向键移动焦点,OK 确认,BACK 关闭面板。",
                 color = OrzColors.MutedDim,
-                fontSize = 10.sp
+                fontSize = 10.5.sp
             )
         }
     }

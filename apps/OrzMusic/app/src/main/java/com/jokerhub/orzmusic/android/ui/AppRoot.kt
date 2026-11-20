@@ -23,12 +23,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -43,7 +44,10 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -88,7 +92,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     val initialFocus = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
     val nowPlayingFocus = remember { FocusRequester() }
-    val inAppKeyboard = remember { InAppKeyboardState() }
+    var visualizerOpen by remember { mutableStateOf(true) }
 
     fun dismissInput() {
         runCatching { keyboard?.hide() }
@@ -121,21 +125,10 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
         }
     }
 
-    // Pico 的 PicoXR_CustomDialog / 软键盘会短暂抢走窗口焦点；
-    // 回到前台时主动清掉 IME 并重新把焦点交给当前层，避免 BACK 被系统吃掉。
+    // 系统 IME 由系统自己管理，不要在这里 hide / clearFocus —— 否则搜索框
+    // 刚获得焦点就被强制收起。回到前台只处理网络重试。
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        runCatching { keyboard?.hide() }
-        focusManager.clearFocus(force = false)
-        scope.launch {
-            delay(200)
-            runCatching {
-                when {
-                    state.queueOpen || state.showShortcuts -> Unit // 覆盖层自己请求焦点
-                    state.showNowPlaying -> nowPlayingFocus.requestFocus()
-                    else -> initialFocus.requestFocus()
-                }
-            }
-        }
+        vm.retryIfNeeded()
     }
 
     // 等首帧把侧栏/标签组合出来再请求焦点,否则 LazyColumn 的 item 还没注册,
@@ -153,14 +146,10 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     // 系统 BACK / 遥控返回键：优先关闭最上层覆盖层。
     // 只靠 onKeyEvent 在 Pico 上不稳定（焦点不在 Compose 时收不到）。
     BackHandler(
-        enabled = inAppKeyboard.open || state.queueOpen || state.showShortcuts ||
+        enabled = state.queueOpen || state.showShortcuts ||
             state.showNowPlaying || state.isSearching
     ) {
         when {
-            inAppKeyboard.open -> {
-                inAppKeyboard.close()
-                restoreFocus(nowPlaying = false)
-            }
             state.showShortcuts -> {
                 dismissInput()
                 vm.closeShortcuts()
@@ -195,19 +184,16 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
         }
     }
 
-    CompositionLocalProvider(LocalInAppKeyboard provides inAppKeyboard) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(OrzColors.Bg)
+            .background(
+                Brush.verticalGradient(listOf(OrzColors.BgTop, OrzColors.Bg, OrzColors.BgBottom))
+            )
             .systemBarsPadding()
             .imePadding()
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                // 应用内键盘打开时，字母键不能再触发播放快捷键。
-                if (inAppKeyboard.open && event.key != Key.Escape && event.key != Key.Back) {
-                    return@onKeyEvent false
-                }
                 when (event.key) {
                     Key.Spacebar -> { vm.togglePlay(); true }
                     Key.M -> { vm.toggleMute(); true }
@@ -223,11 +209,6 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     Key.Slash -> { runCatching { searchFocus.requestFocus() }; true }
                     Key.MediaPlayPause -> { vm.togglePlay(); true }
                     Key.Escape, Key.Back -> when {
-                        inAppKeyboard.open -> {
-                            inAppKeyboard.close()
-                            restoreFocus(false)
-                            true
-                        }
                         state.showShortcuts -> { dismissInput(); vm.closeShortcuts(); restoreFocus(false); true }
                         state.queueOpen -> {
                             val keepNowPlaying = state.showNowPlaying
@@ -244,7 +225,8 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                 }
             }
     ) {
-        val wide = maxWidth >= 760.dp
+        // 840dp 以下用「手机/平板竖屏」的顶部导航；840 以上才上侧栏。
+        val wide = maxWidth >= 840.dp
 
         if (wide) {
             Row(modifier = Modifier.fillMaxSize()) {
@@ -258,6 +240,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     onShortcuts = vm::toggleShortcuts,
                     initialFocus = initialFocus
                 )
+                Box(Modifier.width(1.dp).fillMaxHeight().background(OrzColors.Line.copy(alpha = 0.55f)))
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     TopBar(
                         state = state,
@@ -272,8 +255,20 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     Box(modifier = Modifier.weight(1f)) {
                         ContentArea(state, vm, wide = true)
                     }
+                    if (state.current != null) {
+                        if (visualizerOpen) {
+                            VisualizerPanel(
+                                levels = visualizerLevels,
+                                active = state.isPlaying,
+                                compact = false,
+                                onCollapse = { visualizerOpen = false }
+                            )
+                        } else {
+                            CollapsedVisualizer(onExpand = { visualizerOpen = true })
+                        }
+                    }
                     PlayerDock(
-                        state, vm, positionMs, durationMs, visualizerLevels,
+                        state, vm, positionMs, durationMs,
                         onQueue = openQueue,
                         onNowPlaying = openNowPlaying
                     )
@@ -295,8 +290,20 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                 Box(modifier = Modifier.weight(1f)) {
                     ContentArea(state, vm, wide = false)
                 }
+                if (state.current != null) {
+                    if (visualizerOpen) {
+                        VisualizerPanel(
+                            levels = visualizerLevels,
+                            active = state.isPlaying,
+                            compact = true,
+                            onCollapse = { visualizerOpen = false }
+                        )
+                    } else {
+                        CollapsedVisualizer(onExpand = { visualizerOpen = true })
+                    }
+                }
                 PlayerDock(
-                    state, vm, positionMs, durationMs, visualizerLevels,
+                    state, vm, positionMs, durationMs,
                     onQueue = openQueue,
                     onNowPlaying = openNowPlaying
                 )
@@ -361,14 +368,6 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
             })
         }
 
-        if (inAppKeyboard.open) {
-            InAppKeyboardDialog(
-                value = inAppKeyboard.value,
-                onValueChange = inAppKeyboard::update,
-                onDone = { inAppKeyboard.close() }
-            )
-        }
-    }
     }
 
     // Pico VRSHELL 抢走焦点后，用户点回 App 时窗口焦点会回来，但 Compose
@@ -378,19 +377,11 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
             delay(120)
             runCatching {
                 when {
-                    inAppKeyboard.open || latestState.queueOpen || latestState.showShortcuts -> Unit
+                    latestState.queueOpen || latestState.showShortcuts -> Unit
                     latestState.showNowPlaying -> nowPlayingFocus.requestFocus()
                     else -> initialFocus.requestFocus()
                 }
             }
-        }
-    }
-
-    // 应用内键盘关闭后把焦点还给原来的输入卡片。
-    LaunchedEffect(inAppKeyboard.open) {
-        if (!inAppKeyboard.open) {
-            delay(80)
-            runCatching { inAppKeyboard.returnFocus?.requestFocus() }
         }
     }
 }
@@ -406,7 +397,7 @@ private fun Sidebar(
     val groups = remember(state.formats) { FormatCatalog.groups(state.formats) }
     LazyColumn(
         modifier = Modifier
-            .width(220.dp)
+            .width(236.dp)
             .fillMaxHeight()
             .background(OrzColors.Surface)
             .padding(horizontal = 10.dp),
@@ -421,8 +412,14 @@ private fun Sidebar(
             ) {
                 BrandMark()
                 Column {
-                    Text("OrzMusic", color = OrzColors.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text("CHIP AUDIO", color = OrzColors.MutedDim, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+                    Text("OrzMusic", color = OrzColors.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "CHIP AUDIO",
+                        color = OrzColors.MutedDim,
+                        fontSize = 7.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp
+                    )
                 }
             }
         }
@@ -453,8 +450,9 @@ private fun Sidebar(
                     text = group.label.uppercase(),
                     modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 3.dp),
                     color = OrzColors.MutedDim,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
                 )
             }
             items(group.items, key = { "f-${it.id}" }) { meta ->
@@ -499,52 +497,83 @@ private fun TopBar(
         Tab.Settings -> "偏好设置"
     }
 
-    if (wide) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Column(modifier = Modifier.widthIn(min = 150.dp)) {
-                Text(eyebrow, color = OrzColors.Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                Text(title, color = OrzColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            }
-            SearchField(
-                value = state.searchQuery,
-                placeholder = "搜索曲目或艺术家",
-                onValueChange = onSearch,
-                focusRequester = searchFocus,
-                modifier = Modifier.weight(1f).widthIn(max = 520.dp)
-            )
-            if (state.current != null) {
-                Button(colors = orzButtonColors(), onClick = onNowPlaying) { Text("正在播放") }
-            }
-            Button(colors = orzButtonColors(), onClick = onQueue) { Text("队列 ${state.queue.size}") }
-            Button(colors = orzButtonColors(), onClick = onShortcuts) { Text("?") }
-        }
-    } else {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BrandMark()
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("OrzMusic", color = OrzColors.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text(eyebrow, color = OrzColors.MutedDim, fontSize = 8.sp)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (wide) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column(modifier = Modifier.widthIn(min = 170.dp, max = 240.dp)) {
+                    Text(
+                        text = eyebrow,
+                        color = OrzColors.Mint,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.4.sp
+                    )
+                    Text(
+                        text = title,
+                        color = OrzColors.Text,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
                 }
+                SearchField(
+                    value = state.searchQuery,
+                    placeholder = "搜索曲目或艺术家",
+                    onValueChange = onSearch,
+                    focusRequester = searchFocus,
+                    modifier = Modifier.weight(1f).widthIn(max = 560.dp)
+                )
+                Spacer(Modifier.weight(0.06f))
                 if (state.current != null) {
-                    Button(colors = orzButtonColors(), onClick = onNowPlaying) { Text("♪") }
+                    OrzButton(onClick = onNowPlaying) {
+                        Text("正在播放", fontSize = 12.5.sp)
+                    }
                 }
-                Spacer(Modifier.width(6.dp))
-                Button(colors = orzButtonColors(), onClick = onQueue) { Text("队列 ${state.queue.size}") }
+                OrzButton(onClick = onQueue) {
+                    Text("队列 ${state.queue.size}", fontSize = 12.5.sp)
+                }
+                OrzButton(onClick = onShortcuts) {
+                    Text("?", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
             }
-            Spacer(Modifier.height(7.dp))
-            SearchField(
-                value = state.searchQuery,
-                placeholder = "搜索曲目或艺术家",
-                onValueChange = onSearch,
-                focusRequester = searchFocus
-            )
+        } else {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BrandMark()
+                    Spacer(Modifier.width(9.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("OrzMusic", color = OrzColors.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(eyebrow, color = OrzColors.MutedDim, fontSize = 9.sp, letterSpacing = 1.sp)
+                    }
+                    if (state.current != null) {
+                        // 窄屏只有图标没有文字:必须补 contentDescription,否则
+                        // uiautomator / TalkBack 看到的是一个无名可点节点。
+                        OrzButton(
+                            onClick = onNowPlaying,
+                            modifier = Modifier.semantics { contentDescription = "正在播放" }
+                        ) {
+                            PlayIcon(iconSize = 13.dp, tint = OrzColors.Mint)
+                        }
+                    }
+                    Spacer(Modifier.width(7.dp))
+                    OrzButton(onClick = onQueue) {
+                        Text("队列 ${state.queue.size}", fontSize = 11.5.sp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                SearchField(
+                    value = state.searchQuery,
+                    placeholder = "搜索曲目或艺术家",
+                    onValueChange = onSearch,
+                    focusRequester = searchFocus
+                )
+            }
         }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(OrzColors.Line.copy(alpha = 0.7f)))
     }
 }
 
@@ -556,10 +585,15 @@ private fun CompactTabs(selected: Tab, onSelect: (Tab) -> Unit, initialFocus: Fo
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items(Tab.entries, key = { it.name }) { tab ->
+            val tabFocus = remember { FocusRequester() }
             Card(
                 onClick = { onSelect(tab) },
-                modifier = if (tab == Tab.entries.first()) Modifier.focusRequester(initialFocus) else Modifier,
-                colors = orzCardColors()
+                modifier = (if (tab == Tab.entries.first()) Modifier.focusRequester(initialFocus) else Modifier)
+                    .tapGesture { onSelect(tab) }
+                    .focusOnHover(tabFocus),
+                colors = orzCardColors(),
+                scale = orzCardScale(),
+                border = orzCardBorder(RoundedCornerShape(10.dp))
             ) {
                 Text(
                     text = tab.label,
@@ -583,7 +617,8 @@ private fun StatusArea(state: UiState, vm: AppViewModel) {
             accent = OrzColors.Danger,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
         ) {
-            Button(colors = orzButtonColors(), onClick = vm::clearError) { Text("关闭") }
+            OrzButton(onClick = vm::retry) { Text("重试") }
+            OrzButton(onClick = vm::clearError) { Text("关闭") }
         }
     }
     state.notice?.let { message ->
@@ -592,8 +627,70 @@ private fun StatusArea(state: UiState, vm: AppViewModel) {
             accent = OrzColors.Mint,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
         ) {
-            Button(colors = orzButtonColors(), onClick = vm::clearNotice) { Text("关闭") }
+            OrzButton(onClick = vm::clearNotice) { Text("关闭") }
         }
+    }
+}
+
+/** 与 Web 版 `.viz-panel` 对齐：固定在播放坞上方，而不是塞进播放坞或详情页。 */
+@Composable
+private fun VisualizerPanel(
+    levels: FloatArray,
+    active: Boolean,
+    compact: Boolean,
+    onCollapse: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (compact) 96.dp else 132.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(OrzColors.BgBottom, OrzColors.BgTop, OrzColors.BgBottom)
+                )
+            )
+    ) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(OrzColors.Line))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "全息声场",
+                color = OrzColors.Mint,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.5.sp
+            )
+            Spacer(Modifier.weight(1f))
+            Text("PCM · 实时", color = OrzColors.MutedDim, fontSize = 9.sp)
+            Spacer(Modifier.width(10.dp))
+            VizToggleButton(label = "收起", onClick = onCollapse)
+        }
+        VisualizerBars(
+            levels = levels,
+            active = active,
+            maxBars = if (compact) 32 else 48,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 10.dp)
+        )
+    }
+}
+
+/** 收起后的入口，对齐 Web `.viz-expand-btn`。 */
+@Composable
+private fun CollapsedVisualizer(onExpand: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(32.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        VizToggleButton(label = "▸ 声场", onClick = onExpand)
     }
 }
 
@@ -603,7 +700,6 @@ private fun PlayerDock(
     vm: AppViewModel,
     positionMs: Long,
     durationMs: Long,
-    levels: FloatArray,
     onQueue: () -> Unit,
     onNowPlaying: () -> Unit
 ) {
@@ -612,52 +708,86 @@ private fun PlayerDock(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(OrzColors.Surface)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        if (song != null) {
-            VisualizerBars(
-                levels = levels,
-                active = state.isPlaying,
-                modifier = Modifier.fillMaxWidth().height(30.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(OrzColors.SurfaceHigh.copy(alpha = 0.92f), OrzColors.Surface)
+                )
             )
+    ) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(OrzColors.Line))
+        if (song != null) {
             SeekBar(
                 fraction = fraction,
                 onSeek = { value -> if (durationMs > 0) vm.seekTo((value * durationMs).toLong()) },
                 onSeekBy = vm::seekBy,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             )
-        } else {
-            Spacer(Modifier.height(4.dp))
         }
 
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val compact = maxWidth < 620.dp
-            if (compact) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        NowPlayingMini(song, state, onOpen = onNowPlaying, modifier = Modifier.weight(1f))
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Transport(state, vm, time = "${formatTime(positionMs)} / ${formatTime(durationMs)}")
-                        Spacer(Modifier.weight(1f))
-                        // 窄屏隐藏滑条（和 Web 在窄屏隐藏音量一致），静音仍可用
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            val compact = maxWidth < 760.dp
+            val showVolume = maxWidth >= 980.dp
+            if (song == null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NowPlayingMini(null, state, onOpen = onNowPlaying, modifier = Modifier.weight(1f))
+                    if (!compact) {
                         Text(
-                            text = if (state.volume <= 0f) "🔇" else "🔊",
-                            modifier = Modifier.clickable { vm.toggleMute() }.padding(6.dp),
-                            fontSize = 14.sp
+                            text = "从曲库选一首，或按 / 搜索",
+                            color = OrzColors.MutedDim,
+                            fontSize = 11.sp
                         )
                     }
                 }
+            } else if (compact) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NowPlayingMini(song, state, onOpen = onNowPlaying, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(10.dp))
+                    Transport(state, vm, time = null, compact = true)
+                }
             } else {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    NowPlayingMini(song, state, onOpen = onNowPlaying, modifier = Modifier.weight(1.2f))
-                    Transport(state, vm, time = "${formatTime(positionMs)} / ${formatTime(durationMs)}")
-                    Spacer(Modifier.weight(0.3f))
-                    VolumeControl(state.volume, vm::setVolume, vm::toggleMute)
+                // 三等分：左曲目 / 中播放控制 / 右队列+音量。
+                // 只有左右同宽，中间的「上一首 · 播放 · 下一首 · 时长」才会真正落在
+                // 面板几何中心；否则会被左侧曲目卡片的 weight 推偏。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        NowPlayingMini(
+                            song = song,
+                            state = state,
+                            onOpen = onNowPlaying,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Transport(
+                            state,
+                            vm,
+                            time = "${formatTime(positionMs)} / ${formatTime(durationMs)}",
+                            compact = false
+                        )
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            OrzRoundButton(
+                                onClick = onQueue,
+                                buttonSize = 32.dp,
+                                contentDescription = "播放队列"
+                            ) {
+                                QueueIcon(iconSize = 13.dp, tint = OrzColors.Muted)
+                            }
+                            if (showVolume) {
+                                VolumeControl(state.volume, vm::setVolume, vm::toggleMute)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -673,25 +803,32 @@ private fun NowPlayingMini(
 ) {
     if (song == null) {
         Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-            BrandBadge("—", size = 34.dp)
-            Column(modifier = Modifier.padding(start = 9.dp)) {
-                Text("选择一首曲目开始播放", color = OrzColors.Muted, fontSize = 12.sp)
-                Text("支持原生 · 服务端 · 直接播放", color = OrzColors.MutedDim, fontSize = 9.sp)
+            BrandBadge("—", size = 38.dp)
+            Column(modifier = Modifier.padding(start = 10.dp)) {
+                Text("选择一首曲目开始播放", color = OrzColors.Muted, fontSize = 13.sp)
+                Text("支持原生 · 服务端 · 直接播放", color = OrzColors.MutedDim, fontSize = 10.sp)
             }
         }
         return
     }
-    Card(onClick = onOpen, modifier = modifier, colors = orzCardColors()) {
+    val miniFocus = remember { FocusRequester() }
+    Card(
+        onClick = onOpen,
+        modifier = modifier.tapGesture(onOpen).focusOnHover(miniFocus),
+        colors = orzCardColors(),
+        scale = orzCardScale(),
+        border = orzCardBorder(RoundedCornerShape(10.dp))
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 5.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BrandBadge(song.fileFormat, size = 34.dp)
-            Column(modifier = Modifier.padding(start = 9.dp).weight(1f, fill = false)) {
+            BrandBadge(song.fileFormat, size = 38.dp)
+            Column(modifier = Modifier.padding(start = 10.dp).weight(1f, fill = false)) {
                 Text(
                     text = song.title,
                     color = OrzColors.Text,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -700,7 +837,7 @@ private fun NowPlayingMini(
                     text = "${song.artistName} · ${song.fileFormat.uppercase()}" +
                         if (state.decoding) " · 解码中…" else "",
                     color = OrzColors.Muted,
-                    fontSize = 9.sp,
+                    fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -710,32 +847,75 @@ private fun NowPlayingMini(
 }
 
 @Composable
-private fun Transport(state: UiState, vm: AppViewModel, time: String) {
+private fun Transport(state: UiState, vm: AppViewModel, time: String?, compact: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 7.dp)
     ) {
-        Button(colors = orzButtonColors(), onClick = vm::playPrevious) { Text("|◀") }
-        Button(colors = orzButtonColors(), onClick = vm::togglePlay) { Text(if (state.isPlaying) "II" else "▶") }
-        Button(colors = orzButtonColors(), onClick = vm::playNext) { Text("▶|") }
-        Text(time, color = OrzColors.Muted, fontSize = 9.sp)
+        OrzRoundButton(
+            onClick = vm::playPrevious,
+            buttonSize = if (compact) 30.dp else 33.dp,
+            contentDescription = "上一首"
+        ) {
+            PreviousIcon(iconSize = 12.dp, tint = OrzColors.Muted)
+        }
+        OrzRoundButton(
+            onClick = vm::togglePlay,
+            buttonSize = if (compact) 40.dp else 44.dp,
+            primary = true,
+            contentDescription = if (state.isPlaying) "暂停" else "播放"
+        ) {
+            if (state.isPlaying) {
+                PauseIcon(iconSize = 16.dp, tint = OrzColors.Bg)
+            } else {
+                PlayIcon(iconSize = 16.dp, tint = OrzColors.Bg)
+            }
+        }
+        OrzRoundButton(
+            onClick = vm::playNext,
+            buttonSize = if (compact) 30.dp else 33.dp,
+            contentDescription = "下一首"
+        ) {
+            NextIcon(iconSize = 12.dp, tint = OrzColors.Muted)
+        }
+        if (time != null) {
+            Text(
+                text = time,
+                modifier = Modifier.width(76.dp).padding(start = 4.dp),
+                color = OrzColors.Muted,
+                fontSize = 9.5.sp,
+                textAlign = TextAlign.Start
+            )
+        }
     }
 }
 
 @Composable
 private fun VolumeControl(volume: Float, onChange: (Float) -> Unit, onMute: () -> Unit) {
     Row(
-        modifier = Modifier.widthIn(max = 180.dp),
+        modifier = Modifier.width(190.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        OrzRoundButton(
+            onClick = onMute,
+            buttonSize = 30.dp,
+            contentDescription = if (volume <= 0f) "取消静音" else "静音"
+        ) {
+            VolumeIcon(
+                muted = volume <= 0f,
+                tint = if (volume <= 0f) OrzColors.Mint else OrzColors.Muted,
+                iconSize = 14.dp
+            )
+        }
+        VolumeSlider(volume = volume, onChange = onChange, modifier = Modifier.width(88.dp))
         Text(
-            text = if (volume <= 0f) "🔇" else "🔊",
-            modifier = Modifier.clickable { onMute() }.padding(4.dp),
-            fontSize = 13.sp
+            text = "${(volume * 100).toInt()}%",
+            modifier = Modifier.width(34.dp),
+            color = OrzColors.MutedDim,
+            fontSize = 9.5.sp,
+            textAlign = TextAlign.End
         )
-        VolumeSlider(volume = volume, onChange = onChange, modifier = Modifier.width(86.dp))
-        Text("${(volume * 100).toInt()}%", color = OrzColors.MutedDim, fontSize = 9.sp)
     }
 }
 
@@ -758,6 +938,7 @@ private fun ContentArea(state: UiState, vm: AppViewModel, wide: Boolean) {
             onSong = vm::play,
             onLoadMore = vm::loadMoreSongs,
             onClearSearch = vm::clearSearch,
+            shellWide = wide,
             modifier = Modifier.fillMaxSize()
         )
 

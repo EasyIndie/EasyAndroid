@@ -27,6 +27,7 @@ import com.jokerhub.orzmusic.core.model.FormatCount
 import com.jokerhub.orzmusic.core.model.Song
 import com.jokerhub.orzmusic.android.ui.EmptyPane
 import com.jokerhub.orzmusic.android.ui.FormatChip
+import com.jokerhub.orzmusic.android.ui.OrzButton
 import com.jokerhub.orzmusic.android.ui.OrzColors
 import com.jokerhub.orzmusic.android.ui.orzButtonColors
 import com.jokerhub.orzmusic.android.ui.SongRow
@@ -57,13 +58,16 @@ fun LibraryContent(
     onSong: (Song, List<Song>) -> Unit,
     onLoadMore: () -> Unit,
     onClearSearch: () -> Unit,
+    shellWide: Boolean? = null,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val wide = maxWidth >= 760.dp
+        // 内容区自己也要判断：侧栏占掉 236dp 后，屏幕宽 ≠ 可用宽。
+        val table = maxWidth >= 560.dp
+        val wideShell = shellWide ?: (maxWidth >= 760.dp)
         val showAlbum = maxWidth >= 800.dp
         val showSize = maxWidth >= 800.dp
-        val pagePadding = if (wide) 22.dp else 12.dp
+        val pagePadding = if (table) 22.dp else 12.dp
         val listState = rememberLazyListState()
 
         LaunchedEffect(locatedSongId) {
@@ -74,7 +78,7 @@ fun LibraryContent(
 
         Column(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.padding(horizontal = pagePadding, vertical = 8.dp)) {
-                if (!wide) {
+                if (!wideShell) {
                     Text(
                         text = if (isSearching) "搜索结果" else if (selectedFormat == null) "全部曲目" else selectedFormat.uppercase(),
                         color = OrzColors.Text,
@@ -89,12 +93,12 @@ fun LibraryContent(
                         "$totalSongs 首 · $totalArtists 位艺术家 · ${formats.size} 种格式"
                     },
                     color = OrzColors.Muted,
-                    fontSize = 11.sp
+                    fontSize = 12.sp
                 )
             }
 
-            // 手机/窄屏：格式分组用横向 chips；宽屏由左侧栏承担。
-            if (!wide) {
+            // 手机/平板紧凑布局：格式分组用横向 chips；有侧栏时由侧栏承担。
+            if (!wideShell) {
                 LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = PaddingValues(horizontal = pagePadding),
@@ -132,7 +136,7 @@ fun LibraryContent(
                     contentPadding = PaddingValues(horizontal = pagePadding, vertical = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    if (wide) {
+                    if (table) {
                         item {
                             SongTableHeader(showAlbum = showAlbum, showSize = showSize)
                         }
@@ -143,7 +147,7 @@ fun LibraryContent(
                             isCurrent = currentId == song.id,
                             isPlaying = isPlaying && currentId == song.id,
                             onClick = { onSong(song, songs) },
-                            showArtist = wide,
+                            showArtist = table,
                             showAlbum = showAlbum,
                             showSize = showSize
                         )
@@ -154,7 +158,7 @@ fun LibraryContent(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                                 horizontalArrangement = Arrangement.Center
                             ) {
-                                Button(colors = orzButtonColors(), onClick = onLoadMore) {
+                                OrzButton(onClick = onLoadMore) {
                                     Text(if (loading) "加载中…" else "加载更多 · ${songs.size}/$totalSongs")
                                 }
                             }
@@ -168,7 +172,7 @@ fun LibraryContent(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = pagePadding, vertical = 6.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Button(colors = orzButtonColors(), onClick = onClearSearch) { Text("清除搜索") }
+                    OrzButton(onClick = onClearSearch) { Text("清除搜索") }
                 }
             }
         }

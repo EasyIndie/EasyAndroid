@@ -124,6 +124,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ── 曲库 ──────────────────────────────────────────────────────
+
+    /** 网络恢复后用户手动重试；失败时不会把已有列表清空。 */
+    fun retry() = reloadHome()
+
+    /** 回到前台时如果首屏因网络失败是空的，自动再试一次。 */
+    fun retryIfNeeded() {
+        val s = _state.value
+        if (s.error != null && s.songs.isEmpty() && !s.loading) reloadHome()
+    }
+
     private fun reloadHome() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
