@@ -8,6 +8,70 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.6.0](https://github.com/EasyIndie/EasyAndroid/compare/0.5.0...0.6.0) - 2026-11-20
+
+### 新增
+
+- **apps**: OrzMusic 品牌图标、TV banner 与商店物料 ([596ce32](https://github.com/EasyIndie/EasyAndroid/commit/596ce32))
+- **apps**: OrzMusic 10-foot 视觉与输入重做 —— 自绘图标、独立声场面板、系统输入法 ([282431d](https://github.com/EasyIndie/EasyAndroid/commit/282431d))
+- **apps**: 接入 MediaSession 后台播放、真实 PCM 声场并兜底 Pico 焦点 ([5d86780](https://github.com/EasyIndie/EasyAndroid/commit/5d86780))
+- **apps**: 新增 OrzMusic Android 客户端 ([5a1085d](https://github.com/EasyIndie/EasyAndroid/commit/5a1085d))
+- **apps**: 新增正式应用 EasyInfo 与 A/B/C 上架链路 ([d95f696](https://github.com/EasyIndie/EasyAndroid/commit/d95f696))
+- **skills**: 集中管理 Android 开发技能集合并支持自动更新 ([369a78f](https://github.com/EasyIndie/EasyAndroid/commit/369a78f))
+- **tools**: png-rowpitch.py —— 从截图量文字行距,把「字号有没有变」变成数字 ([692959c](https://github.com/EasyIndie/EasyAndroid/commit/692959c))
+- **verify-all**: 新增仓库自检段,盯 CI 的 action 主版本与 runner pin ([c8cb46d](https://github.com/EasyIndie/EasyAndroid/commit/c8cb46d))
+
+### 修复
+
+- **tools**: ui-dump 在电视上取到截断的 PNG —— 等到 IEND 再 pull ([8d7ed21](https://github.com/EasyIndie/EasyAndroid/commit/8d7ed21))
+- **docs**: U 盘「二级目录」挡不住安装器扫描;要改的是后缀不是位置 ([22b688a](https://github.com/EasyIndie/EasyAndroid/commit/22b688a))
+- **tv-install**: 缓存里的失效条目会让人「装了个寂寞」;装完还要比字节数 ([38857bd](https://github.com/EasyIndie/EasyAndroid/commit/38857bd))
+- **tv-install**: 安装确认框的按钮没有焦点,盲按键必然装不上;标签匹配漏掉中文名 ([a9d7355](https://github.com/EasyIndie/EasyAndroid/commit/a9d7355))
+- **tv-install**: 给「等列表稳定」加墙钟上界,屏保下不再磨 36 分钟且不报原因 ([e3d6263](https://github.com/EasyIndie/EasyAndroid/commit/e3d6263))
+- **ui-dump**: 取到空图时换通路重试并报出设备端大小,不再只说'文件是空的' ([18aa0bc](https://github.com/EasyIndie/EasyAndroid/commit/18aa0bc))
+- **tools**: Pico 段漏转路径 + 电视安装失败被误报成「装到旧版」 ([3c630fc](https://github.com/EasyIndie/EasyAndroid/commit/3c630fc))
+- **tools**: 装好 Android SDK 后才暴露的 5 处问题 ([f610ac3](https://github.com/EasyIndie/EasyAndroid/commit/f610ac3))
+- **tools**: keytool 的路径参数要转换,证书到期时间解析忽略时区 ([c2c64d7](https://github.com/EasyIndie/EasyAndroid/commit/c2c64d7))
+- **tools**: release-apk 写 local.properties 时没转 SDK 路径,Windows 上会构建失败 ([c2be768](https://github.com/EasyIndie/EasyAndroid/commit/c2be768))
+- **tools**: 原生程序的路径必须显式转换 —— 新增 gitpath,修发版脚本 ([c1de196](https://github.com/EasyIndie/EasyAndroid/commit/c1de196))
+- **keystore,ci**: 缺 JDK 时的三处误报,以及 --scan 在 Windows 上的全盘误报 ([fdda0a5](https://github.com/EasyIndie/EasyAndroid/commit/fdda0a5))
+
+### 其他
+
+- 文档按应用拆分，README/docs 完全通用化 ([eeeb98d](https://github.com/EasyIndie/EasyAndroid/commit/eeeb98d))
+- **tools**: 测试应用移到 self-test，自检应用自动发现 ([b596155](https://github.com/EasyIndie/EasyAndroid/commit/b596155))
+- **apps**: 删除 EasyInfo 原型 ([c2e109a](https://github.com/EasyIndie/EasyAndroid/commit/c2e109a))
+- **publishing**: 补充上架流程索引与仓库约束 ([7fdcb07](https://github.com/EasyIndie/EasyAndroid/commit/7fdcb07))
+- **template**: 把公共应用模板从 DualDemo 抽到 template/ ([069660b](https://github.com/EasyIndie/EasyAndroid/commit/069660b))
+- **gotchas**: Session 0 读不到 Session 1 的凭据 —— gh 和 git push 会一起哑 ([d3fc2fd](https://github.com/EasyIndie/EasyAndroid/commit/d3fc2fd))
+- **tv**: 页面改由 TV Bro 主页负责，去掉 .bashrc 里的自动打开 ([23d9ce1](https://github.com/EasyIndie/EasyAndroid/commit/23d9ce1))
+- **tv**: 精炼方案 C 与全文结构 —— 剔掉过程残留，只留方案本身 ([c579a2a](https://github.com/EasyIndie/EasyAndroid/commit/c579a2a))
+- **tv**: 日常操作一页纸 —— 打开 Termux 就把隧道和页面一起带出来 ([f202463](https://github.com/EasyIndie/EasyAndroid/commit/f202463))
+- **tv**: launchd 起 herdr 会丢 direct_terminal_attach —— 用 script 套 PTY 恢复 ([e086b13](https://github.com/EasyIndie/EasyAndroid/commit/e086b13))
+- **tv**: 重启实测后的三处修正 —— 隧道要自愈、ps -A 不能判重、pkill -f 会自杀 ([8563e6a](https://github.com/EasyIndie/EasyAndroid/commit/8563e6a))
+- **tv**: 方案 C —— herdr 的 WebUI 走 SSH 隧道，实体键盘打中文实测打通 ([83a2f57](https://github.com/EasyIndie/EasyAndroid/commit/83a2f57))
+- **dualdemo**: 加一个 debug-only 的 IME 探针,用来判断实体键有没有被交给输入法 ([bb654d5](https://github.com/EasyIndie/EasyAndroid/commit/bb654d5))
+- **tv**: 更正 Termux 字号那节 —— 不是「设不了」,是必须存成字符串 ([219196b](https://github.com/EasyIndie/EasyAndroid/commit/219196b))
+- **tv**: Termux 字号在电视上设不了 —— 五条路全部实测无效,能用的只有 wm density ([4c78ac5](https://github.com/EasyIndie/EasyAndroid/commit/4c78ac5))
+- **tv**: 鼠标结论定案 —— 判据改成 SurfaceFlinger 的 type=CURSOR,截图不可靠 ([4b76f2c](https://github.com/EasyIndie/EasyAndroid/commit/4b76f2c))
+- **tv**: 修掉重复的代码围栏 ([04c8a40](https://github.com/EasyIndie/EasyAndroid/commit/04c8a40))
+- **tv**: 补「键盘 / 鼠标:接哪种、接哪个口」——实机验过三层证据 ([5a92cab](https://github.com/EasyIndie/EasyAndroid/commit/5a92cab))
+- **gotchas**: 「命令报成功但结果不存在」的最阴一种 —— 设备掉线 + 输出被 /dev/null 吃掉 ([d95cd7f](https://github.com/EasyIndie/EasyAndroid/commit/d95cd7f))
+- **docs**: 归档后缀 .apk.off → .apk.disabled(更自解释) ([8b2fd61](https://github.com/EasyIndie/EasyAndroid/commit/8b2fd61))
+- **readme**: 「已沉淀的主题」加一行,指向 docs/09(电视当远程开发终端) ([779c5fd](https://github.com/EasyIndie/EasyAndroid/commit/779c5fd))
+- **tv**: 把两套远程开发方案合写成 09-tv-remote-dev.md ([3ca9ca4](https://github.com/EasyIndie/EasyAndroid/commit/3ca9ca4))
+- **tcl**: adb install 的拦截再验一遍;确认框必须用 tap;U 盘太肥才是「慢」的真因 ([c4f1c24](https://github.com/EasyIndie/EasyAndroid/commit/c4f1c24))
+- **agents**: 补 D-pad 遍历的判据 —— 不 settle 会把「还在滚」误判成「焦点卡住」 ([1bdd00f](https://github.com/EasyIndie/EasyAndroid/commit/1bdd00f))
+- 把 sort/find 抢 PATH 与 sed 单引号两个坑补进「Windows 原生跑脚本的坑」 ([b2c44c9](https://github.com/EasyIndie/EasyAndroid/commit/b2c44c9))
+- **agents**: 补一条坑 —— 同一文件的多处修改并行发会静默丢改动 ([9517a0d](https://github.com/EasyIndie/EasyAndroid/commit/9517a0d))
+- **agents**: 把 CI 的 runner 与 action 版本约束写进硬性规则 ([bd394ad](https://github.com/EasyIndie/EasyAndroid/commit/bd394ad))
+- action 升到 Node 24 主版本,并把 runner 显式 pin 到 ubuntu-24.04 ([45d4f52](https://github.com/EasyIndie/EasyAndroid/commit/45d4f52))
+- **agents**: 补沙箱里 git 写不进远端跟踪引用,并补全环境速查的两侧路径 ([c607e43](https://github.com/EasyIndie/EasyAndroid/commit/c607e43))
+- 明确 debug 签名为「有意按环境各自持有」,不是待办 ([2970c2e](https://github.com/EasyIndie/EasyAndroid/commit/2970c2e))
+- 补「debug 签名跨环境不一致」这一坑 ([9e54625](https://github.com/EasyIndie/EasyAndroid/commit/9e54625))
+- 补 Windows 装 SDK、.bat 调用,以及三条「装了才暴露」的教训 ([3f8780a](https://github.com/EasyIndie/EasyAndroid/commit/3f8780a))
+- 补 Windows 原生装 JDK 17 的方式 ([9ab8ea6](https://github.com/EasyIndie/EasyAndroid/commit/9ab8ea6))
+
 ## [0.5.0](https://github.com/EasyIndie/EasyAndroid/compare/0.4.4...0.5.0) - 2026-09-18
 
 ### 新增
