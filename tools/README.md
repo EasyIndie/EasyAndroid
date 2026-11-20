@@ -64,6 +64,15 @@ badging_field "$(badging)" "package:" name             # 不会误取 launchable
 badging_field "$(badging)" "application-label:" ""     # 没有 `=` 的行,取 `:` 之后
 ```
 
+**判断「大文本里包含某个串」用 `contains`,别用 `printf | grep -q`**。
+脚本普遍 `set -o pipefail`,而 `grep -q` 一命中就退出,写端还在灌管道 →
+EPIPE，整条 pipeline 返非 0 —— 「包含」被判成「不包含」。实测对 `unzip -l`
+的 21 KB 输出判 200 轮错 6 次，表现是随机报「AAB 缺少 xxx」。
+
+```bash
+contains "$entries" 'base/manifest/AndroidManifest.xml' && echo 有
+```
+
 **另外两件别依赖 PATH 的事**(见 [AGENTS.md](../AGENTS.md) §6):版本比较用 `_ver_ge`
 (纯 bash,`"10" > "9"` 也判得对),递归找文件用 `$FIND`(绝对路径的 GNU find)——
 Windows 自带的 `sort.exe` / `find.exe` 会抢 PATH,而它们不认 `-V` / `-delete`,

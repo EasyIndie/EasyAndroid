@@ -353,7 +353,7 @@ for apk in "${BUILT[@]}"; do
   # 仓库约定:开发/验收全程用 debug 包,只有发版才出正式包。
   # debug 包在 aapt2 badging 里会多一行 application-debuggable —— 用它当机器判据,
   # 挡住「把 debug 包装成正式包发出去」。
-  if printf '%s' "$badging" | grep -q 'application-debuggable'; then
+  if contains "$badging" 'application-debuggable'; then
     echo "  ❌ $n 是 debuggable 的 —— 这是 debug 包,不是正式包" >&2; fail=1
   else
     echo "  ✅ $n 非 debuggable(正式包)"
@@ -374,7 +374,7 @@ if [ ${#BUILT_AAB[@]} -gt 0 ]; then
     entries="$(unzip -l "$aab" 2>/dev/null)"
     aab_ok=1
     for e in BundleConfig.pb base/manifest/AndroidManifest.xml base/dex/classes.dex; do
-      printf '%s' "$entries" | grep -qF "$e" || { echo "  ❌ $n 缺少 $e" >&2; aab_ok=0; fail=1; }
+      contains "$entries" "$e" || { echo "  ❌ $n 缺少 $e" >&2; aab_ok=0; fail=1; }
     done
     [ "$aab_ok" = 1 ] && echo "  ✅ $n 结构完整"
     if [ -n "$JARSIGNER" ]; then

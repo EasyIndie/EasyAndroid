@@ -462,6 +462,19 @@ badging_field(){
   return 1
 }
 
+# contains <文本> <子串> —— 纯 bash 的子串判断
+#
+# 为什么不用 `printf '%s' "$big" | grep -qF "$needle"`:
+#   `tools/` 下的脚本普遍 `set -o pipefail`,而 `grep -q` **一命中就退出**;
+#   写端 printf 这时还在往管道里写,拿到 EPIPE/EPIPE-SIGPIPE,
+#   于是整条 pipeline 返回非 0 —— 「包含」被判成「不包含」。
+#   实测(2026-11-20):对 `unzip -l` 的 21 KB 输出做这项判断,200 轮错 6 次。
+#   症状极像真的坏了:release-apk / store-preflight 随机报
+#   「AAB 缺少 BundleConfig.pb / base/manifest/... / base/dex/classes.dex」,
+#   每次缺的条目都不一样,重跑又好了。
+#   纯 bash 的 `case` 不跨进程,没有这个传输层问题。
+contains(){ case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+
 # ── APK 签名证书信息 ───────────────────────────────────────────────
 # 取 APK 的签名证书指纹 / DN。
 #
@@ -567,7 +580,7 @@ adb_online(){
   "$ADB" devices 2>/dev/null | awk -v d="$1" '$1==d && $2=="device"' | grep -q .
 }
 
-export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath gitpath pyfile run_py \
+export -f mktmp mktmpd run_timeout file_size file_mtime posix_of win_of winpath gitpath pyfile run_py contains \
          apk_cert_fp apk_cert_dn apk_cert_dump \
           re_escape adbx adb_connect_all adb_online bt_tool bt_run badging_field 2>/dev/null || true
 

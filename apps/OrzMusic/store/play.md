@@ -1,7 +1,7 @@
 # Google Play 上架清单 —— OrzMusic
 
 > 机器能查的项由 `bash tools/store-preflight.sh <version> --target play` 检查;
-> 这份文件记录**只能人工确认**的材料。`TODO:` 提交前必须清掉。
+> 这份文件记录**只能人工确认**的材料。标 ⚠️ 的项在提交前必须补齐。
 
 ## 应用身份
 

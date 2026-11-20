@@ -470,14 +470,14 @@ step_pico(){
   local apk_arg out
   apk_arg="$(win_of "$apk")"
   out="$(run_timeout 240 "$ADB" -s "$PICO_ADDR" install -r -t "$apk_arg" </dev/null 2>&1)"
-  if printf '%s' "$out" | grep -q Success; then
+  if contains "$out" Success; then
     ok "Pico 安装"
   else
     bad "Pico 安装"
     printf '%s\n' "$out" | grep -vE '^[[:space:]]*$' | tail -3 | sed 's/^/       /'
     # 最常见的一种:设备上那个包是【别的环境】构建的 debug 包。
     # debug.keystore 每台机器各生成一份,换机器/换 WSL↔Windows 就会撞签名。
-    if printf '%s' "$out" | grep -q UPDATE_INCOMPATIBLE; then
+    if contains "$out" UPDATE_INCOMPATIBLE; then
       echo "       → 签名不一致(设备上那个包是别的环境构建的),先卸载再装:" >&2
       echo "         $ADB -s $PICO_ADDR uninstall $PKG" >&2
     fi

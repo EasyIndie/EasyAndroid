@@ -1,7 +1,7 @@
 # 国内应用商店上架清单 —— OrzMusic
 
 > 机器能查的项由 `bash tools/store-preflight.sh <version> --target cn` 检查。
-> `TODO:` 提交前必须清掉。
+> 标 ⚠️ 的项需要人工补齐。
 
 ## 共同资质
 

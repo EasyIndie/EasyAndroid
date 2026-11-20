@@ -892,3 +892,39 @@ gh auth status                    # 来源应是 hosts.yml(或 keyring)
 git push --dry-run origin main    # 必须过 —— 这条才是真认证
 gh run list --limit 1
 ```
+
+## `set -o pipefail` + `grep -q` = 随机判错(「AAB 缺少 BundleConfig.pb」的真相)
+
+**症状**:`release-apk.sh` / `store-preflight.sh` 偶尔报产物结构不对 ——
+
+```
+❌ OrzMusic-0.6.0.aab 缺少 BundleConfig.pb
+```
+
+**而文件是好的**:`unzip -l` 手动能看到那个条目,重跑一次又过了,
+而且每次缺的条目都不一样(`BundleConfig.pb` / `base/manifest/...` /
+`base/dex/classes.dex` 轮着来)。看起来像 AAB 真的坏了或文件系统坏了。
+
+**原因**是脚本自己:`tools/` 下的脚本普遍 `set -o pipefail`,而
+
+```bash
+printf '%s' "$entries" | grep -qF "$e"
+```
+
+`grep -q` **一命中就退出**,此时写端 `printf` 还在往管道里灌(这里的
+`unzip -l` 输出约 21 KB);写端拿到 EPIPE/SIGPIPE,整条 pipeline 返回非 0,
+于是「包含」被判成「不包含」。**完全不涉及文件本身。**
+
+实测(2026-11-20):同一段判断跑 200 轮,错 6 次(≈3%),错哪一条是随机的。
+
+**修法**:别用管道,用纯 bash 的 `case`。`_common.sh` 里已导出 `contains`:
+
+```bash
+contains "$entries" 'BundleConfig.pb' && echo 有
+```
+
+已替换的地方:`release-apk.sh`(badging / AAB 结构)、`store-preflight.sh`
+(同)、`verify-all.sh`(构建日志判据)。
+
+**通用判据**:凡是「大文本 + `grep -q` + `pipefail`」三件套同时出现,就有这个风险;
+单行、小文本(几 KB 以内)基本撞不上,别据此把正常代码改乱。

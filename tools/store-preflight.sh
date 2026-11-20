@@ -182,7 +182,7 @@ for APP in "${APPS[@]}"; do
     bad "版本不符: versionName=$got_ver(期望 $VER) versionCode=$got_code(期望 $WANT_CODE)"
   fi
 
-  if printf '%s' "$badging" | grep -q 'application-debuggable'; then
+  if contains "$badging" 'application-debuggable'; then
     bad "APK 是 debuggable 的 —— 这是 debug 包,不是正式包"
   else
     ok "非 debuggable"
@@ -253,7 +253,7 @@ for APP in "${APPS[@]}"; do
       entries="$(unzip -l "$AAB" 2>/dev/null)"
       aab_ok=1
       for e in BundleConfig.pb base/manifest/AndroidManifest.xml base/dex/classes.dex; do
-        if printf '%s' "$entries" | grep -qF "$e"; then
+        if contains "$entries" "$e"; then
           :
         else
           bad "AAB 缺少 $e"; aab_ok=0
@@ -262,8 +262,8 @@ for APP in "${APPS[@]}"; do
       [ "$aab_ok" = 1 ] && ok "AAB 结构完整(BundleConfig / manifest / dex)"
 
       # Play 的 64 位要求看 AAB 里的 base/lib
-      if printf '%s' "$entries" | grep -q 'base/lib/'; then
-        if printf '%s' "$entries" | grep -q 'base/lib/arm64-v8a/'; then
+      if contains "$entries" 'base/lib/'; then
+        if contains "$entries" 'base/lib/arm64-v8a/'; then
           ok "AAB 含 arm64-v8a"
         else
           bad "AAB 缺 base/lib/arm64-v8a —— Play 64 位要求不满足"
