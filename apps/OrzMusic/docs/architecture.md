@@ -270,6 +270,9 @@ Kotlin Multiplatform 的 `commonMain`(Android/Desktop 共用),或者作为
 
 ## 5. 合并回 `OrzGeeker/OrzMusic` 的目录计划
 
+> 本节是**终态**。分阶段怎么落地(第一步只搬 `clients/android`、不动 server/web、
+> CI 与发版怎么接)见 [migration-upstream.md](migration-upstream.md)。
+
 目标结构(建议):
 
 ```
