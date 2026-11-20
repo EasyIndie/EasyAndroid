@@ -26,6 +26,10 @@ default_alias=release
 alias.orzmusic=d8121929888ba76e5aaec6772772eae95dcd354920e0f4273d83f1940a0e8807
 alias.release=eb3bfaf6847264a0e696996fb02a91fa7e034ec3c42ef9a85c68168d4d573dbd
 app.OrzMusic=orzmusic
+#
+# ⚠️ OrzMusic 已于 2026-11-20 迁出到 OrzGeeker/OrzMusic 的 clients/android。
+#    它自己的发版流程用那个仓库的 signing-manifest.txt 校验产物指纹;
+#    这里保留这一行,是为了 gen-keystore.sh --manifest 仍能覆盖这把别名。
 
 drill.last=2026-09-18
 drill.where=飞书个人聊天(文件消息)
