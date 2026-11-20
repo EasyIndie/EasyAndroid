@@ -95,11 +95,30 @@ newer_exists(){
   return 1
 }
 
+# ⚠️ 「文件非空」不等于「文件写完了」。
+#    实测(2026-11-20,TCL 电视 1920x1080):应用端写 180KB 的 PNG 要 2~3 秒,
+#    只等到 `test -s` 就 pull,拿回来的是**截断的 PNG** —— 106KB / 180KB 两次都不一样,
+#    ffmpeg 报 `0 bytes left`,看图的工具直接打不开。所以还要等到 PNG 有 IEND 收尾。
+png_done(){
+  A "run-as $PKG tail -c 12 $INT_REL 2>/dev/null" | grep -aq IEND && return 0
+  A "tail -c 12 $EXT_PNG 2>/dev/null" | grep -aq IEND && return 0
+  return 1
+}
+
 ok=0
 for _ in $(seq 1 20); do
   newer_exists && { ok=1; break; }
   sleep 0.5
 done
+
+# 文件出现了,再等它写完整(最多 10 秒);等不到就照旧往下走,
+# 由后面「本地不完整」那一段重取并给出提示,不要在这里直接判失败。
+if [ "$ok" = 1 ]; then
+  for _ in $(seq 1 20); do
+    png_done && break
+    sleep 0.5
+  done
+fi
 
 if [ "$ok" != 1 ]; then
   echo "!! 没等到截图文件。原因:" >&2
@@ -155,6 +174,20 @@ fetch_runas() { run_timeout 60 "$ADB" -s "$DEV" exec-out run-as "$PKG" cat "$INT
 #    已经用 `test -s` 验过非空)。现在:一条路拿到空文件就换另一条再试一次。
 fetch_pull  || true
 [ -s "$OUT" ] || { rm -f "$OUT"; fetch_runas || true; }
+
+# 本地这一份也要是完整的 PNG(以 IEND 收尾)。设备端没写完就 pull 回来的是半截,
+# 而它**非空**,上面那些 `-s` 判断全过 —— 症状是图打不开,却以为设备端有问题。
+local_png_done(){ [ -s "$1" ] && tail -c 12 "$1" 2>/dev/null | grep -aq IEND; }
+if [ -s "$OUT" ] && ! local_png_done "$OUT"; then
+  echo "   取到的 PNG 不完整(设备端可能还在写),重取…" >&2
+  for _ in 1 2 3; do
+    sleep 1
+    rm -f "$OUT"
+    fetch_pull  || true
+    [ -s "$OUT" ] || { rm -f "$OUT"; fetch_runas || true; }
+    local_png_done "$OUT" && break
+  done
+fi
 
 # 还是空 → 很可能撞上了「应用刚被拉起、首帧还没画完」。
 # 实测:verify-all 刚拉起应用后紧接着调本脚本,设备端写出的是 0 字节图;
