@@ -10,7 +10,7 @@ Android 开发实践沉淀。
 | 路径 | 内容 |
 |---|---|
 | [`docs/`](docs/) | 知识沉淀:环境搭建、ADB 技巧、厂商限制与绕行方案、踩坑速查 |
-| [`apps/`](apps/) | **业务应用**(每个子目录是一个独立工程;细节在各自目录) |
+| [`apps/`](apps/) | **业务应用**(每个子目录一个独立工程;目前为空 —— 应用的代码与文档跟着各自仓库走,见 [docs/12](docs/12-client-repos.md)) |
 | [`self-test/`](self-test/) | 测试验证工程(带 `selftest.properties`;`verify-all.sh` 自动发现) |
 | [`template/`](template/) | 公共应用脚手架(`new-app.sh` 的复制源;不在 `apps/` 下,不参与发版构建) |
 | [`tools/`](tools/) | 设备连接 / 安装 / 引导 / 新建工程 / 发版脚本 |

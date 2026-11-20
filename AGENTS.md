@@ -94,10 +94,11 @@
     `store-preflight.sh <version> --target play|cn`。完整流程、Play 的 targetSdk 门槛、
     国内商店的软著/备案要求见 [docs/11](docs/11-publishing.md)。
     **包名/签名一旦上架就是不可逆的** —— 改等于换应用,老用户升不了级。
-13. **文档边界:`docs/` 只放跨应用通用的知识;具体应用细节放 `apps/<App>/`。**
+13. **文档边界:`docs/` 只放跨应用通用的知识;具体应用细节跟着应用代码走。**
     - 通用:环境、设备、工具链、发版/上架流程。
-    - 应用专属:后端 API、架构、模块、商店资料、验收记录 →
-      `apps/<App>/docs/`、`apps/<App>/store/`、`apps/<App>/README.md`。
+    - 应用专属:后端 API、架构、模块、商店资料、验收记录 → **应用自己所在的仓库**
+      (业务应用已迁到各自仓库,见 [docs/12](docs/12-client-repos.md);
+      仍放在本仓库的工程写在 `apps/<App>/` 或 `self-test/<App>/` 下)。
     - 测试验证工程(`self-test/<App>/`)的文档同样放它自己的目录,不要写进 `docs/`。
     - 示例命令用 `<App>` / `<package.id>` 占位;不要把某个应用的包名/类名/API
       写进 `docs/` 的常驻文档。
@@ -109,7 +110,8 @@
 ```
 docs/            知识沉淀(踩坑、结论、绕行方案)
 apps/            业务应用(每个子目录是一个独立 Gradle 构建)
-  <App>          业务应用;API/架构/商店资料在 apps/<App>/docs/、store/、README
+                 ⚠️ **当前为空** —— OrzMusic 已迁入 OrzGeeker/OrzMusic 的 clients/android/;
+                 新应用优先放它自己的产品仓库,做法见 docs/12
 self-test/       测试验证工程(带 selftest.properties;verify-all 自动发现)
 template/        公共应用模板(new-app.sh 的复制源;不在 apps/ 下,不参与发版)
 tools/           设备连接 / 安装 / 引导 / 发版 / 上架自检脚本
@@ -120,12 +122,15 @@ version.properties  版本号唯一来源
   device.env.example     设备地址模板 → 复制成 device.env(不入库)
 ```
 
-> **文档边界**:`docs/` 只放跨应用通用的知识。具体应用的 API / 架构 / 商店资料在
-> `apps/<App>/` 下(见 `apps/<App>/docs/`、`apps/<App>/store/`、`apps/<App>/README.md`)。
+> **文档边界**:`docs/` 只放跨应用通用的知识。具体应用的 API / 架构 / 商店资料
+> 放在**应用自己的仓库**里;仍在 `apps/` 下的工程写在 `apps/<App>/` 下。
+> 迁出去的应用怎么继续用本仓库的设备/发版流程,见 [docs/12](docs/12-client-repos.md)。
 
 ### 新增应用必须遵守
 
-> **在 `apps/` 下新建独立工程目录,不要往已有工程里塞业务模块。**
+> **在应用自己的仓库里新建独立工程;只有验证/脚手架用途才留在本仓库**
+> (那样放 `self-test/`,或用 `new-app.sh` 起在 `apps/` 下的临时工程)。
+> 无论放哪,**一个工程 = 一个独立 Gradle 构建**,不要往已有工程里塞业务模块。
 
 ```bash
 bash tools/new-app.sh <AppName> <package.id>

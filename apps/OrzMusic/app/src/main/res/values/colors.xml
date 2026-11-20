@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 与 ui/Theme.kt 的 OrzColors.BgTop 一致;前景是薄荷五柱(ic_launcher_foreground)。 -->
-    <color name="ic_launcher_background">#0E1411</color>
-</resources>
