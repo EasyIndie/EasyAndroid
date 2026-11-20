@@ -928,3 +928,39 @@ contains "$entries" 'BundleConfig.pb' && echo 有
 
 **通用判据**:凡是「大文本 + `grep -q` + `pipefail`」三件套同时出现,就有这个风险;
 单行、小文本(几 KB 以内)基本撞不上,别据此把正常代码改乱。
+
+## `gradlew` 在 git 里没有可执行位 —— 本地全好,CI 全红
+
+**症状**:CI 里 `tools/verify-all.sh` 的构建段直接失败,只有一行
+
+```
+tools/verify-all.sh: line 349: ./gradlew: Permission denied
+```
+
+而同样的命令在本机(WSL 的 `/mnt/e`、Windows 的 Git Bash)跑得好好的。
+
+**原因**:git 记的是 **mode 位**(`100644` / `100755`),不是「有没有 x 权限」的直觉。
+两个平台的本机文件系统都**不保留**这个位:
+
+- WSL 的 `/mnt/*`(drvfs)上所有文件都是 `-rwxrwxrwx`;
+- Windows 的 Git Bash 给任何文件也基本都显示可执行。
+
+所以 `./gradlew` 本地永远是好的。CI 是 Linux checkout,拿到 `100644` 就是真的不能执行。
+`git add` 时若文件本来就没有 x 位(WSL 上从别处 `cp` 过来的、或 `git mv` 过来的),
+索引里就是 `100644` —— 本机完全看不出来。
+
+实测(2026-11-20):`apps/OrzMusic` 加进仓库后,main 的 CI 从 2026-11-16 起连红三天,
+每次都在 13~23 秒内失败,**只有 CI 页面看得到**,直到发 0.6.0 打 tag 卡在
+`tag-release.sh` 的构建自检才被发现。
+
+**修法**:
+
+```bash
+git update-index --chmod=+x apps/<App>/gradlew self-test/<App>/gradlew template/gradlew
+git commit -m "fix(build): gradlew 丢了可执行位"
+```
+
+**判据 / 防复发**:`verify-all.sh` 的 `0/4 仓库自检` 段现在会查
+`git ls-files -s -- '*gradlew'` 是不是 `100755`,不是就报错并给出上面那条命令。
+这条检查不依赖 JDK / SDK / 设备,本地和 CI 跑的是同一份判据 ——
+**新加应用后请跑一次 `bash tools/verify-all.sh --skills-only`**(几秒钟)。
