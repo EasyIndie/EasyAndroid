@@ -21,8 +21,9 @@
 ## 功能(当前实现)
 
 界面和交互按 Web 播放器(`player.leaf` / `app.css` / `app.js`)重做,
-详见 [docs/ui-parity.md](docs/ui-parity.md);后台播放/声场/Pico 焦点见
-[docs/playback.md](docs/playback.md)。
+并针对 TV / Pico 做了 10-foot 视觉调整:自绘图标、渐变深色背景、薄荷焦点环、
+紧凑播放坞和宽屏「正在播放」双栏布局。详见 [docs/ui-parity.md](docs/ui-parity.md);
+后台播放/声场/Pico 焦点见 [docs/playback.md](docs/playback.md)。
 
 - **曲库**:5533+ 首,按模块 / 复古主机 / 芯片合成 / 常规音频分组筛选,分页加载
 - **歌曲表**:标题 / 艺术家 / 专辑 / 格式 / 大小 / 时长;窄屏自动减列
@@ -31,6 +32,7 @@
 - **歌单**:列表 + 详情 + **保存当前队列** + 加载 / 删除
 - **播放队列**:右侧抽屉,显示当前项、点击播放、移除
 - **播放坞**:进度条(点击/拖动/D-pad seek)、上一首 / 播放暂停 / 下一首、时间、音量 / 静音
+- **全息声场**:播放坞上方的独立面板，PCM 实时 FFT，48 根对数频段柱；宽/窄屏自适应
 - **正在播放**:全屏详情、±5/15 秒、音量、队列入口、定位当前曲目、**真实 PCM 声场**
 - **后台播放**:ExoPlayer 在 `MediaSessionService` 里;按 HOME/锁屏继续播
 - **通知栏 / 锁屏控制**:上一首 / 播放暂停 / 下一首 + 进度;点击通知回到 App
@@ -38,9 +40,10 @@
 - **定位**:`/api/songs/{id}/location` 找到当前曲目所在页并滚动过去
 - **快捷键**:空格播放暂停、`M` 静音、`N/P` 切歌、`L` 定位、`Q` 队列、`/` 搜索、`Esc` 关闭
 - **设置**:切换服务器地址、测试连接(`/api/health`)、调试信息
-- **自适应**:手机单栏 / 平板与 TV 左侧导航 / 宽屏表格式布局
+- **自适应**:单个 APK 覆盖手机 / 平板 / TV / Pico；560dp 起表格式列表、840dp 起侧栏、
+  900dp 起正在播放双栏，旋转和平板竖横屏都按可用宽度重排
 - **TV**:`leanback` 启动入口、banner、D-pad 可走(`tv-material3` 的 Card/Button)
-- **VR**:Pico 的 2D 面板按宽屏渲染;Pico 使用应用内键盘,避免系统 IME 抢焦点
+- **VR / Pico**:2D 面板按宽屏渲染;手柄触摸/扳机、摇杆方向、射线落点悬停聚焦均已适配；文本输入使用系统输入法
 
 ## 芯片格式怎么播
 
@@ -116,7 +119,8 @@ cd apps/OrzMusic
 
 # JVM 截图测试(TV / 手机两种尺寸,不碰设备)
 ./gradlew testDebugUnitTest
-# → app/build/outputs/roborazzi/orzmusic-{tv,phone,queue,nowplaying}.png
+# → app/build/outputs/roborazzi/orzmusic-{tv,phone,tablet,tablet-landscape,queue,
+#    nowplaying,nowplaying-phone,nowplaying-tablet}.png
 ```
 
 > native 解码库已提交在 `audio-kit/src/main/jniLibs/{arm64-v8a,armeabi-v7a}/liborzaudio.so`,
@@ -147,6 +151,46 @@ TV 上 D-pad 验收:进「曲库」→ 上下走格式筛选和歌曲列表 → 
 > 电视验收时 Clash Meta 的代理把 `music.jokerhub.cn` 拦成 timeout,
 > 屏保也会抢输入 —— 都是电视环境问题,不是 App 的 bug。
 > 处理办法记在 [docs/backend-api.md](docs/backend-api.md#7-实机验收2026-11-16)。
+
+### 验收记录(2026-11-20,10-foot 视觉与输入重做)
+
+| 设备 | 结论 |
+|---|---|
+| TCL 电视 | ✅ D-pad 焦点环不缩放(列表行 1498x89 恒定)、播放 + 全息声场、正在播放双栏;`wm size/density` 模拟 800dp / 533dp 两档断点,布局按预期切换 |
+| TCL 电视 | ✅ 搜索框:浏览态显示 `OK` 提示 → OK 才拉系统输入法(Sogou TV)→ 输入 `mode` 回车出结果 → BACK 关输入法、再 BACK 退出编辑 |
+| Pico 4 | ✅ 侧栏 + 表格式列表、播放 + 声场实时刷新(两张自截图 md5 不同)、系统输入法正常拉起(`mInputShown=true`),不再用应用内键盘 |
+| 两台 | ✅ 无 `FATAL` / `AndroidRuntime` 崩溃 |
+
+> 断点是用 `adb shell wm size` / `wm density` 在电视上模拟的(400/533/800/1280dp),
+> 验完已 `wm size reset` + `wm density reset`。判据看 UI 树里出现/消失的是
+> 侧栏、表头、艺术家列、专辑/大小列,而不是靠截图。
+>
+> ⚠️ Pico 的**自截图拍不到系统输入法**(IME 是另一个窗口),只能用
+> `dumpsys input_method` 的 `mInputShown` 判断。
+
+## 商店物料
+
+`store/assets/` 里是可直接上传的图,`gen-store-assets.java` 是生成器
+(JDK 一条命令重出,不依赖 ImageMagick):
+
+```bash
+java -Djava.awt.headless=true apps/OrzMusic/store/assets/gen-store-assets.java \
+     apps/OrzMusic/store/assets \
+     apps/OrzMusic/app/src/main/res/drawable/banner.png
+```
+
+| 文件 | 用途 |
+|---|---|
+| `store/assets/icon-512.png` | Play 图标 512×512(32 位 PNG) |
+| `store/assets/feature-graphic-1024x500.png` | Play 特色图片 |
+| `store/assets/screenshots/phone-01..03` | 手机截图 1080×1920(曲库 / 播放 / 正在播放) |
+| `store/assets/screenshots/tablet-01-library.png` | 平板截图 1200×1600 |
+| `store/assets/screenshots/tv-01..02` | TV 截图 1920×1080(曲库 / 正在播放) |
+| `app/src/main/res/drawable/banner.png` | TV 启动器 banner 320×180(同一张图) |
+
+> 手机 / 平板的截图是**在电视上用 `wm size` + `wm density` 模拟对应 dp 宽**后,
+> 用 `tools/ui-dump.sh` 自截图拿到的(仓库里没有手机真机)。
+> 启动图标也换成了品牌五柱(`ic_launcher_foreground.xml`),与商店图标同一套比例。
 
 ## 服务器
 
