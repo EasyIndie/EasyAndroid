@@ -12,6 +12,26 @@
 
 ---
 
+## 0. 交付:用 `handoff-app.sh`,别手工拷
+
+```bash
+bash tools/handoff-app.sh <App> --check                       # 先审计
+bash tools/handoff-app.sh <App> --target ../<业务仓库> --prefix clients/android
+```
+
+它会:按 `git archive` 只导 tracked 文件 → 生成 `version.properties` / `CHANGELOG.md` /
+`signing-manifest.txt` / `docs/migration-from-easyandroid.md` → 把文档里的
+`../../docs/*` 与 `../../tools/*` 改写成跨仓可用的形式,并把做不了的事列成清单。
+
+审计会挡住的四类问题(都是交付后才会炸的):
+
+| 检查 | 为什么 |
+|---|---|
+| `gradlew` 的 git mode 不是 `100755` | Linux CI 直接 `Permission denied`(见 [05](05-gotchas.md)) |
+| 脚本里有 CRLF | 同上,`bad interpreter` |
+| 跟踪了 `local.properties` / `*.jks` / `build/` | 前者是别人的机器路径,后者是密钥/产物 |
+| 代码里 `source ../../tools/...` | 交付后是死路径,构建直接失败 |
+
 ## 1. 设备流程:脚本吃路径,不需要复制
 
 `tools/` 下的设备脚本**不假设应用在本仓库**:
@@ -98,7 +118,8 @@ bash "$EASYANDROID/tools/ui-dump.sh" com.example.app
 
 ## 迁移检查清单
 
-迁出某个应用时逐条过:
+**先跑 `bash tools/handoff-app.sh <App> --check`** —— 下面第 1~3 项它已经机械检查,
+其余是需要人判断的。
 
 - [ ] 客户端仓库里 `./gradlew` 能跑,且**没有**任何 `../../tools/*` 这类跨仓引用
 - [ ] `git ls-files -s <client>/gradlew` 是 `100755`;`*.sh` 不是 CRLF

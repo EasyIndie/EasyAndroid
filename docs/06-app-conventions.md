@@ -2,6 +2,11 @@
 
 ## 核心规则
 
+> **生命周期:创建 → 孵化 → 交付。** 本仓库负责前两步(`tools/new-app.sh` 建工程、
+> 在 `apps/<App>/` 里跑通与真机验收),交付由 `tools/handoff-app.sh` 完成;
+> 交付之后日常迭代在应用自己的仓库里做,本仓库只提供设备流程与约定判据
+> (见 [12-client-repos.md](12-client-repos.md))。
+>
 > **每个应用工程都是独立的、可单独构建的 Android 工程。**
 > 新增应用 = 在**它自己的产品仓库**里新建工程(推荐),或用
 > `bash tools/new-app.sh <Name> <package.id>` 在本仓库起骨架再搬过去;
@@ -19,7 +24,7 @@
 
 | 目录 | 定位 |
 |---|---|
-| `apps/<App>` | **业务应用**。细节(API/架构/商店资料)在各自 `README.md` / `docs/` / `store/`。 |
+| `apps/<App>` | **孵化中的应用**。在这里创建、跑通、验收;交付后由业务仓库继续迭代(见 [12](12-client-repos.md))。细节(API/架构/商店资料)在各自 `README.md` / `docs/` / `store/`。 |
 | `self-test/<TestApp>` | **测试验证工程**(带 `selftest.properties`)。用于验证工具链、ADB 链路、设备兼容性;保持精简,**不要往里加业务功能**。 |
 | `template/` | **公共应用模板**。`new-app.sh` 复制它来生成新工程。它不在 `apps/` 下 —— `release-apk.sh` 会构建 `apps/*/` 下的所有工程,模板不该被当成应用发出去。 |
 

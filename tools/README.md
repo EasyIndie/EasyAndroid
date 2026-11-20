@@ -189,6 +189,29 @@ bash tools/new-app.sh MyPlayer com.example.myplayer
 
 > 应用专属的 SDK / manifest 脚本随应用放在 `apps/<App>/` 下;`tools/` 只保留通用工具。
 
+### `handoff-app.sh` — 把孵化好的应用交付到业务仓库
+
+```bash
+bash tools/handoff-app.sh <App> --check                         # 只审计
+bash tools/handoff-app.sh <App> --out /tmp/export                # 先导出看效果
+bash tools/handoff-app.sh <App> --target ../OrzMusic --prefix clients/android
+```
+
+`apps/` 是**孵化区**:应用在这里创建、跑通、验收,然后交给它自己的仓库迭代。
+交付时有一批东西在孵化区是「仓库根提供的」、到了业务仓库必须自带,这个脚本负责:
+
+- **审计**:`gradlew` 的 git mode 是不是 `100755`、脚本有没有 CRLF、
+  有没有把 `local.properties` / 密钥 / 构建产物提交进去、代码有没有 `source ../../tools/...`
+- **导出**:按 `git archive HEAD:apps/<App>` 只带 tracked 文件
+- **补齐**:生成 `version.properties`(初始版本继承仓库根)、`CHANGELOG.md` 骨架、
+  `signing-manifest.txt`(只搬这个应用的指纹)、`docs/migration-from-easyandroid.md`(含人工清单)
+- **改写文档**:`../../docs/*.md` → EasyAndroid 的绝对 URL,`../../tools/...` → `$EASYANDROID/tools/...`,
+  并在 README 顶部说明「设备脚本不在本仓库」
+
+它**不会**替你做 CI workflow、tag 命名空间、secrets、文档单一来源和真机复验 ——
+这些在生成的 migration 文档里列成清单。做法与理由见
+[../docs/12-client-repos.md](../docs/12-client-repos.md)。
+
 ### `ui-dump.sh` — 触发应用自截图并拉回 PNG
 
 ```bash
@@ -269,6 +292,8 @@ bash tools/gen-keystore.sh --force               # ⚠️ 覆盖重建 = 换签�
 > 见 [../docs/06-app-conventions.md](../docs/06-app-conventions.md#签名凭据存哪儿--什么能入库什么不能)。
 
 ### `release-apk.sh` — 构建正式版 APK / AAB 并挂到 Release
+
+> 服务于**孵化期**的应用(还在 `apps/` 里)。应用交付后,正式包由业务仓库自己构建。
 
 ```bash
 bash tools/release-apk.sh <version>                          # 构建 APK,产物落 dist/

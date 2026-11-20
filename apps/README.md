@@ -1,17 +1,23 @@
-# `apps/` —— 业务应用(当前为空)
+# `apps/` —— 孵化区(当前为空)
 
-业务应用已经迁到各自的仓库:
+应用在这里**创建 → 跑通 → 验收**,然后交付给业务仓库做后续迭代。
+本仓库只负责孵化,不承担交付后的日常发版。
+
+| 阶段 | 命令 | 说明 |
+|---|---|---|
+| 创建 | `bash tools/new-app.sh <App> <package.id>` | 从 `template/` 生成 `apps/<App>/` |
+| 孵化 | `cd apps/<App> && ./gradlew assembleDebug` + `tools/` 的设备脚本 | 版本号暂取仓库根 `version.properties` |
+| 交付 | `bash tools/handoff-app.sh <App> --check` | 审计跨仓引用 / gradlew 可执行位 / CRLF / 密钥泄漏 |
+| 交付 | `bash tools/handoff-app.sh <App> --target <业务仓库> --prefix <子目录>` | 导出并补齐客户端必需的文件 |
+
+已交付:
 
 | 应用 | 仓库 | 客户端目录 |
 |---|---|---|
 | OrzMusic | [`OrzGeeker/OrzMusic`](https://github.com/OrzGeeker/OrzMusic) | `clients/android/` |
 
-**新应用不要默认往这里放。** 两种做法:
+只是一次性验证 / 共用脚手架 → 放 `self-test/`,不要放这里(测试工程带
+`selftest.properties`,`verify-all.sh` 会自动发现它们)。
 
-- 应用有自己的产品仓库 → 在那里建 Android 工程(推荐,见
-  [docs/12](../docs/12-client-repos.md) 的「客户端仓库的推荐骨架」);
-- 只是一次性验证 / 共用脚手架 → 放 `self-test/`,或用
-  `bash tools/new-app.sh <Name> <package.id>` 在本地起一个工程再搬走。
-
-本目录仍然参与 `tools/release-apk.sh` 的扫描(`apps/*/publish.properties`),
-所以留一个说明文件、不建空工程 —— 空目录不会被打包脚本误认成应用。
+> 本目录参与 `tools/release-apk.sh` 的扫描(`apps/*/publish.properties`),
+> 所以留一个说明文件、不建空工程 —— 空目录不会被打包脚本误认成应用。

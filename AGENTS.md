@@ -109,9 +109,9 @@
 
 ```
 docs/            知识沉淀(踩坑、结论、绕行方案)
-apps/            业务应用(每个子目录是一个独立 Gradle 构建)
-                 ⚠️ **当前为空** —— OrzMusic 已迁入 OrzGeeker/OrzMusic 的 clients/android/;
-                 新应用优先放它自己的产品仓库,做法见 docs/12
+apps/            **孵化区**:应用的创建、跑通、验收都在这里(每个子目录是独立 Gradle 构建)
+                 ⚠️ 当前为空 —— OrzMusic 已交付到 OrzGeeker/OrzMusic 的 clients/android/;
+                 孵化完成后用 tools/handoff-app.sh 交付,见 docs/12
 self-test/       测试验证工程(带 selftest.properties;verify-all 自动发现)
 template/        公共应用模板(new-app.sh 的复制源;不在 apps/ 下,不参与发版)
 tools/           设备连接 / 安装 / 引导 / 发版 / 上架自检脚本
@@ -126,11 +126,21 @@ version.properties  版本号唯一来源
 > 放在**应用自己的仓库**里;仍在 `apps/` 下的工程写在 `apps/<App>/` 下。
 > 迁出去的应用怎么继续用本仓库的设备/发版流程,见 [docs/12](docs/12-client-repos.md)。
 
-### 新增应用必须遵守
+### 应用的生命周期:创建 → 孵化 → 交付
 
-> **在应用自己的仓库里新建独立工程;只有验证/脚手架用途才留在本仓库**
-> (那样放 `self-test/`,或用 `new-app.sh` 起在 `apps/` 下的临时工程)。
-> 无论放哪,**一个工程 = 一个独立 Gradle 构建**,不要往已有工程里塞业务模块。
+> **本仓库只负责前三步里的前两步半**:建工程、跑通、验收;
+> 交付之后(日常业务迭代)由应用自己的仓库处理,本仓库只保留通用流程。
+
+1. **创建**:`bash tools/new-app.sh <AppName> <package.id>` → `apps/<App>/`
+   (版本号暂时取自仓库根 `version.properties`,发包走 `tools/release-apk.sh`)。
+2. **孵化**:在 `apps/<App>/` 里做功能与真机验收(电视 / Pico,用 `tools/`)。
+3. **交付**:`bash tools/handoff-app.sh <App> --check`,修掉阻塞项后
+   `--target <业务仓库> --prefix <子目录>`;它生成客户端自己的 `version.properties`、
+   `CHANGELOG.md`、`signing-manifest.txt` 与迁移清单。
+4. **之后**:业务仓库自持版本 / CI / 发版 / 商店资料;本仓库只提供设备流程与约定判据,
+   见 [docs/12](docs/12-client-repos.md)。
+
+> 一个工程 = 一个独立 Gradle 构建,不要往已有工程里塞业务模块。
 
 ```bash
 bash tools/new-app.sh <AppName> <package.id>

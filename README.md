@@ -10,7 +10,7 @@ Android 开发实践沉淀。
 | 路径 | 内容 |
 |---|---|
 | [`docs/`](docs/) | 知识沉淀:环境搭建、ADB 技巧、厂商限制与绕行方案、踩坑速查 |
-| [`apps/`](apps/) | **业务应用**(每个子目录一个独立工程;目前为空 —— 应用的代码与文档跟着各自仓库走,见 [docs/12](docs/12-client-repos.md)) |
+| [`apps/`](apps/) | **孵化区**:应用在这里创建、跑通、验收,然后交付到业务仓库(`tools/handoff-app.sh`,见 [docs/12](docs/12-client-repos.md);当前为空) |
 | [`self-test/`](self-test/) | 测试验证工程(带 `selftest.properties`;`verify-all.sh` 自动发现) |
 | [`template/`](template/) | 公共应用脚手架(`new-app.sh` 的复制源;不在 `apps/` 下,不参与发版构建) |
 | [`tools/`](tools/) | 设备连接 / 安装 / 引导 / 新建工程 / 发版脚本 |
@@ -98,6 +98,11 @@ bash tools/store-preflight.sh <version> --target cn
 - **提交信息写 `type(scope): 描述`** —— 版本号从它推导(见下)。
 
 ## 发版
+
+> 这套版本号 / CHANGELOG / tag 是本仓库**孵化期**的发版方式:
+> 应用还在 `apps/` 里、版本号取仓库根 `version.properties` 时用它。
+> 应用交付到业务仓库后,由那边自己的发版流程负责(见
+> [docs/12](docs/12-client-repos.md))。
 
 **一条命令。** 版本号从提交信息机械推导,CHANGELOG 自动生成,CI 接手出包:
 
