@@ -23,6 +23,7 @@
 
 ### 修复
 
+- **apps**: audio-kit 的 Maven 版本号字面量挡住了发版自检 ([5212cf6](https://github.com/EasyIndie/EasyAndroid/commit/5212cf6))
 - **tools**: ui-dump 在电视上取到截断的 PNG —— 等到 IEND 再 pull ([8d7ed21](https://github.com/EasyIndie/EasyAndroid/commit/8d7ed21))
 - **docs**: U 盘「二级目录」挡不住安装器扫描;要改的是后缀不是位置 ([22b688a](https://github.com/EasyIndie/EasyAndroid/commit/22b688a))
 - **tv-install**: 缓存里的失效条目会让人「装了个寂寞」;装完还要比字节数 ([38857bd](https://github.com/EasyIndie/EasyAndroid/commit/38857bd))
