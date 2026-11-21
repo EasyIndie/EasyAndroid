@@ -33,6 +33,12 @@ set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 REPO="$_REPO_DIR"
+
+# 产物级判据(版本 / 非 debuggable / debug 钩子 / 签名指纹 / AAB 结构)统一走
+# EasyRelease;本脚本只保留「商店政策」这类仓库自己的判断(targetSdk 门槛、
+# 渠道 ABI、商店资料 TODO)。
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/easyrelease.sh"
 DIST="$REPO/dist"
 VER=""
 TARGET="all"
@@ -69,8 +75,8 @@ AAPT2="$(bt_tool aapt2)"       || true
 APKSIGNER="$(bt_tool apksigner)" || true
 [ -n "$AAPT2" ]    || die "找不到 aapt2(需要 Android build-tools)"
 [ -n "$APKSIGNER" ] || die "找不到 apksigner(需要 Android build-tools)"
-JARSIGNER="${JAVA_HOME:-}/bin/jarsigner"
-[ -f "$JARSIGNER" ] || [ -f "$JARSIGNER.exe" ] || JARSIGNER=""
+# AAB 的 jarsigner 校验已交给 EasyRelease(它按 upload key 的语义判,
+# 不会用 -strict 误判自签证书链)。
 command -v unzip >/dev/null 2>&1 || die "找不到 unzip(读取 APK/AAB 内容需要它)"
 
 # SemVer -> versionCode,与 build.gradle.kts / release-apk.sh 保持一致
@@ -158,7 +164,7 @@ for APP in "${APPS[@]}"; do
     continue
   fi
 
-  # ── 通用:清单事实 ──
+  # ── 通用:清单事实(只取值,不做判定)──
   badging="$("$AAPT2" dump badging "$(win_of "$APK")" 2>/dev/null)"
   if [ -z "$badging" ]; then
     bad "aapt2 读不出 $APK 的清单(路径或文件损坏?)"
@@ -166,43 +172,39 @@ for APP in "${APPS[@]}"; do
   fi
   pkg="$(badging_field "$badging" "package:" name)"
   got_ver="$(badging_field "$badging" "package:" versionName)"
-  got_code="$(badging_field "$badging" "package:" versionCode)"
   target_sdk="$(badging_field "$badging" "targetSdkVersion:" || true)"
   min_sdk="$(badging_field "$badging" "sdkVersion:" || true)"
 
-  [ -n "$pkg" ] || bad "取不到包名"
+  # 包名黑名单是商店政策,留在本地(见 docs/11);「包名是什么」由 EasyRelease 打。
   case "$pkg" in
+    "")            bad "取不到包名" ;;
     com.example.*) bad "包名是 $pkg —— Google Play 和国内商店都拒收 com.example.*,必须换" ;;
-    *) [ -n "$pkg" ] && ok "包名 $pkg" ;;
   esac
 
-  if [ "$got_ver" = "$VER" ] && [ "$got_code" = "$WANT_CODE" ]; then
-    ok "versionName=$got_ver versionCode=$got_code"
+  # ── 产物级判据:交给 EasyRelease(与发版、与业务仓库同一套)──
+  # 它输出自己的 ✅/❌ 行,这里按行计数,保证汇总数字仍然真实。
+  _er_log="$TMP/preflight-$APP.log"
+  if easyrelease_verify --apk "$APK" --aab "$AAB" --app "$APP" \
+       --version "$VER" --code "$WANT_CODE" > "$_er_log" 2>&1; then
+    :
   else
-    bad "版本不符: versionName=$got_ver(期望 $VER) versionCode=$got_code(期望 $WANT_CODE)"
+    :
   fi
-
-  if contains "$badging" 'application-debuggable'; then
-    bad "APK 是 debuggable 的 —— 这是 debug 包,不是正式包"
-  else
-    ok "非 debuggable"
-  fi
-
-  if "$AAPT2" dump xmltree --file AndroidManifest.xml "$(win_of "$APK")" 2>/dev/null | grep -q 'UiDumpReceiver'; then
-    bad "APK 里混进了 debug 自截图钩子(UiDumpReceiver)"
-  else
-    ok "无 debug 钩子"
-  fi
-
-  if fp="$(apk_cert_fp "$APK")"; then
-    ok "已签名(${fp:0:16}...)"
-    if [ -f "$REPO/signing-manifest.txt" ] && grep -qF "$fp" "$REPO/signing-manifest.txt"; then
-      ok "签名在 signing-manifest.txt 里登记过"
-    else
-      warn "签名不在 signing-manifest.txt 里 —— 确认这是不是仓库发布用的那把"
-    fi
-  else
-    bad "APK 没有有效签名(或 apksigner 取不到证书)"
+  while IFS= read -r _line; do
+    case "$_line" in
+      *✅*)
+        case "$_line" in *完成:*) ;; *) PASS=$((PASS+1)) ;; esac
+        printf '%s\n' "${_line#"${_line%%✅*}"}" | sed 's/^/  /' ;;
+      *❌*) FAIL=$((FAIL+1)); printf '%s\n' "${_line#"${_line%%❌*}"}" | sed 's/^/  /' ;;
+    esac
+  done < "$_er_log"
+  # 只有 ❌ 行不够 —— EasyRelease 整体失败但没解析到 ❌ 时也要计一次失败。
+  if grep -q '::error::' "$_er_log" 2>/dev/null; then
+    badge=0
+    while IFS= read -r _line; do
+      case "$_line" in *❌*) badge=$((badge+1)) ;; esac
+    done < "$_er_log"
+    [ "$badge" -gt 0 ] || { bad "EasyRelease 校验失败(日志 $_er_log)"; }
   fi
 
   abis="$(apk_abis "$APK")"
@@ -249,38 +251,6 @@ for APP in "${APPS[@]}"; do
     if [ ! -f "$AAB" ]; then
       bad "缺少 $AAB"
       info "先构建: bash tools/release-apk.sh $VER --format both"
-    else
-      entries="$(unzip -l "$AAB" 2>/dev/null)"
-      aab_ok=1
-      for e in BundleConfig.pb base/manifest/AndroidManifest.xml base/dex/classes.dex; do
-        if contains "$entries" "$e"; then
-          :
-        else
-          bad "AAB 缺少 $e"; aab_ok=0
-        fi
-      done
-      [ "$aab_ok" = 1 ] && ok "AAB 结构完整(BundleConfig / manifest / dex)"
-
-      # Play 的 64 位要求看 AAB 里的 base/lib
-      if contains "$entries" 'base/lib/'; then
-        if contains "$entries" 'base/lib/arm64-v8a/'; then
-          ok "AAB 含 arm64-v8a"
-        else
-          bad "AAB 缺 base/lib/arm64-v8a —— Play 64 位要求不满足"
-        fi
-      else
-        info "AAB 无 native 库,跳过 64 位检查"
-      fi
-
-      if [ -n "$JARSIGNER" ]; then
-        if "$JARSIGNER" -verify "$(win_of "$AAB")" >/dev/null 2>&1; then
-          ok "AAB 已签名(jarsigner -verify 通过)"
-        else
-          bad "AAB 未通过 jarsigner 校验 —— Play 需要 upload key 签名"
-        fi
-      else
-        warn "找不到 jarsigner(JDK),跳过 AAB 签名校验"
-      fi
     fi
 
     n="$(todo_count "$REPO/apps/$APP/store/play.md")"

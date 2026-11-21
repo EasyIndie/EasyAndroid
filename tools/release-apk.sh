@@ -60,6 +60,10 @@ set -uo pipefail
 REPO="$(gitpath "$_REPO_DIR")"
 DIST="$REPO/dist"
 
+# 产物校验统一走 EasyRelease(与交付后的业务仓库同一套判据)。
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/easyrelease.sh"
+
 VER=""; UPLOAD=0; WITH_DEBUG=0; IN_PLACE=0; CREATE_RELEASE=0; PRINT_NOTES=0; NOTES_FILE=""
 FORMAT="apk"; ONLY_APP=""
 while [ $# -gt 0 ]; do
@@ -272,123 +276,35 @@ for APP in "${APPS[@]}"; do
   fi
 done
 
-# ── 4. 校验产物:签名 + 版本号 ────────────────────────────────────
+# ── 4. 校验产物:交给 EasyRelease ─────────────────────────────────
+# 判据只有一份。以前这里自己读 badging、比版本、扫 debug 钩子、验 AAB 结构,
+# 和 EasyRelease / 各业务仓库是三四份副本,已经漂移过(grep -q + pipefail 的
+# 假阴性、AAB 用 jarsigner -strict 误判)。
+# 本仓库剩下的只是「翻译」:应用名 → signing-manifest.txt 里的期望指纹。
 step "校验产物"
-APKSIGNER="$(bt_tool apksigner)"
-AAPT2="$(bt_tool aapt2)"
-[ -n "$APKSIGNER" ] || die "找不到 apksigner(需要 build-tools)"
-[ -n "$AAPT2" ]     || die "找不到 aapt2(需要 build-tools)"
-
 fail=0
 for apk in "${BUILT[@]}"; do
   n="$(basename "$apk")"
-  # aapt2 / apksigner 都是**原生程序**(Windows 上分别是 .exe 和 .bat),不认
-  # Git Bash 的 POSIX 路径 —— 凡是要它们读的 APK 路径统一走 apk_win。
-  # ⚠️ 只换喂给它们的那一份:[ -f ] / basename / cp 是 bash 侧,继续用 $apk。
-  apk_win="$(win_of "$apk")"
-  # 4.1 签名
-  # bt_run 而非直接调 $APKSIGNER:apksigner 在 Windows 上是 .bat,会硬校验
-  # JAVA_HOME(见 _common.sh 里 bt_run 的说明)。
-  if bt_run apksigner verify "$apk_win" >"$TMP/release-verify.log" 2>&1; then
-    # ⚠️ 指纹/DN 走 apk_cert_* —— 它们**取不到就返回非 0**,不会给出空字符串。
-    #    以前是就地 sed:取不到时得到 "",而下面的守护检查是
-    #    `grep -qF "" manifest` —— **匹配任何非空文件** → 静默通过 + 打 ✅。
-    #    一个永远不会失败的检查比没有检查更糟,它会让人以为已经守住了。
-    if ! who="$(apk_cert_dn "$apk")" || ! apk_fp="$(apk_cert_fp "$apk")"; then
-      echo "  ❌ $n 取不到签名证书信息 —— 无法核对「是不是同一把密钥」" >&2
-      echo "     apksigner 原始输出(格式可能随 build-tools 版本变了):" >&2
-      apk_cert_dump "$apk" | sed 's/^/       /' >&2
-      fail=1; continue
-    fi
-    echo "  ✅ $n 已签名  ($who)"
-  else
-    echo "  ❌ $n 签名校验失败" >&2; sed 's/^/     /' "$TMP/release-verify.log" >&2; fail=1; continue
-  fi
-
-
-  # 4.1b 签名必须是仓库认得的那把
-  # signing-manifest.txt 记着本仓库发布该用哪些密钥(只有指纹,不是秘密)。
-  # 这是防「用错密钥发版」的最后一道 —— 陌生密钥发的包,老用户装不上,
-  # 新用户装的是一个“另一个应用”,以后同样升不了。
-  if [ -f "$REPO/signing-manifest.txt" ]; then
-    # ⚠️ 必须显式要求 apk_fp 非空 —— `grep -qF ""` 会匹配任何非空文件,
-    #    空指纹会让这条守护静默通过。上面已保证非空,这里是第二道。
-    if [ -n "$apk_fp" ] && grep -qF "$apk_fp" "$REPO/signing-manifest.txt"; then
-      echo "  ✅ $n 的签名在 signing-manifest.txt 里记录过"
+  # dist/<App>-<ver>.apk → <App>;用它去 signing-manifest.txt 查 app.<App>=<alias>
+  app="${n%-"$VER".apk}"
+  aab="$DIST/$app-$VER.aab"
+  [ -f "$aab" ] || aab=""
+  if easyrelease_verify --apk "$apk" --aab "$aab" --app "$app" \
+       --version "$VER" --code "$WANT_CODE"; then
+    if [ -n "$aab" ]; then
+      echo "  ✅ $n + $(basename "$aab") 通过 EasyRelease 校验"
     else
-      echo "  ❌ $n 的签名 **不在** signing-manifest.txt 里 —— 陌生密钥,不能发!" >&2
-      echo "       该 APK ${apk_fp:0:32}..." >&2
-      echo "       仓库认得:" >&2
-      grep -E '^alias\.' "$REPO/signing-manifest.txt" | sed 's/^/         /' >&2
-      echo "       先搞清楚哪把才是对的(见 docs/06「签名凭据」)" >&2
-      fail=1
+      echo "  ✅ $n 通过 EasyRelease 校验"
     fi
   else
-    echo "  ⚠️  没有 signing-manifest.txt —— 跳过「签名是不是仓库认得的」校验"
-    echo "     生成一份以后就能挡住陌生密钥: bash tools/gen-keystore.sh --manifest --write"
-  fi
-
-
-  # 4.2 版本号
-  # ⚠️ 用基座的 badging_field,别用 `sed -n "s/.*versionName='\([^']*\)'.*/\1/p"`:
-  #    表达式里那对单引号会穿过 MSYS2 的参数还原 → sed 报 unterminated `s' command
-  #    → 取到空值 → 这里会报「版本不符」,方向完全指错。
-  badging="$("$AAPT2" dump badging "$apk_win" 2>/dev/null)"
-  got_ver="$(badging_field "$badging" "package:" versionName)"
-  got_code="$(badging_field "$badging" "package:" versionCode)"
-  if [ "$got_ver" = "$VER" ] && [ "$got_code" = "$WANT_CODE" ]; then
-    echo "  ✅ $n versionName=$got_ver versionCode=$got_code"
-  else
-    echo "  ❌ $n 版本不符: versionName=$got_ver(期望 $VER) versionCode=$got_code(期望 $WANT_CODE)" >&2
+    if [ -n "$aab" ]; then
+      echo "  ❌ $n / $(basename "$aab") 未通过 EasyRelease 校验(见上面的 ❌)" >&2
+    else
+      echo "  ❌ $n 未通过 EasyRelease 校验(见上面的 ❌)" >&2
+    fi
     fail=1
   fi
-
-  # 4.3 release 包里不该有 debug 自截图钩子
-  if [ "$(printf '%s' "$badging" | grep -c UiDumpReceiver)" != "0" ] \
-     || [ "$("$AAPT2" dump xmltree --file AndroidManifest.xml "$apk_win" 2>/dev/null | grep -c UiDumpReceiver)" != "0" ]; then
-    echo "  ❌ $n 里混进了 debug 钩子(UiDumpReceiver)—— 构建类型不对" >&2; fail=1
-  fi
-
-  # 4.4 正式包不能是 debuggable
-  # 仓库约定:开发/验收全程用 debug 包,只有发版才出正式包。
-  # debug 包在 aapt2 badging 里会多一行 application-debuggable —— 用它当机器判据,
-  # 挡住「把 debug 包装成正式包发出去」。
-  if contains "$badging" 'application-debuggable'; then
-    echo "  ❌ $n 是 debuggable 的 —— 这是 debug 包,不是正式包" >&2; fail=1
-  else
-    echo "  ✅ $n 非 debuggable(正式包)"
-  fi
 done
-# ── 4.5 AAB(Google Play)也要校验 ──────────────────────────────
-# AAB 不是 zip 里能直接 aapt2 读的格式(清单是 protobuf),所以只查
-# 「结构齐全 + jarsigner 验签」。版本号/包名的最终确认由 Play Console 做,
-# 本地另用同一版本的 APK 核对(store-preflight.sh 就是这么做的)。
-if [ ${#BUILT_AAB[@]} -gt 0 ]; then
-  echo
-  echo "  ── AAB ──"
-  command -v unzip >/dev/null 2>&1 || die "找不到 unzip(校验 AAB 需要它)"
-  JARSIGNER="${JAVA_HOME:-}/bin/jarsigner"
-  [ -f "$JARSIGNER" ] || [ -f "$JARSIGNER.exe" ] || JARSIGNER=""
-  for aab in "${BUILT_AAB[@]}"; do
-    n="$(basename "$aab")"
-    entries="$(unzip -l "$aab" 2>/dev/null)"
-    aab_ok=1
-    for e in BundleConfig.pb base/manifest/AndroidManifest.xml base/dex/classes.dex; do
-      contains "$entries" "$e" || { echo "  ❌ $n 缺少 $e" >&2; aab_ok=0; fail=1; }
-    done
-    [ "$aab_ok" = 1 ] && echo "  ✅ $n 结构完整"
-    if [ -n "$JARSIGNER" ]; then
-      if "$JARSIGNER" -verify "$(win_of "$aab")" >/dev/null 2>&1; then
-        echo "  ✅ $n 已签名"
-      else
-        echo "  ❌ $n 未通过 jarsigner 校验 —— Play 需要 upload key 签名" >&2; fail=1
-      fi
-    else
-      echo "  ⚠️  找不到 jarsigner,跳过 AAB 签名校验"
-    fi
-  done
-fi
-
 [ "$fail" = 0 ] || die "有产物没通过校验,不继续"
 
 # ── 5. 可选:debug 包 ──────────────────────────────────────────────

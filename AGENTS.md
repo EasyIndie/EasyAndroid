@@ -102,6 +102,20 @@
     - 测试验证工程(`self-test/<App>/`)的文档同样放它自己的目录,不要写进 `docs/`。
     - 示例命令用 `<App>` / `<package.id>` 占位;不要把某个应用的包名/类名/API
       写进 `docs/` 的常驻文档。
+14. **产物的签名/校验只有一个实现:[EasyRelease](https://github.com/EasyIndie/EasyRelease)。**
+    本仓库的 `tools/release-apk.sh` / `tools/store-preflight.sh` 不再自己读 badging
+    做判定,而是通过 `tools/easyrelease.sh` 调 EasyRelease 的 `android/` 模块;
+    交付后的业务仓库用同一个模块(见 `docs/12` 的客户端仓库)。
+    - **不要再往本仓库加一份「校验产物」的实现。** 以前有 3~4 份副本(EasyAndroid、
+      OrzMusic 的 workflow、OrzMusic 的 store-check),已经漂移过两次:
+      `grep -q` + `pipefail` 的假阴性,以及 AAB 用 `jarsigner -strict` 把自签
+      upload key 误判成签名失败。
+    - 要加「该拒绝什么」的规则(新的 debug 钩子、新的商店门槛) → 改 EasyRelease;
+      只有**商店政策**类判断(渠道 targetSdk 门槛、32 位 ABI、`store/*.md` 的
+      TODO)留在本仓库。
+    - `tools/easyrelease.sh` 固定 tag(顶部 `EASYRELEASE_TAG`),升级改那一行;
+      它会把 EasyRelease 克隆到 `.tmp/easyrelease/<tag>`(已 gitignore)。
+      离线时设 `EASYRELEASE_DIR=<一份检出>`。
 
 ---
 

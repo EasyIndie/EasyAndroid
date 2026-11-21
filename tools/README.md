@@ -305,12 +305,35 @@ bash tools/release-apk.sh <version> --app <AppName> --format both
 ```
 
 关键点:**它不用当前工作区构建**,而是在临时 git worktree 里 checkout 那个 tag ——
-Release 附件必须能从 tag 复现。逐个校验已签名 / `versionName` / `versionCode` /
-不含 debug 钩子,不过关就不上传。
+Release 附件必须能从 tag 复现。
 
-`--format aab|both` 会额外跑 `bundleRelease`,并用 `jarsigner -verify` 校验 AAB
-签名。**它一定也会出 APK** —— AAB 里的清单是 protobuf,`aapt2` 读不了,
-版本/包名/ABI 要从同一版本的 APK 取。
+产物校验**不再写在本脚本里**:它调用 `tools/easyrelease.sh`,由
+[EasyRelease](https://github.com/EasyIndie/EasyRelease) 的 `android/` 模块统一判
+(包名 / 版本 / 非 debuggable / debug 钩子 / ABI / targetSdk / 签名指纹 / AAB 结构与
+jarsigner)。签名指纹从 `signing-manifest.txt` 的 `app.<App>` → `alias.<alias>` 取。
+
+`--format aab|both` 会额外跑 `bundleRelease`。**它一定也会出 APK** —— AAB 里的清单
+是 protobuf,`aapt2` 读不了,版本/包名/ABI 要从同一版本的 APK 取。
+
+### `easyrelease.sh` — 把产物校验委托给公共库
+
+```bash
+bash tools/easyrelease.sh verify --apk dist/<App>-<version>.apk \
+     --app <App> --version <version> --code <code> [--aab ...]
+bash tools/easyrelease.sh home     # 只看它用的是哪份 EasyRelease 检出
+```
+
+- 定位顺序:`$EASYRELEASE_DIR` → `.tmp/easyrelease/<tag>`(不存在就浅克隆一次;
+  `.tmp/` 已 gitignore)。固定 tag 写在脚本顶部(`EASYRELEASE_TAG`),升级改那一行。
+- 本仓库只做**翻译**:应用名 → `signing-manifest.txt` 里的期望指纹;
+  要拦的 debug 钩子(`UiDumpReceiver`)也是本仓库的约定,不是公共库的。
+- Windows 上自动注入两样东西,让公共库的脚本能跑 Git Bash:
+  `EASYRELEASE_PATH_HELPER=win_of`(原生工具不认 POSIX 路径)、
+  apksigner shim(`java -jar lib/apksigner.jar`,绕开 `.bat` 对 `JAVA_HOME` 的硬校验)。
+- 离线时先克隆一份、设 `EASYRELEASE_DIR=<路径>` 即可。
+
+> **判据只有一份**:新增「该拒绝什么」的规则,改 EasyRelease;本仓库只保留
+> 商店政策这类自己的判断(渠道 targetSdk 门槛、32 位 ABI、商店资料 TODO)。
 
 > ⚠️ release 包与 debug 包签名不同,同一台设备上换装要先 `adb uninstall`。
 > debug 包之间同理:各环境的 `~/.android/debug.keystore` 是各自生成的,换环境构建后
@@ -325,10 +348,16 @@ bash tools/store-preflight.sh <version> --target play  # Google Play
 bash tools/store-preflight.sh <version> --target cn    # 国内商店
 ```
 
-只查**机器能查的**硬阻塞:包名(`com.example.*`)、targetSdk 门槛、
-versionName/versionCode、签名、debuggable、debug 钩子、ABI(32/64 位)、
-AAB 结构与签名、APK 体积。人工项(隐私政策/软著/备案/截图)在
-`apps/<App>/store/*.md` 里,有 `TODO:` 会提示但不判失败。
+只查**机器能查的**硬阻塞。分两半:
+
+- **产物级**(包名 / versionName·code / 非 debuggable / debug 钩子 / 签名指纹 /
+  AAB 结构与 jarsigner):交给 `tools/easyrelease.sh`(即 EasyRelease),
+  与本仓库发版、与交付后业务仓库的 CI 完全同一套判据;
+- **商店政策**(`com.example.*` 黑名单、渠道 targetSdk 门槛、32 位 ABI、
+  APK 体积、`store/*.md` 的 TODO):留在本地。
+
+人工项(隐私政策/软著/备案/截图)在 `apps/<App>/store/*.md` 里,有 `TODO:`
+会提示但不判失败。
 
 门槛可用环境变量覆盖(商店政策每年变,不用改脚本):
 

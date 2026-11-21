@@ -688,7 +688,10 @@ UI 树 → text="共 18 项 · 构建 v0.0.1"
 | CI `assembleRelease` | release | 只做**编译检查**,不签名不发布 —— 保留它能提前暴露 R8 / proguard 这类 release-only 的问题 |
 | **`tools/release-apk.sh`** | `assembleRelease` + 加签 | 发版唯一的正式包入口 |
 
-`release-apk.sh` 会逐个校验产物,把「不小心把 debug 包装成正式包」变成构建期错误:
+`release-apk.sh` 会逐个校验产物,把「不小心把 debug 包装成正式包」变成构建期错误。
+校验由 [EasyRelease](https://github.com/EasyIndie/EasyRelease) 的 `android/` 模块执行
+(`tools/easyrelease.sh` 只是适配层),所以本仓库、孵化中的应用、以及交付后的业务仓库
+用的是**同一份判据**:
 
 ```
 ✅ <App>-0.2.0.apk 已签名  (CN=EasyAndroid Release)
